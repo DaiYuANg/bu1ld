@@ -11,8 +11,6 @@ val rootModule = module {
 }
 
 fun main(args: Array<String>) {
-    val module = startKoin {
 
-    }
-    Root().main(args)
+  Root().main(args)
 }
