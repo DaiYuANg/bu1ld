@@ -44,5 +44,9 @@ kotlin-logging-jvm = { group = "io.github.oshai", name = "kotlin-logging-jvm", v
 
 [bundles]
 koin = [
-  'koin-core','koin-annotations','koin-logger-slf4j'
+  'koin-core', 'koin-annotations', 'koin-logger-slf4j'
+]
+
+logging = [
+  'slf4j', 'logback', 'kotlin-logging-jvm'
 ]

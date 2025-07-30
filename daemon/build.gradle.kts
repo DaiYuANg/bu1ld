@@ -13,10 +13,8 @@ dependencies {
   ksp(libs.koin.ksp.compiler)
   implementation(libs.kotlinx.coroutines.core)
 
-  implementation(libs.slf4j)
+  implementation(libs.bundles.logging)
 
-  implementation(libs.logback)
-  implementation(libs.kotlin.logging.jvm)
   implementation(libs.mutiny)
   implementation(libs.mutiny.kotlin)
   implementation(libs.mutiny.vertx.core)
