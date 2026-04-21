@@ -1,0 +1,18 @@
+task "prepare" {
+  inputs = []
+  outputs = ["dist"]
+  command = ["mkdir", "-p", "dist"]
+}
+
+task "test" {
+  inputs = ["build.bu1ld", "go.mod", "go.sum", "**/*.go"]
+  outputs = []
+  command = ["go", "test", "./..."]
+}
+
+task "build" {
+  deps = ["prepare", "test"]
+  inputs = ["build.bu1ld", "go.mod", "go.sum", "**/*.go"]
+  outputs = ["dist/bu1ld"]
+  command = ["go", "build", "-o", "dist/bu1ld", "./cmd/cli"]
+}

@@ -146,3 +146,7 @@ dmypy.json
 .pytype/
 cython_debug/
 .idea
+!internal/build
+!internal/build/
+!internal/build/**
+.bu1ld/

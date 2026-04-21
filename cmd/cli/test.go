@@ -1,0 +1,25 @@
+package main
+
+import (
+	"bu1ld/internal/app"
+
+	"github.com/spf13/cobra"
+)
+
+func newTestCommand(opts *options) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "test [task...]",
+		Short: "Run test tasks",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			targets := args
+			if len(targets) == 0 {
+				targets = []string{"test"}
+			}
+			return runCommand(cmd, opts, app.CommandRequest{
+				Kind:    app.CommandTest,
+				Targets: targets,
+			})
+		},
+	}
+	return cmd
+}
