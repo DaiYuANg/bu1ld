@@ -131,6 +131,49 @@ task build {
 	}
 }
 
+func TestParserEvaluatesTaskTargetContext(t *testing.T) {
+	project, err := NewParser().Parse(strings.NewReader(`
+task package {
+  outputs = [$("dist/" + target)]
+  command = ["sh", "-c", concat("echo ", target)]
+}
+`))
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+
+	task, ok := project.FindTask("package")
+	if !ok {
+		t.Fatalf("package task not found")
+	}
+	if got, want := strings.Join(task.Outputs.Values(), ","), "dist/package"; got != want {
+		t.Fatalf("outputs = %q, want %q", got, want)
+	}
+	if got, want := task.Command.Values()[2], "echo package"; got != want {
+		t.Fatalf("command script = %q, want %q", got, want)
+	}
+}
+
+func TestParserParsesImportStatement(t *testing.T) {
+	file, err := NewParser().ParseFile(`
+import "tasks/go.bu1ld"
+task build {}
+`)
+	if err != nil {
+		t.Fatalf("ParseFile() error = %v", err)
+	}
+	if got, want := len(file.Statements), 2; got != want {
+		t.Fatalf("statement count = %d, want %d", got, want)
+	}
+	importNode, ok := file.Statements[0].(*ImportNode)
+	if !ok {
+		t.Fatalf("first statement = %T, want *ImportNode", file.Statements[0])
+	}
+	if got, want := importNode.Path, "tasks/go.bu1ld"; got != want {
+		t.Fatalf("import path = %q, want %q", got, want)
+	}
+}
+
 func TestParserRejectsDuplicateTasks(t *testing.T) {
 	t.Parallel()
 

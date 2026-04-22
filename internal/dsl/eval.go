@@ -96,6 +96,8 @@ func isPluginDeclaration(statement Statement) bool {
 
 func evaluateStatement(statement Statement, ctx evalContext) ([]build.Task, error) {
 	switch node := statement.(type) {
+	case *ImportNode:
+		return nil, nil
 	case *BlockNode:
 		return evaluateBlock(node, ctx)
 	case *RuleNode:
@@ -200,10 +202,11 @@ func evaluateTask(node *BlockNode, ctx evalContext) (build.Task, error) {
 	if err != nil {
 		return build.Task{}, err
 	}
+	taskCtx := ctx.with("target", name)
 	task := build.NewTask(name)
 
 	for _, assignment := range node.Assignments {
-		values, err := evaluateStringList(assignment.Value, ctx)
+		values, err := evaluateStringList(assignment.Value, taskCtx)
 		if err != nil {
 			return build.Task{}, fieldError("task", assignment, err)
 		}

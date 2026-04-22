@@ -20,6 +20,19 @@ type Statement interface {
 	statementNode()
 }
 
+type ImportNode struct {
+	Path string
+	Pos  Position
+}
+
+func (n *ImportNode) Position() Position {
+	if n == nil {
+		return Position{}
+	}
+	return n.Pos
+}
+func (n *ImportNode) statementNode() {}
+
 type BlockNode struct {
 	Kind        string
 	Name        Expr

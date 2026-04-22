@@ -1,0 +1,9 @@
+go.test test {
+  packages = ["./..."]
+}
+
+go.binary build {
+  deps = [prepare, test]
+  main = "./cmd/cli"
+  out = $("dist/" + "bu1ld")
+}

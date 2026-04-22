@@ -1,7 +1,10 @@
 package dsl
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"bu1ld/internal/build"
 	"bu1ld/internal/config"
@@ -24,19 +27,88 @@ func NewLoader(cfg config.Config, parser *Parser) *Loader {
 
 func (l *Loader) Load() (build.Project, error) {
 	path := l.cfg.BuildFilePath()
-	file, err := os.Open(path)
+	file, err := l.loadFile(path, map[string]bool{}, map[string]bool{})
 	if err != nil {
 		return build.Project{}, oops.In("bu1ld.dsl").
 			With("file", path).
-			Wrapf(err, "open build file")
+			Wrapf(err, "load build file")
 	}
-	defer file.Close()
-
-	project, err := l.parser.ParseWithOptions(file, buildplugin.LoadOptions{ProjectDir: l.cfg.WorkDir})
+	project, err := EvaluateWithRegistry(file, l.parser.registry.CloneWithOptions(buildplugin.LoadOptions{ProjectDir: l.cfg.WorkDir}))
 	if err != nil {
 		return build.Project{}, oops.In("bu1ld.dsl").
 			With("file", path).
 			Wrapf(err, "parse build file")
 	}
 	return project, nil
+}
+
+func (l *Loader) loadFile(path string, stack map[string]bool, seen map[string]bool) (*File, error) {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	absPath = filepath.Clean(absPath)
+	if stack[absPath] {
+		return nil, fmt.Errorf("import cycle detected at %s", absPath)
+	}
+	if seen[absPath] {
+		return &File{}, nil
+	}
+
+	stack[absPath] = true
+	defer delete(stack, absPath)
+
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		return nil, err
+	}
+	file, err := l.parser.ParseFile(string(data))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", absPath, err)
+	}
+	seen[absPath] = true
+
+	merged := &File{}
+	for _, statement := range file.Statements {
+		importNode, ok := statement.(*ImportNode)
+		if !ok {
+			merged.Statements = append(merged.Statements, statement)
+			continue
+		}
+		importedPaths, err := resolveImportPaths(absPath, importNode.Path)
+		if err != nil {
+			return nil, fmt.Errorf("%s:%d:%d: %w", absPath, importNode.Position().Line, importNode.Position().Column, err)
+		}
+		for _, importedPath := range importedPaths {
+			imported, err := l.loadFile(importedPath, stack, seen)
+			if err != nil {
+				return nil, err
+			}
+			merged.Statements = append(merged.Statements, imported.Statements...)
+		}
+	}
+	return merged, nil
+}
+
+func resolveImportPaths(importerPath string, importPath string) ([]string, error) {
+	if importPath == "" {
+		return nil, fmt.Errorf("import path is required")
+	}
+	pattern := importPath
+	if !filepath.IsAbs(pattern) {
+		pattern = filepath.Join(filepath.Dir(importerPath), pattern)
+	}
+	pattern = filepath.Clean(pattern)
+
+	if strings.ContainsAny(pattern, "*?[") {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			return nil, err
+		}
+		if len(matches) == 0 {
+			return nil, fmt.Errorf("import %q matched no files", importPath)
+		}
+		return matches, nil
+	}
+	return []string{pattern}, nil
 }

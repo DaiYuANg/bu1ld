@@ -105,6 +105,9 @@ func (s *Server) handle(_ context.Context, payload []byte) error {
 		return s.respond(request.ID, initializeResult{
 			Capabilities: serverCapabilities{
 				TextDocumentSync: textDocumentSyncFull,
+				CompletionProvider: completionOptions{
+					TriggerCharacters: []string{".", " ", "="},
+				},
 			},
 		})
 	case "initialized":
@@ -141,6 +144,13 @@ func (s *Server) handle(_ context.Context, payload []byte) error {
 			URI:         params.TextDocument.URI,
 			Diagnostics: []diagnostic{},
 		})
+	case "textDocument/completion":
+		var params completionParams
+		if err := json.Unmarshal(request.Params, &params); err != nil {
+			return err
+		}
+		text := s.docs[params.TextDocument.URI]
+		return s.respond(request.ID, s.completions(text, params.Position))
 	default:
 		if request.ID != nil {
 			return s.respondError(request.ID, -32601, "method not found")
@@ -283,7 +293,12 @@ type initializeResult struct {
 }
 
 type serverCapabilities struct {
-	TextDocumentSync int `json:"textDocumentSync"`
+	TextDocumentSync   int               `json:"textDocumentSync"`
+	CompletionProvider completionOptions `json:"completionProvider,omitempty"`
+}
+
+type completionOptions struct {
+	TriggerCharacters []string `json:"triggerCharacters,omitempty"`
 }
 
 type didOpenParams struct {
@@ -314,6 +329,23 @@ type didCloseParams struct {
 
 type textDocumentIdentifier struct {
 	URI string `json:"uri"`
+}
+
+type completionParams struct {
+	TextDocument textDocumentIdentifier `json:"textDocument"`
+	Position     position               `json:"position"`
+}
+
+type completionList struct {
+	IsIncomplete bool             `json:"isIncomplete"`
+	Items        []completionItem `json:"items"`
+}
+
+type completionItem struct {
+	Label      string `json:"label"`
+	Kind       int    `json:"kind,omitempty"`
+	Detail     string `json:"detail,omitempty"`
+	InsertText string `json:"insertText,omitempty"`
 }
 
 type publishDiagnosticsParams struct {

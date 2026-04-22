@@ -8,7 +8,7 @@ The first version includes:
 - Task discovery via `tasks` and targeted graph planning via `graph [task...]`
 - Multi-process `cmd/cli`, `cmd/daemon`, `cmd/server`, and `cmd/lsp` executables
 - A small `build.bu1ld` DSL
-- A basic DSL language server with parse and semantic diagnostics
+- A basic DSL language server with parse diagnostics, semantic diagnostics, and schema completions
 - A plugin registry with builtin, local, and global plugin sources
 - Task graph planning with dependency ordering and cycle detection
 - Input fingerprints and a local action cache
@@ -68,6 +68,11 @@ toolchain go {
   version = $(env("GO_VERSION", "1.26.2"))
 }
 
+import "tasks/go.bu1ld"
+```
+
+```text
+# tasks/go.bu1ld
 go.test test {
   packages = ["./..."]
 }
@@ -81,7 +86,17 @@ go.binary build {
 
 Block names are typed symbols instead of string labels. The `$(...)` form is
 evaluated by `expr-lang/expr`, while the outer build script syntax is parsed
-into bu1ld's own AST.
+into bu1ld's own AST. Imports are resolved relative to the file that declares
+them and also support glob patterns such as `import "tasks/*.bu1ld"`.
+
+Custom tasks can use the same built-in functions and expression context:
+
+```text
+task package {
+  outputs = [$("dist/" + target)]
+  command = ["sh", "-c", concat("echo ", target)]
+}
+```
 
 Plugins can come from three sources:
 

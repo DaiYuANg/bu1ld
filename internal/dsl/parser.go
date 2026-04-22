@@ -29,6 +29,10 @@ func NewParserWithRegistry(registry *buildplugin.Registry) *Parser {
 	return &Parser{registry: registry}
 }
 
+func (p *Parser) Schemas() ([]buildplugin.Metadata, error) {
+	return p.registry.Schemas()
+}
+
 func (p *Parser) Parse(reader io.Reader) (build.Project, error) {
 	return p.ParseWithOptions(reader, buildplugin.LoadOptions{})
 }
@@ -67,10 +71,27 @@ func (p *Parser) parseStatement() (Statement, error) {
 		return nil, p.errorf(p.cur, "expected block or rule name, got %s", p.cur.Type)
 	}
 
+	if p.cur.Literal == "import" {
+		return p.parseImport()
+	}
 	if p.peek.Type == TokenLParen {
 		return p.parseRule()
 	}
 	return p.parseBlock()
+}
+
+func (p *Parser) parseImport() (*ImportNode, error) {
+	pos := p.cur.Position
+	p.next()
+	if p.cur.Type != TokenString {
+		return nil, p.errorf(p.cur, "expected import path string, got %s", p.cur.Type)
+	}
+	path := p.cur.Literal
+	p.next()
+	return &ImportNode{
+		Path: path,
+		Pos:  pos,
+	}, nil
 }
 
 func (p *Parser) parseBlock() (*BlockNode, error) {
