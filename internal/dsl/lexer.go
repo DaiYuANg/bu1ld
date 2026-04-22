@@ -51,6 +51,13 @@ func (l *Lexer) NextToken() Token {
 		return l.single(TokenRParen)
 	case '"', '`':
 		return l.readStringToken()
+	case '$':
+		if l.peekChar() == '(' || l.peekChar() == '{' {
+			return l.readScriptExprToken()
+		}
+		literal := string(l.ch)
+		l.readChar()
+		return Token{Type: TokenIllegal, Literal: literal, Position: pos}
 	default:
 		if isIdentStart(l.ch) {
 			literal := l.readIdent()
@@ -97,6 +104,70 @@ func (l *Lexer) readStringToken() Token {
 		return Token{Type: TokenIllegal, Literal: fmt.Sprintf("invalid string: %v", err), Position: pos}
 	}
 	return Token{Type: TokenString, Literal: value, Position: pos}
+}
+
+func (l *Lexer) readScriptExprToken() Token {
+	pos := l.currentPosition()
+	l.readChar()
+
+	open := l.ch
+	close := ')'
+	if open == '{' {
+		close = '}'
+	}
+	l.readChar()
+
+	depth := 1
+	expr := []rune{}
+	for l.ch != 0 {
+		if l.ch == '"' || l.ch == '\'' || l.ch == '`' {
+			quoted, ok := l.readScriptQuoted()
+			expr = append(expr, quoted...)
+			if !ok {
+				return Token{Type: TokenIllegal, Literal: "unterminated expression string", Position: pos}
+			}
+			continue
+		}
+
+		if l.ch == open {
+			depth++
+		}
+		if l.ch == close {
+			depth--
+			if depth == 0 {
+				l.readChar()
+				return Token{Type: TokenExpr, Literal: string(expr), Position: pos}
+			}
+		}
+		expr = append(expr, l.ch)
+		l.readChar()
+	}
+
+	return Token{Type: TokenIllegal, Literal: "unterminated expression", Position: pos}
+}
+
+func (l *Lexer) readScriptQuoted() ([]rune, bool) {
+	quote := l.ch
+	value := []rune{quote}
+	l.readChar()
+	for l.ch != 0 {
+		value = append(value, l.ch)
+		if l.ch == '\\' && quote != '`' {
+			l.readChar()
+			if l.ch == 0 {
+				return value, false
+			}
+			value = append(value, l.ch)
+			l.readChar()
+			continue
+		}
+		if l.ch == quote {
+			l.readChar()
+			return value, true
+		}
+		l.readChar()
+	}
+	return value, false
 }
 
 func (l *Lexer) readIdent() string {
@@ -181,9 +252,9 @@ func (l *Lexer) currentPosition() Position {
 }
 
 func isIdentStart(ch rune) bool {
-	return unicode.IsLetter(ch) || ch == '_' || ch == '.'
+	return unicode.IsLetter(ch) || ch == '_'
 }
 
 func isIdentPart(ch rune) bool {
-	return isIdentStart(ch) || unicode.IsDigit(ch) || ch == '-' || ch == '/' || ch == ':' || ch == '*'
+	return isIdentStart(ch) || unicode.IsDigit(ch) || ch == '-' || ch == '/' || ch == ':' || ch == '*' || ch == '.'
 }

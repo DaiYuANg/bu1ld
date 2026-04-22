@@ -8,6 +8,7 @@ const (
 
 	TokenIdent  TokenType = "IDENT"
 	TokenString TokenType = "STRING"
+	TokenExpr   TokenType = "EXPR"
 
 	TokenAssign TokenType = "="
 	TokenComma  TokenType = ","

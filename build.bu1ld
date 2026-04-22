@@ -1,18 +1,30 @@
-task "prepare" {
+workspace {
+  name = "bu1ld"
+  default = build
+}
+
+plugin go {
+  source = builtin
+  id = "builtin.go"
+}
+
+toolchain go {
+  version = $(env("GO_VERSION", "1.26.2"))
+  settings = { mode = "module", platform = $(os + "/" + arch) }
+}
+
+task prepare {
   inputs = []
   outputs = ["dist"]
   command = ["mkdir", "-p", "dist"]
 }
 
-task "test" {
-  inputs = ["build.bu1ld", "go.mod", "go.sum", "**/*.go"]
-  outputs = []
-  command = ["go", "test", "./..."]
+go.test test {
+  packages = ["./..."]
 }
 
-task "build" {
-  deps = ["prepare", "test"]
-  inputs = ["build.bu1ld", "go.mod", "go.sum", "**/*.go"]
-  outputs = ["dist/bu1ld"]
-  command = ["go", "build", "-o", "dist/bu1ld", "./cmd/cli"]
+go.binary build {
+  deps = [prepare, test]
+  main = "./cmd/cli"
+  out = $("dist/" + "bu1ld")
 }

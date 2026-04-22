@@ -5,6 +5,23 @@ go 1.26.2
 require github.com/spf13/cobra v1.10.2
 
 require (
+	github.com/expr-lang/expr v1.17.8
+	github.com/hashicorp/go-plugin v1.7.0
+)
+
+require (
+	github.com/fatih/color v1.13.0 // indirect
+	github.com/golang/protobuf v1.5.4 // indirect
+	github.com/hashicorp/go-hclog v1.6.3 // indirect
+	github.com/hashicorp/yamux v0.1.2 // indirect
+	github.com/oklog/run v1.1.0 // indirect
+	golang.org/x/net v0.52.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20231106174013-bbf56f31fb17 // indirect
+	google.golang.org/grpc v1.61.0 // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
+)
+
+require (
 	github.com/DaiYuANg/arcgo/collectionx v0.1.6
 	github.com/DaiYuANg/arcgo/configx v0.3.2
 	github.com/DaiYuANg/arcgo/dix v0.6.1

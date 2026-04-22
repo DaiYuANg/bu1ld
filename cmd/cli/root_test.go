@@ -13,12 +13,12 @@ func TestGraphCommand(t *testing.T) {
 
 	projectDir := t.TempDir()
 	writeBuildFile(t, projectDir, `
-task "test" {
+task test {
   command = []
 }
 
-task "build" {
-  deps = ["test"]
+task build {
+  deps = [test]
   command = []
 }
 `)
@@ -43,16 +43,16 @@ func TestGraphCommandWithTarget(t *testing.T) {
 
 	projectDir := t.TempDir()
 	writeBuildFile(t, projectDir, `
-task "prepare" {
+task prepare {
   command = []
 }
 
-task "test" {
+task test {
   command = []
 }
 
-task "build" {
-  deps = ["prepare", "test"]
+task build {
+  deps = [prepare, test]
   command = []
 }
 `)
@@ -77,11 +77,11 @@ func TestTasksCommand(t *testing.T) {
 
 	projectDir := t.TempDir()
 	writeBuildFile(t, projectDir, `
-task "test" {
+task test {
   command = []
 }
 
-task "build" {
+task build {
   command = []
 }
 `)
@@ -106,7 +106,7 @@ func TestBuildCommandRunsNoopTask(t *testing.T) {
 
 	projectDir := t.TempDir()
 	writeBuildFile(t, projectDir, `
-task "build" {
+task build {
   command = []
 }
 `)

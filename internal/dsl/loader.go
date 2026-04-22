@@ -5,6 +5,7 @@ import (
 
 	"bu1ld/internal/build"
 	"bu1ld/internal/config"
+	buildplugin "bu1ld/internal/plugin"
 
 	"github.com/samber/oops"
 )
@@ -31,7 +32,7 @@ func (l *Loader) Load() (build.Project, error) {
 	}
 	defer file.Close()
 
-	project, err := l.parser.Parse(file)
+	project, err := l.parser.ParseWithOptions(file, buildplugin.LoadOptions{ProjectDir: l.cfg.WorkDir})
 	if err != nil {
 		return build.Project{}, oops.In("bu1ld.dsl").
 			With("file", path).

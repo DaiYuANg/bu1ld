@@ -5,28 +5,49 @@ type Node interface {
 }
 
 type File struct {
-	Tasks []*TaskNode
+	Statements []Statement
 }
 
 func (f *File) Position() Position {
-	if f == nil || len(f.Tasks) == 0 {
+	if f == nil || len(f.Statements) == 0 {
 		return Position{}
 	}
-	return f.Tasks[0].Position()
+	return f.Statements[0].Position()
 }
 
-type TaskNode struct {
+type Statement interface {
+	Node
+	statementNode()
+}
+
+type BlockNode struct {
+	Kind        string
 	Name        Expr
 	Assignments []*AssignmentNode
 	Pos         Position
 }
 
-func (n *TaskNode) Position() Position {
+func (n *BlockNode) Position() Position {
 	if n == nil {
 		return Position{}
 	}
 	return n.Pos
 }
+func (n *BlockNode) statementNode() {}
+
+type RuleNode struct {
+	Call        *CallExpr
+	Assignments []*AssignmentNode
+	Pos         Position
+}
+
+func (n *RuleNode) Position() Position {
+	if n == nil {
+		return Position{}
+	}
+	return n.Pos
+}
+func (n *RuleNode) statementNode() {}
 
 type AssignmentNode struct {
 	Name  string
@@ -54,6 +75,14 @@ type StringExpr struct {
 func (e *StringExpr) Position() Position { return e.Pos }
 func (e *StringExpr) exprNode()          {}
 
+type ScriptExpr struct {
+	Source string
+	Pos    Position
+}
+
+func (e *ScriptExpr) Position() Position { return e.Pos }
+func (e *ScriptExpr) exprNode()          {}
+
 type IdentExpr struct {
 	Name string
 	Pos  Position
@@ -78,3 +107,24 @@ type CallExpr struct {
 
 func (e *CallExpr) Position() Position { return e.Pos }
 func (e *CallExpr) exprNode()          {}
+
+type ObjectEntry struct {
+	Key   string
+	Value Expr
+	Pos   Position
+}
+
+func (e *ObjectEntry) Position() Position {
+	if e == nil {
+		return Position{}
+	}
+	return e.Pos
+}
+
+type ObjectExpr struct {
+	Entries []*ObjectEntry
+	Pos     Position
+}
+
+func (e *ObjectExpr) Position() Position { return e.Pos }
+func (e *ObjectExpr) exprNode()          {}

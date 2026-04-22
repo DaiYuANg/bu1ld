@@ -6,19 +6,34 @@ import (
 	"strings"
 
 	"bu1ld/internal/build"
+	buildplugin "bu1ld/internal/plugin"
+	"bu1ld/internal/plugins/golang"
 )
 
 type Parser struct {
-	lexer *Lexer
-	cur   Token
-	peek  Token
+	lexer    *Lexer
+	cur      Token
+	peek     Token
+	registry *buildplugin.Registry
 }
 
 func NewParser() *Parser {
-	return &Parser{}
+	registry, err := buildplugin.NewRegistry(buildplugin.LoadOptions{}, golang.New())
+	if err != nil {
+		panic(err)
+	}
+	return NewParserWithRegistry(registry)
+}
+
+func NewParserWithRegistry(registry *buildplugin.Registry) *Parser {
+	return &Parser{registry: registry}
 }
 
 func (p *Parser) Parse(reader io.Reader) (build.Project, error) {
+	return p.ParseWithOptions(reader, buildplugin.LoadOptions{})
+}
+
+func (p *Parser) ParseWithOptions(reader io.Reader, options buildplugin.LoadOptions) (build.Project, error) {
 	data, err := io.ReadAll(reader)
 	if err != nil {
 		return build.Project{}, err
@@ -28,7 +43,7 @@ func (p *Parser) Parse(reader io.Reader) (build.Project, error) {
 	if err != nil {
 		return build.Project{}, err
 	}
-	return Evaluate(file)
+	return EvaluateWithRegistry(file, p.registry.CloneWithOptions(options))
 }
 
 func (p *Parser) ParseFile(source string) (*File, error) {
@@ -38,45 +53,91 @@ func (p *Parser) ParseFile(source string) (*File, error) {
 
 	file := &File{}
 	for p.cur.Type != TokenEOF {
-		task, err := p.parseTask()
+		statement, err := p.parseStatement()
 		if err != nil {
 			return nil, err
 		}
-		file.Tasks = append(file.Tasks, task)
+		file.Statements = append(file.Statements, statement)
 	}
 	return file, nil
 }
 
-func (p *Parser) parseTask() (*TaskNode, error) {
-	if err := p.expectIdent("task"); err != nil {
-		return nil, err
+func (p *Parser) parseStatement() (Statement, error) {
+	if p.cur.Type != TokenIdent {
+		return nil, p.errorf(p.cur, "expected block or rule name, got %s", p.cur.Type)
 	}
-	pos := p.cur.Position
 
-	name, err := p.parseExpr()
+	if p.peek.Type == TokenLParen {
+		return p.parseRule()
+	}
+	return p.parseBlock()
+}
+
+func (p *Parser) parseBlock() (*BlockNode, error) {
+	kind := p.cur.Literal
+	pos := p.cur.Position
+	p.next()
+
+	var name Expr
+	if p.cur.Type != TokenLBrace {
+		var err error
+		name, err = p.parseExpr()
+		if err != nil {
+			return nil, err
+		}
+	}
+	assignments, err := p.parseAssignmentBlock(kind)
 	if err != nil {
 		return nil, err
 	}
+
+	return &BlockNode{
+		Kind:        kind,
+		Name:        name,
+		Assignments: assignments,
+		Pos:         pos,
+	}, nil
+}
+
+func (p *Parser) parseRule() (*RuleNode, error) {
+	expr, err := p.parseCall()
+	if err != nil {
+		return nil, err
+	}
+	call, ok := expr.(*CallExpr)
+	if !ok {
+		return nil, p.errorf(p.cur, "expected rule call")
+	}
+	assignments, err := p.parseAssignmentBlock(call.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	return &RuleNode{
+		Call:        call,
+		Assignments: assignments,
+		Pos:         call.Position(),
+	}, nil
+}
+
+func (p *Parser) parseAssignmentBlock(name string) ([]*AssignmentNode, error) {
 	if err := p.expect(TokenLBrace); err != nil {
 		return nil, err
 	}
 
-	task := &TaskNode{
-		Name: name,
-		Pos:  pos,
-	}
+	assignments := []*AssignmentNode{}
 	for p.cur.Type != TokenRBrace {
 		if p.cur.Type == TokenEOF {
-			return nil, p.errorf(p.cur, "unterminated task")
+			return nil, p.errorf(p.cur, "unterminated block %q", name)
 		}
 		assignment, err := p.parseAssignment()
 		if err != nil {
 			return nil, err
 		}
-		task.Assignments = append(task.Assignments, assignment)
+		assignments = append(assignments, assignment)
 	}
 	p.next()
-	return task, nil
+	return assignments, nil
 }
 
 func (p *Parser) parseAssignment() (*AssignmentNode, error) {
@@ -108,6 +169,10 @@ func (p *Parser) parseExpr() (Expr, error) {
 		expr := &StringExpr{Value: p.cur.Literal, Pos: p.cur.Position}
 		p.next()
 		return expr, nil
+	case TokenExpr:
+		expr := &ScriptExpr{Source: p.cur.Literal, Pos: p.cur.Position}
+		p.next()
+		return expr, nil
 	case TokenIdent:
 		if p.peek.Type == TokenLParen {
 			return p.parseCall()
@@ -117,6 +182,8 @@ func (p *Parser) parseExpr() (Expr, error) {
 		return expr, nil
 	case TokenLBrack:
 		return p.parseArray()
+	case TokenLBrace:
+		return p.parseObject()
 	default:
 		return nil, p.errorf(p.cur, "expected expression, got %s", p.cur.Type)
 	}
@@ -143,6 +210,46 @@ func (p *Parser) parseArray() (Expr, error) {
 		}
 		if p.cur.Type != TokenRBrack {
 			return nil, p.errorf(p.cur, "expected comma or ], got %s", p.cur.Type)
+		}
+	}
+	p.next()
+	return expr, nil
+}
+
+func (p *Parser) parseObject() (Expr, error) {
+	pos := p.cur.Position
+	p.next()
+
+	expr := &ObjectExpr{Pos: pos}
+	for p.cur.Type != TokenRBrace {
+		if p.cur.Type == TokenEOF {
+			return nil, p.errorf(p.cur, "unterminated object")
+		}
+		if p.cur.Type != TokenIdent {
+			return nil, p.errorf(p.cur, "expected object key, got %s", p.cur.Type)
+		}
+		key := p.cur.Literal
+		keyPos := p.cur.Position
+		p.next()
+		if err := p.expect(TokenAssign); err != nil {
+			return nil, err
+		}
+		value, err := p.parseExpr()
+		if err != nil {
+			return nil, err
+		}
+		expr.Entries = append(expr.Entries, &ObjectEntry{
+			Key:   key,
+			Value: value,
+			Pos:   keyPos,
+		})
+
+		if p.cur.Type == TokenComma {
+			p.next()
+			continue
+		}
+		if p.cur.Type != TokenRBrace {
+			return nil, p.errorf(p.cur, "expected comma or }, got %s", p.cur.Type)
 		}
 	}
 	p.next()
