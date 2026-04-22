@@ -12,6 +12,7 @@ import (
 
 	"github.com/DaiYuANg/arcgo/collectionx"
 	"github.com/expr-lang/expr"
+	"mvdan.cc/sh/v3/syntax"
 )
 
 type valueKind int
@@ -204,6 +205,7 @@ func evaluateTask(node *BlockNode, ctx evalContext) (build.Task, error) {
 	}
 	taskCtx := ctx.with("target", name)
 	task := build.NewTask(name)
+	hasCommand := false
 
 	for _, assignment := range node.Assignments {
 		values, err := evaluateStringList(assignment.Value, taskCtx)
@@ -218,6 +220,7 @@ func evaluateTask(node *BlockNode, ctx evalContext) (build.Task, error) {
 		case "outputs":
 			task.Outputs = collectionx.NewList(values...)
 		case "command":
+			hasCommand = true
 			task.Command = collectionx.NewList(values...)
 		default:
 			return build.Task{}, fmt.Errorf(
@@ -228,11 +231,68 @@ func evaluateTask(node *BlockNode, ctx evalContext) (build.Task, error) {
 			)
 		}
 	}
+	if hasCommand && len(node.Actions) > 0 {
+		return build.Task{}, fmt.Errorf("dsl:%d:%d: task cannot define both command and run block", node.Actions[0].Position().Line, node.Actions[0].Position().Column)
+	}
+	command, err := evaluateActions(node.Actions, taskCtx)
+	if err != nil {
+		return build.Task{}, err
+	}
+	if len(command) > 0 {
+		task.Command = collectionx.NewList(command...)
+	}
 
 	if err := task.Validate(); err != nil {
 		return build.Task{}, fmt.Errorf("dsl:%d:%d: %w", node.Position().Line, node.Position().Column, err)
 	}
 	return task, nil
+}
+
+func evaluateActions(actions []*ActionNode, ctx evalContext) ([]string, error) {
+	if len(actions) == 0 {
+		return nil, nil
+	}
+	if len(actions) > 1 {
+		action := actions[1]
+		return nil, fmt.Errorf("dsl:%d:%d: task run block supports one action in this version", action.Position().Line, action.Position().Column)
+	}
+	action := actions[0]
+	switch action.Call.Name {
+	case "exec":
+		items := collectionx.NewList[string]()
+		for _, arg := range action.Call.Args {
+			value, err := evaluateString(arg, ctx)
+			if err != nil {
+				return nil, err
+			}
+			items.Add(value)
+		}
+		if len(items.Values()) == 0 {
+			return nil, fmt.Errorf("dsl:%d:%d: exec requires at least one argument", action.Position().Line, action.Position().Column)
+		}
+		return items.Values(), nil
+	case "shell":
+		if len(action.Call.Args) != 1 {
+			return nil, fmt.Errorf("dsl:%d:%d: shell expects exactly one script argument", action.Position().Line, action.Position().Column)
+		}
+		script, err := evaluateString(action.Call.Args[0], ctx)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateShellScript(script, action.Position()); err != nil {
+			return nil, err
+		}
+		return []string{"sh", "-c", script}, nil
+	default:
+		return nil, fmt.Errorf("dsl:%d:%d: unknown run action %q", action.Position().Line, action.Position().Column, action.Call.Name)
+	}
+}
+
+func validateShellScript(script string, pos Position) error {
+	if _, err := syntax.NewParser(syntax.Variant(syntax.LangPOSIX)).Parse(strings.NewReader(script), "shell"); err != nil {
+		return fmt.Errorf("dsl:%d:%d: shell syntax error: %w", pos.Line, pos.Column, err)
+	}
+	return nil
 }
 
 func evaluateRule(node *RuleNode, ctx evalContext) ([]build.Task, error) {

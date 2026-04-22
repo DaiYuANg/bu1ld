@@ -132,6 +132,62 @@ func TestServerCompletesPluginRulesAndFields(t *testing.T) {
 	}
 }
 
+func TestServerCompletesRunActions(t *testing.T) {
+	t.Parallel()
+
+	text := strings.Join([]string{
+		"task package {",
+		"  run {",
+		"    ",
+		"  }",
+		"}",
+		"",
+	}, "\n")
+
+	var in bytes.Buffer
+	writeTestMessage(t, &in, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "initialize",
+		"params":  map[string]any{},
+	})
+	writeTestMessage(t, &in, map[string]any{
+		"jsonrpc": "2.0",
+		"method":  "textDocument/didOpen",
+		"params": map[string]any{
+			"textDocument": map[string]any{
+				"uri":  "file:///workspace/build.bu1ld",
+				"text": text,
+			},
+		},
+	})
+	writeTestMessage(t, &in, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      2,
+		"method":  "textDocument/completion",
+		"params": map[string]any{
+			"textDocument": map[string]any{"uri": "file:///workspace/build.bu1ld"},
+			"position":     map[string]any{"line": 2, "character": 4},
+		},
+	})
+
+	var out bytes.Buffer
+	server := New(dsl.NewParser(), &in, &out)
+	if err := server.Serve(context.Background()); err != nil {
+		t.Fatalf("Serve() error = %v", err)
+	}
+
+	got := out.String()
+	for _, want := range []string{
+		`"label":"exec"`,
+		`"label":"shell"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("output = %s, want substring %q", got, want)
+		}
+	}
+}
+
 func writeTestMessage(t *testing.T, out *bytes.Buffer, message any) {
 	t.Helper()
 

@@ -154,6 +154,92 @@ task package {
 	}
 }
 
+func TestParserEvaluatesTaskRunActions(t *testing.T) {
+	project, err := NewParser().Parse(strings.NewReader(`
+task pack {
+  outputs = [$("dist/" + target + ".tgz")]
+  run {
+    exec("tar", "-czf", $("dist/" + target + ".tgz"), "dist/bu1ld")
+  }
+}
+
+task smoke {
+  run {
+    shell(concat("echo ", target))
+  }
+}
+`))
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+
+	pack, ok := project.FindTask("pack")
+	if !ok {
+		t.Fatalf("pack task not found")
+	}
+	if got, want := strings.Join(pack.Command.Values(), " "), "tar -czf dist/pack.tgz dist/bu1ld"; got != want {
+		t.Fatalf("pack command = %q, want %q", got, want)
+	}
+
+	smoke, ok := project.FindTask("smoke")
+	if !ok {
+		t.Fatalf("smoke task not found")
+	}
+	if got, want := strings.Join(smoke.Command.Values(), " "), "sh -c echo smoke"; got != want {
+		t.Fatalf("smoke command = %q, want %q", got, want)
+	}
+}
+
+func TestParserRejectsCommandAndRunTogether(t *testing.T) {
+	_, err := NewParser().Parse(strings.NewReader(`
+task pack {
+  command = ["tar"]
+  run {
+    exec("tar", "-czf", "dist/pack.tgz", "dist/bu1ld")
+  }
+}
+`))
+	if err == nil {
+		t.Fatalf("Parse() error = nil, want command/run conflict")
+	}
+	if got, want := err.Error(), "task cannot define both command and run block"; !strings.Contains(got, want) {
+		t.Fatalf("Parse() error = %q, want substring %q", got, want)
+	}
+}
+
+func TestParserRejectsRunOutsideTask(t *testing.T) {
+	_, err := NewParser().Parse(strings.NewReader(`
+plugin go {
+  source = builtin
+  run {
+    shell("ignored")
+  }
+}
+`))
+	if err == nil {
+		t.Fatalf("Parse() error = nil, want run outside task error")
+	}
+	if got, want := err.Error(), "run block is only supported in task blocks"; !strings.Contains(got, want) {
+		t.Fatalf("Parse() error = %q, want substring %q", got, want)
+	}
+}
+
+func TestParserRejectsInvalidShellAction(t *testing.T) {
+	_, err := NewParser().Parse(strings.NewReader(`
+task broken {
+  run {
+    shell("if then")
+  }
+}
+`))
+	if err == nil {
+		t.Fatalf("Parse() error = nil, want shell syntax error")
+	}
+	if got, want := err.Error(), "shell syntax error"; !strings.Contains(got, want) {
+		t.Fatalf("Parse() error = %q, want substring %q", got, want)
+	}
+}
+
 func TestParserParsesImportStatement(t *testing.T) {
 	file, err := NewParser().ParseFile(`
 import "tasks/go.bu1ld"

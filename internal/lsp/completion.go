@@ -6,36 +6,32 @@ import (
 	"strings"
 
 	buildplugin "bu1ld/internal/plugin"
+
+	"go.lsp.dev/protocol"
 )
 
-const (
-	completionItemKindField   = 5
-	completionItemKindModule  = 9
-	completionItemKindKeyword = 14
-)
-
-func (s *Server) completions(text string, pos position) completionList {
+func (s *Server) completions(text string, pos protocol.Position) protocol.CompletionList {
 	if inside, kind := blockContext(text, pos); inside {
-		return completionList{Items: s.fieldCompletions(kind)}
+		return protocol.CompletionList{Items: s.fieldCompletions(kind)}
 	}
-	return completionList{Items: s.topLevelCompletions()}
+	return protocol.CompletionList{Items: s.topLevelCompletions()}
 }
 
-func (s *Server) topLevelCompletions() []completionItem {
-	items := []completionItem{
-		{Label: "import", Kind: completionItemKindKeyword, Detail: "import another build file", InsertText: "import \"\""},
-		{Label: "workspace", Kind: completionItemKindKeyword, Detail: "workspace block", InsertText: "workspace {\n  name = \"\"\n  default = build\n}"},
-		{Label: "plugin", Kind: completionItemKindKeyword, Detail: "plugin declaration", InsertText: "plugin name {\n  source = builtin\n  id = \"\"\n}"},
-		{Label: "toolchain", Kind: completionItemKindKeyword, Detail: "toolchain block", InsertText: "toolchain name {\n  version = \"\"\n}"},
-		{Label: "task", Kind: completionItemKindKeyword, Detail: "task block", InsertText: "task name {\n  command = []\n}"},
+func (s *Server) topLevelCompletions() []protocol.CompletionItem {
+	items := []protocol.CompletionItem{
+		{Label: "import", Kind: protocol.CompletionItemKindKeyword, Detail: "import another build file", InsertText: "import \"\""},
+		{Label: "workspace", Kind: protocol.CompletionItemKindKeyword, Detail: "workspace block", InsertText: "workspace {\n  name = \"\"\n  default = build\n}"},
+		{Label: "plugin", Kind: protocol.CompletionItemKindKeyword, Detail: "plugin declaration", InsertText: "plugin name {\n  source = builtin\n  id = \"\"\n}"},
+		{Label: "toolchain", Kind: protocol.CompletionItemKindKeyword, Detail: "toolchain block", InsertText: "toolchain name {\n  version = \"\"\n}"},
+		{Label: "task", Kind: protocol.CompletionItemKindKeyword, Detail: "task block", InsertText: "task name {\n  command = []\n}"},
 	}
 
 	for _, schema := range s.schemas() {
 		for _, rule := range schema.Rules {
 			label := schema.Namespace + "." + rule.Name
-			items = append(items, completionItem{
+			items = append(items, protocol.CompletionItem{
 				Label:      label,
-				Kind:       completionItemKindModule,
+				Kind:       protocol.CompletionItemKindModule,
 				Detail:     fmt.Sprintf("%s rule", schema.ID),
 				InsertText: label + " name {\n}",
 			})
@@ -44,7 +40,12 @@ func (s *Server) topLevelCompletions() []completionItem {
 	return sortedCompletions(items)
 }
 
-func (s *Server) fieldCompletions(kind string) []completionItem {
+func (s *Server) fieldCompletions(kind string) []protocol.CompletionItem {
+	if inside, parent := runContext(kind); inside && parent == "task" {
+		return actionCompletions()
+	} else if inside {
+		return nil
+	}
 	fields := coreFields(kind)
 	if len(fields) == 0 {
 		if schema, ok := s.ruleSchema(kind); ok {
@@ -52,20 +53,27 @@ func (s *Server) fieldCompletions(kind string) []completionItem {
 		}
 	}
 
-	items := make([]completionItem, 0, len(fields))
+	items := make([]protocol.CompletionItem, 0, len(fields))
 	for _, field := range fields {
 		detail := string(field.Type)
 		if field.Required {
 			detail += " required"
 		}
-		items = append(items, completionItem{
+		items = append(items, protocol.CompletionItem{
 			Label:      field.Name,
-			Kind:       completionItemKindField,
+			Kind:       protocol.CompletionItemKindField,
 			Detail:     detail,
 			InsertText: field.Name + " = ",
 		})
 	}
 	return sortedCompletions(items)
+}
+
+func actionCompletions() []protocol.CompletionItem {
+	return sortedCompletions([]protocol.CompletionItem{
+		{Label: "exec", Kind: protocol.CompletionItemKindModule, Detail: "run external command", InsertText: "exec()"},
+		{Label: "shell", Kind: protocol.CompletionItemKindModule, Detail: "run shell script", InsertText: "shell(\"\")"},
+	})
 }
 
 func (s *Server) ruleSchema(kind string) (buildplugin.RuleSchema, bool) {
@@ -125,7 +133,7 @@ func coreFields(kind string) []buildplugin.FieldSchema {
 	}
 }
 
-func blockContext(text string, pos position) (bool, string) {
+func blockContext(text string, pos protocol.Position) (bool, string) {
 	offset := offsetAt(text, pos)
 	if offset < 0 {
 		return false, ""
@@ -148,12 +156,35 @@ func blockContext(text string, pos position) (bool, string) {
 	if len(fields) == 0 {
 		return false, ""
 	}
+	if fields[0] == "run" {
+		parentBefore := before[:headerStart]
+		parentOpen := strings.LastIndex(parentBefore, "{")
+		parentClose := strings.LastIndex(parentBefore, "}")
+		if parentOpen != -1 && parentClose < parentOpen {
+			parentHeaderStart := strings.LastIndex(parentBefore[:parentOpen], "\n")
+			if parentHeaderStart == -1 {
+				parentHeaderStart = 0
+			} else {
+				parentHeaderStart++
+			}
+			parentHeader := strings.TrimSpace(parentBefore[parentHeaderStart:parentOpen])
+			parentFields := strings.Fields(parentHeader)
+			if len(parentFields) > 0 {
+				return true, "run:" + parentFields[0]
+			}
+		}
+	}
 	return true, fields[0]
 }
 
-func offsetAt(text string, pos position) int {
-	line := 0
-	character := 0
+func runContext(kind string) (bool, string) {
+	parent, ok := strings.CutPrefix(kind, "run:")
+	return ok, parent
+}
+
+func offsetAt(text string, pos protocol.Position) int {
+	line := uint32(0)
+	character := uint32(0)
 	for index, ch := range text {
 		if line == pos.Line && character == pos.Character {
 			return index
@@ -171,7 +202,7 @@ func offsetAt(text string, pos position) int {
 	return -1
 }
 
-func sortedCompletions(items []completionItem) []completionItem {
+func sortedCompletions(items []protocol.CompletionItem) []protocol.CompletionItem {
 	sort.SliceStable(items, func(i, j int) bool {
 		return items[i].Label < items[j].Label
 	})

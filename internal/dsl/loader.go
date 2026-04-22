@@ -10,6 +10,7 @@ import (
 	"bu1ld/internal/config"
 	buildplugin "bu1ld/internal/plugin"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/samber/oops"
 )
 
@@ -101,7 +102,7 @@ func resolveImportPaths(importerPath string, importPath string) ([]string, error
 	pattern = filepath.Clean(pattern)
 
 	if strings.ContainsAny(pattern, "*?[") {
-		matches, err := filepath.Glob(pattern)
+		matches, err := doublestar.FilepathGlob(pattern, doublestar.WithFilesOnly(), doublestar.WithNoFollow())
 		if err != nil {
 			return nil, err
 		}

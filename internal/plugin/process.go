@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"bu1ld/pkg/pluginapi"
@@ -72,7 +73,7 @@ func (l *ProcessLoader) resolvePath(declaration Declaration) (string, error) {
 			}
 			return filepath.Join(localPluginDir(l.options), declaration.Path), nil
 		}
-		return pluginInstallPath(localPluginDir(l.options), declaration), nil
+		return l.resolveInstalledPath(localPluginDir(l.options), declaration)
 	case SourceGlobal:
 		if declaration.Path != "" {
 			if filepath.IsAbs(declaration.Path) {
@@ -80,23 +81,80 @@ func (l *ProcessLoader) resolvePath(declaration Declaration) (string, error) {
 			}
 			return filepath.Join(globalPluginDir(l.options.GlobalDir), declaration.Path), nil
 		}
-		return pluginInstallPath(globalPluginDir(l.options.GlobalDir), declaration), nil
+		return l.resolveInstalledPath(globalPluginDir(l.options.GlobalDir), declaration)
 	default:
 		return "", fmt.Errorf("%s plugin %q is not process-backed", declaration.Source, declaration.Namespace)
 	}
 }
 
-func pluginInstallPath(root string, declaration Declaration) string {
-	id := declaration.ID
-	if id == "" {
-		id = declaration.Namespace
+func (l *ProcessLoader) resolveInstalledPath(root string, declaration Declaration) (string, error) {
+	expected := pluginInstallPath(root, declaration)
+	if fileExists(expected) {
+		return expected, nil
 	}
+	path, ok, err := discoverInstalledPlugin(root, declaration)
+	if err != nil {
+		return "", err
+	}
+	if ok {
+		return path, nil
+	}
+	return expected, nil
+}
+
+func pluginInstallPath(root string, declaration Declaration) string {
+	id := pluginID(declaration)
 	parts := []string{root, id}
 	if declaration.Version != "" {
 		parts = append(parts, declaration.Version)
 	}
 	parts = append(parts, id)
 	return filepath.Join(parts...)
+}
+
+func discoverInstalledPlugin(root string, declaration Declaration) (string, bool, error) {
+	patterns := pluginDiscoveryPatterns(declaration)
+	for _, pattern := range patterns {
+		matches, err := hplugin.Discover(pattern, root)
+		if err != nil {
+			return "", false, err
+		}
+		sort.Strings(matches)
+		for _, match := range matches {
+			if fileExists(match) {
+				return match, true, nil
+			}
+		}
+	}
+	return "", false, nil
+}
+
+func pluginDiscoveryPatterns(declaration Declaration) []string {
+	id := pluginID(declaration)
+	if declaration.Version != "" {
+		return []string{
+			filepath.Join(id, declaration.Version, id),
+			filepath.Join(id, declaration.Version, "*"),
+		}
+	}
+	return []string{
+		filepath.Join(id, "*", id),
+		filepath.Join(id, "*", "*"),
+		id,
+		id + "*",
+	}
+}
+
+func pluginID(declaration Declaration) string {
+	if declaration.ID != "" {
+		return declaration.ID
+	}
+	return declaration.Namespace
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 func localPluginDir(options LoadOptions) string {

@@ -1,7 +1,6 @@
 package lsp
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,9 +13,9 @@ import (
 	"bu1ld/internal/dsl"
 
 	"github.com/DaiYuANg/arcgo/dix"
+	"go.lsp.dev/jsonrpc2"
+	"go.lsp.dev/protocol"
 )
-
-const textDocumentSyncFull = 1
 
 var dslPositionPattern = regexp.MustCompile(`dsl:(\d+):(\d+):`)
 
@@ -24,6 +23,7 @@ type Server struct {
 	parser *dsl.Parser
 	in     io.Reader
 	out    io.Writer
+	conn   jsonrpc2.Conn
 	docs   map[string]string
 }
 
@@ -71,301 +71,142 @@ func NewDixApp(in io.Reader, out io.Writer) *dix.App {
 }
 
 func (s *Server) Serve(ctx context.Context) error {
-	reader := bufio.NewReader(s.in)
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		payload, err := readMessage(reader)
-		if errors.Is(err, io.EOF) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if err := s.handle(ctx, payload); errors.Is(err, io.EOF) {
-			return nil
-		} else if err != nil {
-			return err
-		}
+	s.conn = jsonrpc2.NewConn(jsonrpc2.NewStream(readWriteCloser{
+		Reader: s.in,
+		Writer: s.out,
+	}))
+	s.conn.Go(ctx, s.handle)
+	<-s.conn.Done()
+	err := s.conn.Err()
+	if err == nil || isStreamEOF(err) {
+		return nil
 	}
+	return err
 }
 
-func (s *Server) handle(_ context.Context, payload []byte) error {
-	var request rpcRequest
-	if err := json.Unmarshal(payload, &request); err != nil {
-		return err
-	}
-
-	switch request.Method {
+func (s *Server) handle(ctx context.Context, reply jsonrpc2.Replier, request jsonrpc2.Request) error {
+	switch request.Method() {
 	case "initialize":
-		return s.respond(request.ID, initializeResult{
-			Capabilities: serverCapabilities{
-				TextDocumentSync: textDocumentSyncFull,
-				CompletionProvider: completionOptions{
+		return reply(ctx, protocol.InitializeResult{
+			Capabilities: protocol.ServerCapabilities{
+				TextDocumentSync: protocol.TextDocumentSyncKindFull,
+				CompletionProvider: &protocol.CompletionOptions{
 					TriggerCharacters: []string{".", " ", "="},
 				},
 			},
-		})
+		}, nil)
 	case "initialized":
-		return nil
+		return reply(ctx, nil, nil)
 	case "shutdown":
-		return s.respond(request.ID, nil)
+		return reply(ctx, nil, nil)
 	case "exit":
+		_ = reply(ctx, nil, nil)
 		return io.EOF
 	case "textDocument/didOpen":
-		var params didOpenParams
-		if err := json.Unmarshal(request.Params, &params); err != nil {
+		var params protocol.DidOpenTextDocumentParams
+		if err := decodeParams(request, &params); err != nil {
 			return err
 		}
-		s.docs[params.TextDocument.URI] = params.TextDocument.Text
-		return s.publishDiagnostics(params.TextDocument.URI, params.TextDocument.Text)
+		uri := string(params.TextDocument.URI)
+		s.docs[uri] = params.TextDocument.Text
+		if err := s.publishDiagnostics(ctx, params.TextDocument.URI, params.TextDocument.Text); err != nil {
+			return err
+		}
+		return reply(ctx, nil, nil)
 	case "textDocument/didChange":
-		var params didChangeParams
-		if err := json.Unmarshal(request.Params, &params); err != nil {
+		var params protocol.DidChangeTextDocumentParams
+		if err := decodeParams(request, &params); err != nil {
 			return err
 		}
-		text := s.docs[params.TextDocument.URI]
+		uri := string(params.TextDocument.URI)
+		text := s.docs[uri]
 		if len(params.ContentChanges) > 0 {
 			text = params.ContentChanges[len(params.ContentChanges)-1].Text
 		}
-		s.docs[params.TextDocument.URI] = text
-		return s.publishDiagnostics(params.TextDocument.URI, text)
+		s.docs[uri] = text
+		if err := s.publishDiagnostics(ctx, params.TextDocument.URI, text); err != nil {
+			return err
+		}
+		return reply(ctx, nil, nil)
 	case "textDocument/didClose":
-		var params didCloseParams
-		if err := json.Unmarshal(request.Params, &params); err != nil {
+		var params protocol.DidCloseTextDocumentParams
+		if err := decodeParams(request, &params); err != nil {
 			return err
 		}
-		delete(s.docs, params.TextDocument.URI)
-		return s.notify("textDocument/publishDiagnostics", publishDiagnosticsParams{
+		delete(s.docs, string(params.TextDocument.URI))
+		if err := s.notify(ctx, "textDocument/publishDiagnostics", protocol.PublishDiagnosticsParams{
 			URI:         params.TextDocument.URI,
-			Diagnostics: []diagnostic{},
-		})
-	case "textDocument/completion":
-		var params completionParams
-		if err := json.Unmarshal(request.Params, &params); err != nil {
+			Diagnostics: []protocol.Diagnostic{},
+		}); err != nil {
 			return err
 		}
-		text := s.docs[params.TextDocument.URI]
-		return s.respond(request.ID, s.completions(text, params.Position))
-	default:
-		if request.ID != nil {
-			return s.respondError(request.ID, -32601, "method not found")
+		return reply(ctx, nil, nil)
+	case "textDocument/completion":
+		var params protocol.CompletionParams
+		if err := decodeParams(request, &params); err != nil {
+			return err
 		}
-		return nil
+		text := s.docs[string(params.TextDocument.URI)]
+		return reply(ctx, s.completions(text, params.Position), nil)
+	default:
+		return jsonrpc2.MethodNotFoundHandler(ctx, reply, request)
 	}
 }
 
-func (s *Server) publishDiagnostics(uri string, text string) error {
+func (s *Server) publishDiagnostics(ctx context.Context, uri protocol.DocumentURI, text string) error {
 	_, err := s.parser.Parse(strings.NewReader(text))
-	diagnostics := []diagnostic{}
+	diagnostics := []protocol.Diagnostic{}
 	if err != nil {
 		diagnostics = append(diagnostics, diagnosticFromError(err))
 	}
-	return s.notify("textDocument/publishDiagnostics", publishDiagnosticsParams{
+	return s.notify(ctx, "textDocument/publishDiagnostics", protocol.PublishDiagnosticsParams{
 		URI:         uri,
 		Diagnostics: diagnostics,
 	})
 }
 
-func diagnosticFromError(err error) diagnostic {
-	line := 0
-	character := 0
+func diagnosticFromError(err error) protocol.Diagnostic {
+	line := uint32(0)
+	character := uint32(0)
 	if match := dslPositionPattern.FindStringSubmatch(err.Error()); len(match) == 3 {
 		if parsed, parseErr := strconv.Atoi(match[1]); parseErr == nil && parsed > 0 {
-			line = parsed - 1
+			line = uint32(parsed - 1)
 		}
 		if parsed, parseErr := strconv.Atoi(match[2]); parseErr == nil && parsed > 0 {
-			character = parsed - 1
+			character = uint32(parsed - 1)
 		}
 	}
-	return diagnostic{
-		Range: rangeValue{
-			Start: position{Line: line, Character: character},
-			End:   position{Line: line, Character: character + 1},
+	return protocol.Diagnostic{
+		Range: protocol.Range{
+			Start: protocol.Position{Line: line, Character: character},
+			End:   protocol.Position{Line: line, Character: character + 1},
 		},
-		Severity: 1,
+		Severity: protocol.DiagnosticSeverityError,
 		Source:   "bu1ld",
 		Message:  err.Error(),
 	}
 }
 
-func readMessage(reader *bufio.Reader) ([]byte, error) {
-	contentLength := 0
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			return nil, err
-		}
-		line = strings.TrimRight(line, "\r\n")
-		if line == "" {
-			break
-		}
-		name, value, ok := strings.Cut(line, ":")
-		if !ok {
-			continue
-		}
-		if strings.EqualFold(strings.TrimSpace(name), "Content-Length") {
-			parsed, err := strconv.Atoi(strings.TrimSpace(value))
-			if err != nil {
-				return nil, err
-			}
-			contentLength = parsed
-		}
-	}
-	if contentLength <= 0 {
-		return nil, fmt.Errorf("missing Content-Length header")
-	}
-	body := make([]byte, contentLength)
-	_, err := io.ReadFull(reader, body)
-	return body, err
+func decodeParams(request jsonrpc2.Request, target any) error {
+	return json.Unmarshal(request.Params(), target)
 }
 
-func (s *Server) respond(id *json.RawMessage, result any) error {
-	if id == nil {
+func (s *Server) notify(ctx context.Context, method string, params any) error {
+	if s.conn == nil {
 		return nil
 	}
-	return s.write(rpcResponse{
-		JSONRPC: "2.0",
-		ID:      id,
-		Result:  result,
-	})
+	return s.conn.Notify(ctx, method, params)
 }
 
-func (s *Server) respondError(id *json.RawMessage, code int, message string) error {
-	return s.write(rpcResponse{
-		JSONRPC: "2.0",
-		ID:      id,
-		Error: &rpcError{
-			Code:    code,
-			Message: message,
-		},
-	})
+func isStreamEOF(err error) bool {
+	return errors.Is(err, io.EOF) || strings.Contains(err.Error(), "EOF")
 }
 
-func (s *Server) notify(method string, params any) error {
-	return s.write(rpcNotification{
-		JSONRPC: "2.0",
-		Method:  method,
-		Params:  params,
-	})
+type readWriteCloser struct {
+	io.Reader
+	io.Writer
 }
 
-func (s *Server) write(message any) error {
-	payload, err := json.Marshal(message)
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(s.out, "Content-Length: %d\r\n\r\n%s", len(payload), payload)
-	return err
-}
-
-type rpcRequest struct {
-	JSONRPC string           `json:"jsonrpc"`
-	ID      *json.RawMessage `json:"id,omitempty"`
-	Method  string           `json:"method"`
-	Params  json.RawMessage  `json:"params,omitempty"`
-}
-
-type rpcResponse struct {
-	JSONRPC string           `json:"jsonrpc"`
-	ID      *json.RawMessage `json:"id"`
-	Result  any              `json:"result,omitempty"`
-	Error   *rpcError        `json:"error,omitempty"`
-}
-
-type rpcNotification struct {
-	JSONRPC string `json:"jsonrpc"`
-	Method  string `json:"method"`
-	Params  any    `json:"params,omitempty"`
-}
-
-type rpcError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
-
-type initializeResult struct {
-	Capabilities serverCapabilities `json:"capabilities"`
-}
-
-type serverCapabilities struct {
-	TextDocumentSync   int               `json:"textDocumentSync"`
-	CompletionProvider completionOptions `json:"completionProvider,omitempty"`
-}
-
-type completionOptions struct {
-	TriggerCharacters []string `json:"triggerCharacters,omitempty"`
-}
-
-type didOpenParams struct {
-	TextDocument textDocumentItem `json:"textDocument"`
-}
-
-type textDocumentItem struct {
-	URI  string `json:"uri"`
-	Text string `json:"text"`
-}
-
-type didChangeParams struct {
-	TextDocument   versionedTextDocumentIdentifier  `json:"textDocument"`
-	ContentChanges []textDocumentContentChangeEvent `json:"contentChanges"`
-}
-
-type versionedTextDocumentIdentifier struct {
-	URI string `json:"uri"`
-}
-
-type textDocumentContentChangeEvent struct {
-	Text string `json:"text"`
-}
-
-type didCloseParams struct {
-	TextDocument textDocumentIdentifier `json:"textDocument"`
-}
-
-type textDocumentIdentifier struct {
-	URI string `json:"uri"`
-}
-
-type completionParams struct {
-	TextDocument textDocumentIdentifier `json:"textDocument"`
-	Position     position               `json:"position"`
-}
-
-type completionList struct {
-	IsIncomplete bool             `json:"isIncomplete"`
-	Items        []completionItem `json:"items"`
-}
-
-type completionItem struct {
-	Label      string `json:"label"`
-	Kind       int    `json:"kind,omitempty"`
-	Detail     string `json:"detail,omitempty"`
-	InsertText string `json:"insertText,omitempty"`
-}
-
-type publishDiagnosticsParams struct {
-	URI         string       `json:"uri"`
-	Diagnostics []diagnostic `json:"diagnostics"`
-}
-
-type diagnostic struct {
-	Range    rangeValue `json:"range"`
-	Severity int        `json:"severity,omitempty"`
-	Source   string     `json:"source,omitempty"`
-	Message  string     `json:"message"`
-}
-
-type rangeValue struct {
-	Start position `json:"start"`
-	End   position `json:"end"`
-}
-
-type position struct {
-	Line      int `json:"line"`
-	Character int `json:"character"`
+func (c readWriteCloser) Close() error {
+	return nil
 }

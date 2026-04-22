@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -109,6 +110,33 @@ func TestProcessLoaderResolvesLocalAndGlobalPaths(t *testing.T) {
 	want := filepath.Join("/home/user/.bu1ld/plugins", "org.bu1ld.java", "0.1.0", "org.bu1ld.java")
 	if global != want {
 		t.Fatalf("global path = %q, want %q", global, want)
+	}
+}
+
+func TestProcessLoaderDiscoversInstalledPluginPath(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	discovered := filepath.Join(root, "org.bu1ld.rust", "0.1.0", "bu1ld-rust")
+	if err := os.MkdirAll(filepath.Dir(discovered), 0o755); err != nil {
+		t.Fatalf("mkdir plugin dir: %v", err)
+	}
+	if err := os.WriteFile(discovered, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("write plugin: %v", err)
+	}
+
+	loader := NewProcessLoader(LoadOptions{LocalDir: root})
+	path, err := loader.resolvePath(Declaration{
+		Namespace: "rust",
+		Source:    SourceLocal,
+		ID:        "org.bu1ld.rust",
+		Version:   "0.1.0",
+	})
+	if err != nil {
+		t.Fatalf("resolve discovered plugin path: %v", err)
+	}
+	if path != discovered {
+		t.Fatalf("discovered path = %q, want %q", path, discovered)
 	}
 }
 

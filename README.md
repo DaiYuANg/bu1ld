@@ -87,16 +87,32 @@ go.binary build {
 Block names are typed symbols instead of string labels. The `$(...)` form is
 evaluated by `expr-lang/expr`, while the outer build script syntax is parsed
 into bu1ld's own AST. Imports are resolved relative to the file that declares
-them and also support glob patterns such as `import "tasks/*.bu1ld"`.
+them and also support doublestar glob patterns such as
+`import "tasks/**/*.bu1ld"`.
 
 Custom tasks can use the same built-in functions and expression context:
 
 ```text
 task package {
   outputs = [$("dist/" + target)]
-  command = ["sh", "-c", concat("echo ", target)]
+  run {
+    shell(concat("echo ", target))
+  }
+}
+
+task archive {
+  deps = [build]
+  inputs = ["dist/bu1ld"]
+  outputs = [$("dist/" + target + ".tgz")]
+  run {
+    exec("tar", "-czf", $("dist/" + target + ".tgz"), "dist/bu1ld")
+  }
 }
 ```
+
+`shell(...)` actions are parsed as POSIX shell through `mvdan.cc/sh/v3` before
+execution. Use `exec(...)` when the task should avoid shell parsing and pass an
+argv list directly to the process runner.
 
 Plugins can come from three sources:
 
@@ -124,7 +140,9 @@ Local plugins are external process plugins resolved under the project
 `.bu1ld/plugins` directory by default. Global plugins are resolved under the
 user home `.bu1ld/plugins` directory by default. A `path = "./..."` value can be
 used for local plugin development. External process plugins implement the public
-`pkg/pluginapi` protocol and are launched through HashiCorp `go-plugin`.
+`pkg/pluginapi` protocol and are launched through HashiCorp `go-plugin`. When
+the exact install path is missing, local and global plugin resolution falls back
+to `go-plugin` discovery under the corresponding plugin directory.
 
 ## Usage
 

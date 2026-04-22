@@ -107,7 +107,7 @@ func (p *Parser) parseBlock() (*BlockNode, error) {
 			return nil, err
 		}
 	}
-	assignments, err := p.parseAssignmentBlock(kind)
+	assignments, actions, err := p.parseBodyBlock(kind)
 	if err != nil {
 		return nil, err
 	}
@@ -116,6 +116,7 @@ func (p *Parser) parseBlock() (*BlockNode, error) {
 		Kind:        kind,
 		Name:        name,
 		Assignments: assignments,
+		Actions:     actions,
 		Pos:         pos,
 	}, nil
 }
@@ -129,7 +130,7 @@ func (p *Parser) parseRule() (*RuleNode, error) {
 	if !ok {
 		return nil, p.errorf(p.cur, "expected rule call")
 	}
-	assignments, err := p.parseAssignmentBlock(call.Name)
+	assignments, _, err := p.parseBodyBlock(call.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -141,24 +142,67 @@ func (p *Parser) parseRule() (*RuleNode, error) {
 	}, nil
 }
 
-func (p *Parser) parseAssignmentBlock(name string) ([]*AssignmentNode, error) {
+func (p *Parser) parseBodyBlock(name string) ([]*AssignmentNode, []*ActionNode, error) {
 	if err := p.expect(TokenLBrace); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	assignments := []*AssignmentNode{}
+	actions := []*ActionNode{}
 	for p.cur.Type != TokenRBrace {
 		if p.cur.Type == TokenEOF {
-			return nil, p.errorf(p.cur, "unterminated block %q", name)
+			return nil, nil, p.errorf(p.cur, "unterminated block %q", name)
+		}
+		if p.cur.Type == TokenIdent && p.cur.Literal == "run" && p.peek.Type == TokenLBrace {
+			if name != "task" {
+				return nil, nil, p.errorf(p.cur, "run block is only supported in task blocks")
+			}
+			parsed, err := p.parseRunBlock()
+			if err != nil {
+				return nil, nil, err
+			}
+			actions = append(actions, parsed...)
+			continue
 		}
 		assignment, err := p.parseAssignment()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		assignments = append(assignments, assignment)
 	}
 	p.next()
-	return assignments, nil
+	return assignments, actions, nil
+}
+
+func (p *Parser) parseRunBlock() ([]*ActionNode, error) {
+	p.next()
+	if err := p.expect(TokenLBrace); err != nil {
+		return nil, err
+	}
+
+	actions := []*ActionNode{}
+	for p.cur.Type != TokenRBrace {
+		if p.cur.Type == TokenEOF {
+			return nil, p.errorf(p.cur, "unterminated run block")
+		}
+		if p.cur.Type != TokenIdent || p.peek.Type != TokenLParen {
+			return nil, p.errorf(p.cur, "expected action call, got %s", p.cur.Type)
+		}
+		expr, err := p.parseCall()
+		if err != nil {
+			return nil, err
+		}
+		call, ok := expr.(*CallExpr)
+		if !ok {
+			return nil, p.errorf(p.cur, "expected action call")
+		}
+		actions = append(actions, &ActionNode{
+			Call: call,
+			Pos:  call.Position(),
+		})
+	}
+	p.next()
+	return actions, nil
 }
 
 func (p *Parser) parseAssignment() (*AssignmentNode, error) {

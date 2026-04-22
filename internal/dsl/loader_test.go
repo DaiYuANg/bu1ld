@@ -18,13 +18,13 @@ plugin go {
   id = "builtin.go"
 }
 
-import "tasks/*.bu1ld"
+import "tasks/**/*.bu1ld"
 
 task root {
   command = []
 }
 `)
-	writeDSLFile(t, projectDir, "tasks/go.bu1ld", `
+	writeDSLFile(t, projectDir, "tasks/go/test.bu1ld", `
 go.test test {
   packages = ["./..."]
 }

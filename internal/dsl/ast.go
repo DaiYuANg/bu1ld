@@ -37,6 +37,7 @@ type BlockNode struct {
 	Kind        string
 	Name        Expr
 	Assignments []*AssignmentNode
+	Actions     []*ActionNode
 	Pos         Position
 }
 
@@ -69,6 +70,18 @@ type AssignmentNode struct {
 }
 
 func (n *AssignmentNode) Position() Position {
+	if n == nil {
+		return Position{}
+	}
+	return n.Pos
+}
+
+type ActionNode struct {
+	Call *CallExpr
+	Pos  Position
+}
+
+func (n *ActionNode) Position() Position {
 	if n == nil {
 		return Position{}
 	}
