@@ -8,11 +8,12 @@ import (
 
 func newGraphCommand(opts *options) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "graph",
+		Use:   "graph [task...]",
 		Short: "Print the task graph",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCommand(cmd, opts, app.CommandRequest{
-				Kind: app.CommandGraph,
+				Kind:    app.CommandGraph,
+				Targets: args,
 			})
 		},
 	}

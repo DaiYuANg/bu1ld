@@ -38,6 +38,69 @@ task "build" {
 	}
 }
 
+func TestGraphCommandWithTarget(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	writeBuildFile(t, projectDir, `
+task "prepare" {
+  command = []
+}
+
+task "test" {
+  command = []
+}
+
+task "build" {
+  deps = ["prepare", "test"]
+  command = []
+}
+`)
+
+	var out bytes.Buffer
+	cmd := NewRootCommand(&out)
+	cmd.SetArgs([]string{"--project-dir", projectDir, "graph", "build"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	got := out.String()
+	want := "prepare\ntest\nbuild -> prepare, test\n"
+	if got != want {
+		t.Fatalf("output = %q, want %q", got, want)
+	}
+}
+
+func TestTasksCommand(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	writeBuildFile(t, projectDir, `
+task "test" {
+  command = []
+}
+
+task "build" {
+  command = []
+}
+`)
+
+	var out bytes.Buffer
+	cmd := NewRootCommand(&out)
+	cmd.SetArgs([]string{"--project-dir", projectDir, "tasks"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	got := out.String()
+	want := "build\ntest\n"
+	if got != want {
+		t.Fatalf("output = %q, want %q", got, want)
+	}
+}
+
 func TestBuildCommandRunsNoopTask(t *testing.T) {
 	t.Parallel()
 

@@ -5,6 +5,7 @@
 The first version includes:
 
 - Cobra command layout: `build`, `test`, `graph`, `clean`
+- Task discovery via `tasks` and targeted graph planning via `graph [task...]`
 - Multi-process `cmd/cli`, `cmd/daemon`, and `cmd/server` executables
 - A small `build.bu1ld` DSL
 - Task graph planning with dependency ordering and cycle detection
@@ -58,6 +59,8 @@ task "test" {
 
 ```bash
 go run ./cmd/cli graph
+go run ./cmd/cli graph build
+go run ./cmd/cli tasks
 go run ./cmd/cli test
 go run ./cmd/cli build
 go run ./cmd/cli clean

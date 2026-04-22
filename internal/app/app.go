@@ -13,6 +13,7 @@ import (
 	"bu1ld/internal/dsl"
 	"bu1ld/internal/engine"
 	"bu1ld/internal/events"
+	"bu1ld/internal/graph"
 	"bu1ld/internal/snapshot"
 
 	"github.com/DaiYuANg/arcgo/dix"
@@ -27,6 +28,7 @@ const (
 	CommandBuild             CommandKind = "build"
 	CommandTest              CommandKind = "test"
 	CommandGraph             CommandKind = "graph"
+	CommandTasks             CommandKind = "tasks"
 	CommandClean             CommandKind = "clean"
 	CommandDaemonStatus      CommandKind = "daemon.status"
 	CommandDaemonStart       CommandKind = "daemon.start"
@@ -80,13 +82,17 @@ func (a *App) Run(ctx context.Context) error {
 		}
 		return a.engine.Run(ctx, project, a.request.Targets)
 	case CommandGraph:
-		project, err := a.loader.Load()
+		project, err := a.loadProject()
 		if err != nil {
-			return oops.In("bu1ld.app").
-				With("command", a.request.Kind).
-				Wrapf(err, "load project")
+			return err
 		}
 		return a.printGraph(project)
+	case CommandTasks:
+		project, err := a.loadProject()
+		if err != nil {
+			return err
+		}
+		return a.printTasks(project)
 	case CommandClean:
 		if err := a.store.Clean(); err != nil {
 			return oops.In("bu1ld.app").
@@ -114,15 +120,57 @@ func (a *App) Run(ctx context.Context) error {
 	}
 }
 
+func (a *App) loadProject() (build.Project, error) {
+	project, err := a.loader.Load()
+	if err != nil {
+		return build.Project{}, oops.In("bu1ld.app").
+			With("command", a.request.Kind).
+			Wrapf(err, "load project")
+	}
+	return project, nil
+}
+
 func (a *App) printGraph(project build.Project) error {
-	for _, name := range project.TaskNames() {
-		task, _ := project.FindTask(name)
+	tasks, err := a.graphTasks(project)
+	if err != nil {
+		return err
+	}
+	for _, task := range tasks {
 		deps := build.Values(task.Deps)
-		line := name
+		line := task.Name
 		if len(deps) > 0 {
 			line += " -> " + strings.Join(deps, ", ")
 		}
 		if _, err := fmt.Fprintln(a.output, line); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *App) graphTasks(project build.Project) ([]build.Task, error) {
+	if len(a.request.Targets) == 0 {
+		tasks := make([]build.Task, 0, len(project.TaskNames()))
+		for _, name := range project.TaskNames() {
+			task, _ := project.FindTask(name)
+			tasks = append(tasks, task)
+		}
+		return tasks, nil
+	}
+
+	plan, err := graph.Plan(project, a.request.Targets)
+	if err != nil {
+		return nil, oops.In("bu1ld.app").
+			With("command", a.request.Kind).
+			With("targets", a.request.Targets).
+			Wrapf(err, "plan graph")
+	}
+	return plan.Values(), nil
+}
+
+func (a *App) printTasks(project build.Project) error {
+	for _, name := range project.TaskNames() {
+		if _, err := fmt.Fprintln(a.output, name); err != nil {
 			return err
 		}
 	}
