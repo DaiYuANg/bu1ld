@@ -144,6 +144,20 @@ used for local plugin development. External process plugins implement the public
 the exact install path is missing, local and global plugin resolution falls back
 to `go-plugin` discovery under the corresponding plugin directory.
 
+Installed plugins can include a manifest at
+`.bu1ld/plugins/<id>/<version>/plugin.json` or
+`~/.bu1ld/plugins/<id>/<version>/plugin.json`:
+
+```json
+{
+  "id": "org.bu1ld.rust",
+  "namespace": "rust",
+  "version": "0.1.0",
+  "binary": "bu1ld-rust",
+  "rules": [{ "name": "binary" }]
+}
+```
+
 ## Usage
 
 ```bash
@@ -155,15 +169,21 @@ go run ./cmd/cli build
 go run ./cmd/cli clean
 go run ./cmd/cli plugins list
 go run ./cmd/cli plugins doctor
+go run ./cmd/cli plugins lock
 go run ./cmd/daemon status
 go run ./cmd/server status
 go run ./cmd/lsp stdio
 ```
 
-`plugins list` prints builtin and declared plugins with source, namespace,
-resolved path, rules, and status. `plugins doctor` also checks the local and
-global plugin directories and returns a non-zero exit when a declared plugin is
-missing, not executable, or cannot complete the `go-plugin` handshake.
+`plugins list` prints builtin, declared, and manifest-discovered plugins with
+source, namespace, resolved path, rules, and status. `plugins doctor` also
+checks the local and global plugin directories and returns a non-zero exit when
+a plugin is missing, not executable, has an invalid manifest, or cannot complete
+the `go-plugin` handshake.
+
+`plugins lock` writes `bu1ld.lock` with declared plugin source, namespace, id,
+version, resolved path, and binary checksum. When `bu1ld.lock` exists,
+`plugins doctor` verifies locked plugin paths and checksums.
 
 Optional config files are loaded through `configx` from `bu1ld.yaml`, `bu1ld.toml`, `bu1ld.json`, or their `.bu1ld.*` variants.
 

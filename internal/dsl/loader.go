@@ -59,6 +59,10 @@ func (l *Loader) PluginSchemas() ([]buildplugin.Metadata, error) {
 	return l.parser.Schemas()
 }
 
+func (l *Loader) LockFilePath() string {
+	return filepath.Join(l.cfg.WorkDir, buildplugin.LockFileName)
+}
+
 func (l *Loader) loadFile(path string, stack map[string]bool, seen map[string]bool) (*File, error) {
 	absPath, err := filepath.Abs(path)
 	if err != nil {

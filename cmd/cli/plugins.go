@@ -29,6 +29,13 @@ func newPluginsCommand(opts *options) *cobra.Command {
 				return runCommand(cmd, opts, app.CommandRequest{Kind: app.CommandPluginsDoctor})
 			},
 		},
+		&cobra.Command{
+			Use:   "lock",
+			Short: "Write the plugin lockfile",
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return runCommand(cmd, opts, app.CommandRequest{Kind: app.CommandPluginsLock})
+			},
+		},
 	)
 	return cmd
 }

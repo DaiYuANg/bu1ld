@@ -96,7 +96,14 @@ func (l *ProcessLoader) resolveInstalledPath(root string, declaration Declaratio
 	if fileExists(expected) {
 		return expected, nil
 	}
-	path, ok, err := discoverInstalledPlugin(root, declaration)
+	path, ok, err := ResolveManifestPath(root, declaration)
+	if err != nil {
+		return "", err
+	}
+	if ok {
+		return path, nil
+	}
+	path, ok, err = discoverInstalledPlugin(root, declaration)
 	if err != nil {
 		return "", err
 	}

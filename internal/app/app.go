@@ -32,6 +32,7 @@ const (
 	CommandClean             CommandKind = "clean"
 	CommandPluginsList       CommandKind = "plugins.list"
 	CommandPluginsDoctor     CommandKind = "plugins.doctor"
+	CommandPluginsLock       CommandKind = "plugins.lock"
 	CommandDaemonStatus      CommandKind = "daemon.status"
 	CommandDaemonStart       CommandKind = "daemon.start"
 	CommandDaemonStop        CommandKind = "daemon.stop"
@@ -107,6 +108,8 @@ func (a *App) Run(ctx context.Context) error {
 		return a.printPlugins(ctx, false)
 	case CommandPluginsDoctor:
 		return a.printPluginsDoctor(ctx)
+	case CommandPluginsLock:
+		return a.writePluginsLock(ctx)
 	case CommandDaemonStatus:
 		_, err := fmt.Fprintln(a.output, "daemon status: unavailable (not implemented)")
 		return err
