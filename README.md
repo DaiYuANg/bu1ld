@@ -11,6 +11,7 @@ The first version includes:
 - A basic DSL language server with parse diagnostics, semantic diagnostics, and schema completions
 - A plugin registry with builtin, local, and global plugin sources
 - Task graph planning with dependency ordering and cycle detection
+- A configuration cache for unchanged build scripts and plugin binaries
 - Input fingerprints and a local action cache
 - Cached output blobs for declared outputs
 - A full `arcgo/dix` runtime per subcommand
@@ -184,6 +185,12 @@ the `go-plugin` handshake.
 `plugins lock` writes `bu1ld.lock` with declared plugin source, namespace, id,
 version, resolved path, and binary checksum. When `bu1ld.lock` exists,
 `plugins doctor` verifies locked plugin paths and checksums.
+
+Project configuration is cached under `.bu1ld/cache/config/project.json`.
+`bu1ld` reuses the evaluated task graph when the root build file, imported
+files, import glob expansions, environment variables read through `env(...)`,
+and external plugin binaries are unchanged. Pass `--no-cache` to bypass both
+the configuration cache and build action cache.
 
 Optional config files are loaded through `configx` from `bu1ld.yaml`, `bu1ld.toml`, `bu1ld.json`, or their `.bu1ld.*` variants.
 

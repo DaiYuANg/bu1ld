@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"sort"
 	"strings"
 
 	"bu1ld/internal/build"
@@ -34,6 +35,7 @@ type evalContext struct {
 	context  context.Context
 	registry *buildplugin.Registry
 	vars     map[string]any
+	envs     *envTracker
 }
 
 type PluginDeclaration struct {
@@ -41,28 +43,40 @@ type PluginDeclaration struct {
 	Pos         Position
 }
 
+type envDependency struct {
+	Name  string
+	Value string
+}
+
 func Evaluate(file *File) (build.Project, error) {
 	return EvaluateWithRegistry(file, NewParser().registry.CloneWithOptions(buildplugin.LoadOptions{}))
 }
 
 func EvaluateWithRegistry(file *File, registry *buildplugin.Registry) (build.Project, error) {
+	project, _, err := evaluateWithRegistry(file, registry)
+	return project, err
+}
+
+func evaluateWithRegistry(file *File, registry *buildplugin.Registry) (build.Project, []envDependency, error) {
 	defer registry.Close()
 
 	tasks := collectionx.NewList[build.Task]()
 	seen := collectionx.NewSet[string]()
+	envs := newEnvTracker()
 	ctx := evalContext{
 		context:  context.Background(),
 		registry: registry,
 		vars:     map[string]any{},
+		envs:     envs,
 	}
 
-	declarations, err := PluginDeclarations(file)
+	declarations, err := pluginDeclarations(file, ctx)
 	if err != nil {
-		return build.Project{}, err
+		return build.Project{}, nil, err
 	}
 	for _, item := range declarations {
 		if err := registry.Declare(ctx.context, item.Declaration); err != nil {
-			return build.Project{}, fmt.Errorf("dsl:%d:%d: %w", item.Pos.Line, item.Pos.Column, err)
+			return build.Project{}, nil, fmt.Errorf("dsl:%d:%d: %w", item.Pos.Line, item.Pos.Column, err)
 		}
 	}
 
@@ -72,11 +86,11 @@ func EvaluateWithRegistry(file *File, registry *buildplugin.Registry) (build.Pro
 		}
 		generated, err := evaluateStatement(statement, ctx)
 		if err != nil {
-			return build.Project{}, err
+			return build.Project{}, nil, err
 		}
 		for _, task := range generated {
 			if seen.Contains(task.Name) {
-				return build.Project{}, fmt.Errorf(
+				return build.Project{}, nil, fmt.Errorf(
 					"dsl:%d:%d: duplicate task %q",
 					statement.Position().Line,
 					statement.Position().Column,
@@ -88,15 +102,18 @@ func EvaluateWithRegistry(file *File, registry *buildplugin.Registry) (build.Pro
 		}
 	}
 
-	return build.Project{Tasks: tasks}, nil
+	return build.Project{Tasks: tasks}, envs.Values(), nil
 }
 
 func PluginDeclarations(file *File) ([]PluginDeclaration, error) {
-	declarations := []PluginDeclaration{}
-	ctx := evalContext{
+	return pluginDeclarations(file, evalContext{
 		context: context.Background(),
 		vars:    map[string]any{},
-	}
+	})
+}
+
+func pluginDeclarations(file *File, ctx evalContext) ([]PluginDeclaration, error) {
+	declarations := []PluginDeclaration{}
 	for _, statement := range file.Statements {
 		node, ok := statement.(*BlockNode)
 		if !ok || node.Kind != "plugin" {
@@ -498,7 +515,7 @@ func evaluateEnv(call *CallExpr, ctx evalContext) (value, error) {
 			return value{}, err
 		}
 	}
-	if result := os.Getenv(name); result != "" {
+	if result := ctx.readEnv(name); result != "" {
 		return value{kind: valueString, text: result}, nil
 	}
 	return value{kind: valueString, text: fallback}, nil
@@ -585,14 +602,19 @@ func (c evalContext) with(key string, item any) evalContext {
 		vars[k] = v
 	}
 	vars[key] = item
-	return evalContext{vars: vars}
+	return evalContext{
+		context:  c.context,
+		registry: c.registry,
+		vars:     vars,
+		envs:     c.envs,
+	}
 }
 
 func (c evalContext) exprEnv() map[string]any {
 	env := map[string]any{
 		"os":     runtime.GOOS,
 		"arch":   runtime.GOARCH,
-		"env":    exprEnv,
+		"env":    c.readEnv,
 		"concat": exprConcat,
 		"list":   exprList,
 	}
@@ -602,8 +624,12 @@ func (c evalContext) exprEnv() map[string]any {
 	return env
 }
 
-func exprEnv(name string, fallback ...string) string {
-	if result := os.Getenv(name); result != "" {
+func (c evalContext) readEnv(name string, fallback ...string) string {
+	result := os.Getenv(name)
+	if c.envs != nil {
+		c.envs.Set(name, result)
+	}
+	if result != "" {
 		return result
 	}
 	if len(fallback) > 0 {
@@ -622,6 +648,37 @@ func exprConcat(items ...any) string {
 
 func exprList(items ...any) []any {
 	return items
+}
+
+type envTracker struct {
+	items collectionx.Map[string, string]
+}
+
+func newEnvTracker() *envTracker {
+	return &envTracker{items: collectionx.NewMap[string, string]()}
+}
+
+func (t *envTracker) Set(name string, value string) {
+	if t == nil || name == "" {
+		return
+	}
+	t.items.Set(name, value)
+}
+
+func (t *envTracker) Values() []envDependency {
+	if t == nil {
+		return nil
+	}
+	items := collectionx.NewList[envDependency]()
+	t.items.Range(func(name string, value string) bool {
+		items.Add(envDependency{Name: name, Value: value})
+		return true
+	})
+	values := items.Values()
+	sort.SliceStable(values, func(i, j int) bool {
+		return values[i].Name < values[j].Name
+	})
+	return values
 }
 
 type fieldSet struct {

@@ -63,17 +63,25 @@ func New(workDir string, buildFile string, cacheDir string, noCache bool) (Confi
 }
 
 func (c Config) BuildFilePath() string {
-	if filepath.IsAbs(c.BuildFile) {
-		return c.BuildFile
+	buildFile := c.BuildFile
+	if buildFile == "" {
+		buildFile = "build.bu1ld"
 	}
-	return filepath.Join(c.WorkDir, c.BuildFile)
+	if filepath.IsAbs(buildFile) {
+		return buildFile
+	}
+	return filepath.Join(c.WorkDir, buildFile)
 }
 
 func (c Config) CachePath() string {
-	if filepath.IsAbs(c.CacheDir) {
-		return c.CacheDir
+	cacheDir := c.CacheDir
+	if cacheDir == "" {
+		cacheDir = ".bu1ld/cache"
 	}
-	return filepath.Join(c.WorkDir, c.CacheDir)
+	if filepath.IsAbs(cacheDir) {
+		return cacheDir
+	}
+	return filepath.Join(c.WorkDir, cacheDir)
 }
 
 func (c Config) StateDir() string {

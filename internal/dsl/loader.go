@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"bu1ld/internal/build"
 	"bu1ld/internal/config"
 	buildplugin "bu1ld/internal/plugin"
 
+	"github.com/DaiYuANg/arcgo/collectionx"
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/samber/oops"
 )
@@ -27,28 +29,43 @@ func NewLoader(cfg config.Config, parser *Parser) *Loader {
 }
 
 func (l *Loader) Load() (build.Project, error) {
-	file, err := l.LoadFile()
+	if !l.cfg.NoCache {
+		if project, ok := l.loadConfigCache(); ok {
+			return project, nil
+		}
+	}
+
+	file, filePaths, imports, err := l.loadFileSet()
 	if err != nil {
 		return build.Project{}, err
 	}
-	project, err := EvaluateWithRegistry(file, l.parser.registry.CloneWithOptions(buildplugin.LoadOptions{ProjectDir: l.cfg.WorkDir}))
+	project, envs, err := evaluateWithRegistry(file, l.parser.registry.CloneWithOptions(buildplugin.LoadOptions{ProjectDir: l.cfg.WorkDir}))
 	if err != nil {
 		return build.Project{}, oops.In("bu1ld.dsl").
 			With("file", l.cfg.BuildFilePath()).
 			Wrapf(err, "parse build file")
 	}
+	if !l.cfg.NoCache {
+		_ = l.saveConfigCache(project, file, filePaths, imports, envs)
+	}
 	return project, nil
 }
 
 func (l *Loader) LoadFile() (*File, error) {
+	file, _, _, err := l.loadFileSet()
+	return file, err
+}
+
+func (l *Loader) loadFileSet() (*File, []string, []importDependency, error) {
 	path := l.cfg.BuildFilePath()
-	file, err := l.loadFile(path, map[string]bool{}, map[string]bool{})
+	collector := newLoadCollector()
+	file, err := l.loadFile(path, map[string]bool{}, map[string]bool{}, collector)
 	if err != nil {
-		return nil, oops.In("bu1ld.dsl").
+		return nil, nil, nil, oops.In("bu1ld.dsl").
 			With("file", path).
 			Wrapf(err, "load build file")
 	}
-	return file, nil
+	return file, collector.filePaths(), collector.imports.Values(), nil
 }
 
 func (l *Loader) LoadOptions() buildplugin.LoadOptions {
@@ -63,7 +80,7 @@ func (l *Loader) LockFilePath() string {
 	return filepath.Join(l.cfg.WorkDir, buildplugin.LockFileName)
 }
 
-func (l *Loader) loadFile(path string, stack map[string]bool, seen map[string]bool) (*File, error) {
+func (l *Loader) loadFile(path string, stack map[string]bool, seen map[string]bool, collector *loadCollector) (*File, error) {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
@@ -83,6 +100,7 @@ func (l *Loader) loadFile(path string, stack map[string]bool, seen map[string]bo
 	if err != nil {
 		return nil, err
 	}
+	collector.addFile(absPath)
 	file, err := l.parser.ParseFile(string(data))
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", absPath, err)
@@ -100,8 +118,9 @@ func (l *Loader) loadFile(path string, stack map[string]bool, seen map[string]bo
 		if err != nil {
 			return nil, fmt.Errorf("%s:%d:%d: %w", absPath, importNode.Position().Line, importNode.Position().Column, err)
 		}
+		collector.addImport(absPath, importNode.Path, importedPaths)
 		for _, importedPath := range importedPaths {
-			imported, err := l.loadFile(importedPath, stack, seen)
+			imported, err := l.loadFile(importedPath, stack, seen, collector)
 			if err != nil {
 				return nil, err
 			}
@@ -129,7 +148,59 @@ func resolveImportPaths(importerPath string, importPath string) ([]string, error
 		if len(matches) == 0 {
 			return nil, fmt.Errorf("import %q matched no files", importPath)
 		}
+		for index, match := range matches {
+			matches[index] = filepath.Clean(match)
+		}
+		sort.Strings(matches)
 		return matches, nil
 	}
 	return []string{pattern}, nil
+}
+
+type importDependency struct {
+	Importer string
+	Path     string
+	Matches  []string
+}
+
+type loadCollector struct {
+	files   collectionx.List[string]
+	seen    collectionx.Set[string]
+	imports collectionx.List[importDependency]
+}
+
+func newLoadCollector() *loadCollector {
+	return &loadCollector{
+		files:   collectionx.NewList[string](),
+		seen:    collectionx.NewSet[string](),
+		imports: collectionx.NewList[importDependency](),
+	}
+}
+
+func (c *loadCollector) addFile(path string) {
+	if c == nil || c.seen.Contains(path) {
+		return
+	}
+	c.seen.Add(path)
+	c.files.Add(path)
+}
+
+func (c *loadCollector) addImport(importer string, path string, matches []string) {
+	if c == nil {
+		return
+	}
+	c.imports.Add(importDependency{
+		Importer: importer,
+		Path:     path,
+		Matches:  append([]string(nil), matches...),
+	})
+}
+
+func (c *loadCollector) filePaths() []string {
+	if c == nil {
+		return nil
+	}
+	values := c.files.Values()
+	sort.Strings(values)
+	return values
 }
