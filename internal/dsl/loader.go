@@ -27,20 +27,36 @@ func NewLoader(cfg config.Config, parser *Parser) *Loader {
 }
 
 func (l *Loader) Load() (build.Project, error) {
-	path := l.cfg.BuildFilePath()
-	file, err := l.loadFile(path, map[string]bool{}, map[string]bool{})
+	file, err := l.LoadFile()
 	if err != nil {
-		return build.Project{}, oops.In("bu1ld.dsl").
-			With("file", path).
-			Wrapf(err, "load build file")
+		return build.Project{}, err
 	}
 	project, err := EvaluateWithRegistry(file, l.parser.registry.CloneWithOptions(buildplugin.LoadOptions{ProjectDir: l.cfg.WorkDir}))
 	if err != nil {
 		return build.Project{}, oops.In("bu1ld.dsl").
-			With("file", path).
+			With("file", l.cfg.BuildFilePath()).
 			Wrapf(err, "parse build file")
 	}
 	return project, nil
+}
+
+func (l *Loader) LoadFile() (*File, error) {
+	path := l.cfg.BuildFilePath()
+	file, err := l.loadFile(path, map[string]bool{}, map[string]bool{})
+	if err != nil {
+		return nil, oops.In("bu1ld.dsl").
+			With("file", path).
+			Wrapf(err, "load build file")
+	}
+	return file, nil
+}
+
+func (l *Loader) LoadOptions() buildplugin.LoadOptions {
+	return buildplugin.LoadOptions{ProjectDir: l.cfg.WorkDir}
+}
+
+func (l *Loader) PluginSchemas() ([]buildplugin.Metadata, error) {
+	return l.parser.Schemas()
 }
 
 func (l *Loader) loadFile(path string, stack map[string]bool, seen map[string]bool) (*File, error) {

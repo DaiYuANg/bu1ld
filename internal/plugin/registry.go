@@ -143,6 +143,14 @@ func (r *Registry) Schemas() ([]Metadata, error) {
 	return metadata, firstErr
 }
 
+func (r *Registry) Metadata(namespace string) (Metadata, error) {
+	item, ok := r.active.Get(namespace)
+	if !ok {
+		return Metadata{}, fmt.Errorf("plugin namespace %q is not registered", namespace)
+	}
+	return item.Metadata()
+}
+
 func (r *Registry) Close() {
 	if r.loader != nil {
 		r.loader.Close()
@@ -209,6 +217,10 @@ func normalizeDeclaration(declaration Declaration) Declaration {
 		declaration.ID = "builtin." + declaration.Namespace
 	}
 	return declaration
+}
+
+func NormalizeDeclaration(declaration Declaration) Declaration {
+	return normalizeDeclaration(declaration)
 }
 
 func findRule(metadata Metadata, name string) (RuleSchema, bool) {

@@ -30,6 +30,8 @@ const (
 	CommandGraph             CommandKind = "graph"
 	CommandTasks             CommandKind = "tasks"
 	CommandClean             CommandKind = "clean"
+	CommandPluginsList       CommandKind = "plugins.list"
+	CommandPluginsDoctor     CommandKind = "plugins.doctor"
 	CommandDaemonStatus      CommandKind = "daemon.status"
 	CommandDaemonStart       CommandKind = "daemon.start"
 	CommandDaemonStop        CommandKind = "daemon.stop"
@@ -101,6 +103,10 @@ func (a *App) Run(ctx context.Context) error {
 		}
 		_, err := fmt.Fprintln(a.output, "cache cleaned")
 		return err
+	case CommandPluginsList:
+		return a.printPlugins(ctx, false)
+	case CommandPluginsDoctor:
+		return a.printPluginsDoctor(ctx)
 	case CommandDaemonStatus:
 		_, err := fmt.Fprintln(a.output, "daemon status: unavailable (not implemented)")
 		return err

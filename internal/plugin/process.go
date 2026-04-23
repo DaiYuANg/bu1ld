@@ -61,6 +61,10 @@ func (l *ProcessLoader) Close() {
 	l.clients = nil
 }
 
+func (l *ProcessLoader) ResolvePath(declaration Declaration) (string, error) {
+	return l.resolvePath(normalizeDeclaration(declaration))
+}
+
 func (l *ProcessLoader) resolvePath(declaration Declaration) (string, error) {
 	switch declaration.Source {
 	case SourceLocal:
@@ -164,6 +168,10 @@ func localPluginDir(options LoadOptions) string {
 	return filepath.Join(projectDir(options.ProjectDir), ".bu1ld", "plugins")
 }
 
+func LocalPluginDir(options LoadOptions) string {
+	return localPluginDir(options)
+}
+
 func globalPluginDir(configured string) string {
 	if configured != "" {
 		return configured
@@ -172,6 +180,10 @@ func globalPluginDir(configured string) string {
 		return filepath.Join(home, ".bu1ld", "plugins")
 	}
 	return filepath.Join(".bu1ld", "plugins")
+}
+
+func GlobalPluginDir(configured string) string {
+	return globalPluginDir(configured)
 }
 
 func projectDir(configured string) string {

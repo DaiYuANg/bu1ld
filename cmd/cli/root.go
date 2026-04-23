@@ -59,6 +59,7 @@ func NewRootCommand(out io.Writer) *cobra.Command {
 		newTasksCommand(&opts),
 		newGraphCommand(&opts),
 		newCleanCommand(&opts),
+		newPluginsCommand(&opts),
 		newDaemonCommand(&opts),
 		newServerCommand(&opts),
 	)

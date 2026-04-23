@@ -153,10 +153,17 @@ go run ./cmd/cli tasks
 go run ./cmd/cli test
 go run ./cmd/cli build
 go run ./cmd/cli clean
+go run ./cmd/cli plugins list
+go run ./cmd/cli plugins doctor
 go run ./cmd/daemon status
 go run ./cmd/server status
 go run ./cmd/lsp stdio
 ```
+
+`plugins list` prints builtin and declared plugins with source, namespace,
+resolved path, rules, and status. `plugins doctor` also checks the local and
+global plugin directories and returns a non-zero exit when a declared plugin is
+missing, not executable, or cannot complete the `go-plugin` handshake.
 
 Optional config files are loaded through `configx` from `bu1ld.yaml`, `bu1ld.toml`, `bu1ld.json`, or their `.bu1ld.*` variants.
 

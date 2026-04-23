@@ -36,6 +36,11 @@ type evalContext struct {
 	vars     map[string]any
 }
 
+type PluginDeclaration struct {
+	Declaration buildplugin.Declaration
+	Pos         Position
+}
+
 func Evaluate(file *File) (build.Project, error) {
 	return EvaluateWithRegistry(file, NewParser().registry.CloneWithOptions(buildplugin.LoadOptions{}))
 }
@@ -51,17 +56,13 @@ func EvaluateWithRegistry(file *File, registry *buildplugin.Registry) (build.Pro
 		vars:     map[string]any{},
 	}
 
-	for _, statement := range file.Statements {
-		node, ok := statement.(*BlockNode)
-		if !ok || node.Kind != "plugin" {
-			continue
-		}
-		declaration, err := evaluatePluginDeclaration(node, ctx)
-		if err != nil {
-			return build.Project{}, err
-		}
-		if err := registry.Declare(ctx.context, declaration); err != nil {
-			return build.Project{}, fmt.Errorf("dsl:%d:%d: %w", node.Position().Line, node.Position().Column, err)
+	declarations, err := PluginDeclarations(file)
+	if err != nil {
+		return build.Project{}, err
+	}
+	for _, item := range declarations {
+		if err := registry.Declare(ctx.context, item.Declaration); err != nil {
+			return build.Project{}, fmt.Errorf("dsl:%d:%d: %w", item.Pos.Line, item.Pos.Column, err)
 		}
 	}
 
@@ -88,6 +89,29 @@ func EvaluateWithRegistry(file *File, registry *buildplugin.Registry) (build.Pro
 	}
 
 	return build.Project{Tasks: tasks}, nil
+}
+
+func PluginDeclarations(file *File) ([]PluginDeclaration, error) {
+	declarations := []PluginDeclaration{}
+	ctx := evalContext{
+		context: context.Background(),
+		vars:    map[string]any{},
+	}
+	for _, statement := range file.Statements {
+		node, ok := statement.(*BlockNode)
+		if !ok || node.Kind != "plugin" {
+			continue
+		}
+		declaration, err := evaluatePluginDeclaration(node, ctx)
+		if err != nil {
+			return nil, err
+		}
+		declarations = append(declarations, PluginDeclaration{
+			Declaration: declaration,
+			Pos:         node.Position(),
+		})
+	}
+	return declarations, nil
 }
 
 func isPluginDeclaration(statement Statement) bool {

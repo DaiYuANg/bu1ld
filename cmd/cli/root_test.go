@@ -101,6 +101,72 @@ task build {
 	}
 }
 
+func TestPluginsListCommand(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	writeBuildFile(t, projectDir, `
+plugin go {
+  source = builtin
+  id = "builtin.go"
+}
+`)
+
+	var out bytes.Buffer
+	cmd := NewRootCommand(&out)
+	cmd.SetArgs([]string{"--project-dir", projectDir, "plugins", "list"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	got := out.String()
+	for _, want := range []string{
+		"SOURCE",
+		"builtin",
+		"go",
+		"builtin.go",
+		"binary,test",
+		"ok",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("output = %q, want substring %q", got, want)
+		}
+	}
+}
+
+func TestPluginsDoctorReportsMissingLocalPlugin(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	writeBuildFile(t, projectDir, `
+plugin rust {
+  source = local
+  id = "org.bu1ld.rust"
+  version = "0.1.0"
+}
+`)
+
+	var out bytes.Buffer
+	cmd := NewRootCommand(&out)
+	cmd.SetArgs([]string{"--project-dir", projectDir, "plugins", "doctor"})
+
+	if err := cmd.Execute(); err == nil {
+		t.Fatalf("Execute() error = nil, want doctor issue")
+	}
+
+	got := out.String()
+	for _, want := range []string{
+		"local plugins:",
+		"org.bu1ld.rust",
+		"missing",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("output = %q, want substring %q", got, want)
+		}
+	}
+}
+
 func TestBuildCommandRunsNoopTask(t *testing.T) {
 	t.Parallel()
 
