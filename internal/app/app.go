@@ -25,6 +25,7 @@ import (
 	"github.com/arcgolabs/eventx"
 	"github.com/arcgolabs/logx"
 	"github.com/samber/oops"
+	"github.com/spf13/afero"
 )
 
 type CommandKind string
@@ -247,19 +248,19 @@ func NewDixApp(cfg config.Config, output io.Writer, request CommandRequest) *dix
 func coreModule(cfg config.Config, output io.Writer) dix.Module {
 	return dix.NewModule("core",
 		dix.WithModuleProviders(
-			dix.Value(cfg),
+			dix.Value[config.Config](cfg),
 			dix.Value[io.Writer](output),
-			dix.ProviderErr1(newLogger),
-			dix.Provider0(fsx.NewOsFS),
-			dix.Provider0(dsl.NewParser),
-			dix.Provider3(dsl.NewLoader),
-			dix.Provider1(snapshot.NewSnapshotter),
-			dix.Provider2(cache.NewStore),
+			dix.ProviderErr1[*slog.Logger, config.Config](newLogger),
+			dix.Provider0[afero.Fs](fsx.NewOsFS),
+			dix.Provider0[*dsl.Parser](dsl.NewParser),
+			dix.Provider3[*dsl.Loader, config.Config, afero.Fs, *dsl.Parser](dsl.NewLoader),
+			dix.Provider1[*snapshot.Snapshotter, afero.Fs](snapshot.NewSnapshotter),
+			dix.Provider2[*cache.Store, config.Config, afero.Fs](cache.NewStore),
 			dix.Provider0[engine.CommandRunner](engine.NewExecRunner),
-			dix.ProviderErr1(newEventBus),
-			dix.ProviderErr1(newPluginRegistry),
-			dix.Provider6(engine.New),
-			dix.ProviderErr6(New),
+			dix.ProviderErr1[eventx.BusRuntime, io.Writer](newEventBus),
+			dix.ProviderErr1[*buildplugin.Registry, *dsl.Loader](newPluginRegistry),
+			dix.Provider6[*engine.Engine, config.Config, *snapshot.Snapshotter, *cache.Store, engine.CommandRunner, eventx.BusRuntime, io.Writer](engine.New),
+			dix.ProviderErr6[*App, CommandRequest, *dsl.Loader, *buildplugin.Registry, *engine.Engine, *cache.Store, io.Writer](New),
 		),
 		dix.WithModuleHooks(
 			dix.OnStop[eventx.BusRuntime](func(_ context.Context, bus eventx.BusRuntime) error {
@@ -279,7 +280,7 @@ func coreModule(cfg config.Config, output io.Writer) dix.Module {
 func commandModule(request CommandRequest) dix.Module {
 	return dix.NewModule("command."+string(request.Kind),
 		dix.WithModuleProviders(
-			dix.Value(request),
+			dix.Value[CommandRequest](request),
 		),
 	)
 }

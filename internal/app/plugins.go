@@ -413,7 +413,7 @@ func (a *App) writePluginReport(entries []pluginEntry, failOnIssue bool) error {
 }
 
 func ruleNames(rules []buildplugin.RuleSchema) []string {
-	names := lo.Map(rules, func(rule buildplugin.RuleSchema, _ int) string {
+	names := lo.Map[buildplugin.RuleSchema, string](rules, func(rule buildplugin.RuleSchema, _ int) string {
 		return rule.Name
 	})
 	slices.Sort(names)
@@ -421,7 +421,7 @@ func ruleNames(rules []buildplugin.RuleSchema) []string {
 }
 
 func manifestRuleNames(rules []buildplugin.ManifestRule) []string {
-	names := lo.Map(rules, func(rule buildplugin.ManifestRule, _ int) string {
+	names := lo.Map[buildplugin.ManifestRule, string](rules, func(rule buildplugin.ManifestRule, _ int) string {
 		return rule.Name
 	})
 	slices.Sort(names)

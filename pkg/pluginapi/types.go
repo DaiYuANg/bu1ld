@@ -101,7 +101,7 @@ func ValidateInvocation(schema RuleSchema, invocation Invocation) error {
 		}
 	}
 
-	names := lo.Keys(invocation.Fields)
+	names := lo.Keys[string, any](invocation.Fields)
 	slices.Sort(names)
 	for _, name := range names {
 		if !known.Contains(name) {

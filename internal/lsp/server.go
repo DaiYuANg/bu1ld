@@ -73,8 +73,8 @@ func NewDixApp(in io.Reader, out io.Writer) *dix.App {
 				dix.WithModuleProviders(
 					dix.Value[io.Reader](in),
 					dix.Value[io.Writer](out),
-					dix.Provider0(dsl.NewParser),
-					dix.Provider3(New),
+					dix.Provider0[*dsl.Parser](dsl.NewParser),
+					dix.Provider3[*Server, *dsl.Parser, io.Reader, io.Writer](New),
 				),
 			),
 		),
