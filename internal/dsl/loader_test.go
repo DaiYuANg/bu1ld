@@ -1,13 +1,15 @@
 package dsl
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"bu1ld/internal/cachefile"
 	"bu1ld/internal/config"
-	buildplugin "bu1ld/internal/plugin"
+	"bu1ld/internal/snapshot"
+
+	"github.com/spf13/afero"
 )
 
 func TestLoaderImportsBuildFiles(t *testing.T) {
@@ -38,7 +40,7 @@ task package {
 }
 `)
 
-	loader := NewLoader(config.Config{WorkDir: projectDir, BuildFile: "build.bu1ld"}, NewParser())
+	loader := NewLoader(config.Config{WorkDir: projectDir, BuildFile: "build.bu1ld"}, afero.NewOsFs(), NewParser())
 	project, err := loader.Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
@@ -62,7 +64,7 @@ func TestLoaderRejectsImportCycles(t *testing.T) {
 	writeDSLFile(t, projectDir, "build.bu1ld", `import "tasks/a.bu1ld"`)
 	writeDSLFile(t, projectDir, "tasks/a.bu1ld", `import "../build.bu1ld"`)
 
-	loader := NewLoader(config.Config{WorkDir: projectDir, BuildFile: "build.bu1ld"}, NewParser())
+	loader := NewLoader(config.Config{WorkDir: projectDir, BuildFile: "build.bu1ld"}, afero.NewOsFs(), NewParser())
 	if _, err := loader.Load(); err == nil {
 		t.Fatalf("Load() error = nil, want import cycle error")
 	}
@@ -78,14 +80,14 @@ task actual {
 }
 `)
 
-	loader := NewLoader(config.Config{WorkDir: projectDir, BuildFile: "build.bu1ld"}, NewParser())
+	loader := NewLoader(config.Config{WorkDir: projectDir, BuildFile: "build.bu1ld"}, afero.NewOsFs(), NewParser())
 	buildFile, err := cleanAbsPath(filepath.Join(projectDir, "build.bu1ld"))
 	if err != nil {
 		t.Fatalf("cleanAbsPath() error = %v", err)
 	}
-	checksum, err := buildplugin.ChecksumFile(buildFile)
+	checksum, err := snapshot.DigestFile(afero.NewOsFs(), buildFile)
 	if err != nil {
-		t.Fatalf("ChecksumFile() error = %v", err)
+		t.Fatalf("DigestFile() error = %v", err)
 	}
 	writeConfigCacheRecord(t, loader, configCacheRecord{
 		Version:   configCacheVersion,
@@ -121,14 +123,14 @@ task actual {
 }
 `)
 
-	cacheLoader := NewLoader(config.Config{WorkDir: projectDir, BuildFile: "build.bu1ld"}, NewParser())
+	cacheLoader := NewLoader(config.Config{WorkDir: projectDir, BuildFile: "build.bu1ld"}, afero.NewOsFs(), NewParser())
 	buildFile, err := cleanAbsPath(filepath.Join(projectDir, "build.bu1ld"))
 	if err != nil {
 		t.Fatalf("cleanAbsPath() error = %v", err)
 	}
-	checksum, err := buildplugin.ChecksumFile(buildFile)
+	checksum, err := snapshot.DigestFile(afero.NewOsFs(), buildFile)
 	if err != nil {
-		t.Fatalf("ChecksumFile() error = %v", err)
+		t.Fatalf("DigestFile() error = %v", err)
 	}
 	writeConfigCacheRecord(t, cacheLoader, configCacheRecord{
 		Version:   configCacheVersion,
@@ -142,7 +144,7 @@ task actual {
 		},
 	})
 
-	loader := NewLoader(config.Config{WorkDir: projectDir, BuildFile: "build.bu1ld", NoCache: true}, NewParser())
+	loader := NewLoader(config.Config{WorkDir: projectDir, BuildFile: "build.bu1ld", NoCache: true}, afero.NewOsFs(), NewParser())
 	project, err := loader.Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
@@ -166,7 +168,7 @@ task a {
 }
 `)
 
-	loader := NewLoader(config.Config{WorkDir: projectDir, BuildFile: "build.bu1ld"}, NewParser())
+	loader := NewLoader(config.Config{WorkDir: projectDir, BuildFile: "build.bu1ld"}, afero.NewOsFs(), NewParser())
 	project, err := loader.Load()
 	if err != nil {
 		t.Fatalf("first Load() error = %v", err)
@@ -181,7 +183,7 @@ task b {
 }
 `)
 
-	loader = NewLoader(config.Config{WorkDir: projectDir, BuildFile: "build.bu1ld"}, NewParser())
+	loader = NewLoader(config.Config{WorkDir: projectDir, BuildFile: "build.bu1ld"}, afero.NewOsFs(), NewParser())
 	project, err = loader.Load()
 	if err != nil {
 		t.Fatalf("second Load() error = %v", err)
@@ -202,7 +204,7 @@ task envtask {
 }
 `)
 
-	loader := NewLoader(config.Config{WorkDir: projectDir, BuildFile: "build.bu1ld"}, NewParser())
+	loader := NewLoader(config.Config{WorkDir: projectDir, BuildFile: "build.bu1ld"}, afero.NewOsFs(), NewParser())
 	project, err := loader.Load()
 	if err != nil {
 		t.Fatalf("first Load() error = %v", err)
@@ -219,7 +221,7 @@ task envtask {
 	}
 
 	t.Setenv("BU1LD_CACHE_SCRIPT_INPUT", "script-second")
-	loader = NewLoader(config.Config{WorkDir: projectDir, BuildFile: "build.bu1ld"}, NewParser())
+	loader = NewLoader(config.Config{WorkDir: projectDir, BuildFile: "build.bu1ld"}, afero.NewOsFs(), NewParser())
 	project, err = loader.Load()
 	if err != nil {
 		t.Fatalf("second Load() error = %v", err)
@@ -239,26 +241,18 @@ task envtask {
 func writeDSLFile(t *testing.T, root string, name string, content string) {
 	t.Helper()
 	path := filepath.Join(root, name)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
 	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
 }
 
 func writeConfigCacheRecord(t *testing.T, loader *Loader, record configCacheRecord) {
 	t.Helper()
-	data, err := json.MarshalIndent(record, "", "  ")
-	if err != nil {
-		t.Fatalf("MarshalIndent() error = %v", err)
-	}
-	data = append(data, '\n')
 	path := loader.configCachePath()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
-	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := cachefile.Write(loader.fs, path, record); err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
 }

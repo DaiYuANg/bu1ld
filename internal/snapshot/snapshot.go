@@ -7,11 +7,14 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
-	"github.com/DaiYuANg/arcgo/collectionx"
+	"bu1ld/internal/fsx"
+
+	"github.com/arcgolabs/collectionx"
 	"github.com/bmatcuk/doublestar/v4"
+	"github.com/spf13/afero"
 )
 
 type File struct {
@@ -21,10 +24,12 @@ type File struct {
 	Size   int64  `json:"size"`
 }
 
-type Snapshotter struct{}
+type Snapshotter struct {
+	fs afero.Fs
+}
 
-func NewSnapshotter() *Snapshotter {
-	return &Snapshotter{}
+func NewSnapshotter(fs afero.Fs) *Snapshotter {
+	return &Snapshotter{fs: fs}
 }
 
 func (s *Snapshotter) Inputs(root string, patterns []string) ([]File, error) {
@@ -44,7 +49,7 @@ func (s *Snapshotter) Inputs(root string, patterns []string) ([]File, error) {
 	}
 
 	files := matched.Values()
-	sort.Strings(files)
+	slices.Sort(files)
 
 	snapshots := collectionx.NewList[File]()
 	for _, file := range files {
@@ -60,17 +65,17 @@ func (s *Snapshotter) Inputs(root string, patterns []string) ([]File, error) {
 
 func (s *Snapshotter) File(root string, relativePath string) (File, error) {
 	absolutePath := filepath.Join(root, filepath.FromSlash(relativePath))
-	info, err := os.Stat(absolutePath)
+	info, err := s.fs.Stat(absolutePath)
 	if err != nil {
-		return File{}, err
+		return File{}, fmt.Errorf("stat %s: %w", absolutePath, err)
 	}
 	if info.IsDir() {
 		return File{}, fmt.Errorf("%s is a directory", relativePath)
 	}
 
-	digest, err := DigestFile(absolutePath)
+	digest, err := DigestFile(s.fs, absolutePath)
 	if err != nil {
-		return File{}, err
+		return File{}, fmt.Errorf("hash %s: %w", absolutePath, err)
 	}
 
 	return File{
@@ -84,59 +89,57 @@ func (s *Snapshotter) File(root string, relativePath string) (File, error) {
 func (s *Snapshotter) match(root string, pattern string) ([]string, error) {
 	if hasGlob(pattern) {
 		absolutePattern := filepath.Join(root, filepath.FromSlash(pattern))
-		matches, err := doublestar.FilepathGlob(absolutePattern, doublestar.WithFilesOnly(), doublestar.WithNoFollow())
+		matches, err := fsx.Glob(s.fs, absolutePattern, doublestar.WithFilesOnly(), doublestar.WithNoFollow())
 		if err != nil {
 			return nil, fmt.Errorf("match %q: %w", pattern, err)
 		}
-		return relativeFiles(root, matches)
+		return relativeFiles(s.fs, root, matches)
 	}
 
 	absolutePath := filepath.Join(root, filepath.FromSlash(pattern))
-	info, err := os.Stat(absolutePath)
+	info, err := s.fs.Stat(absolutePath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if isNotExist(err) {
 			return nil, nil
 		}
-		return nil, err
+		return nil, fmt.Errorf("stat %s: %w", absolutePath, err)
 	}
 	if !info.IsDir() {
 		return []string{filepath.ToSlash(pattern)}, nil
 	}
 
 	files := collectionx.NewList[string]()
-	err = filepath.WalkDir(absolutePath, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
+	err = fsx.WalkFiles(s.fs, absolutePath, func(path string, _ os.FileInfo) error {
+		rel, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return fmt.Errorf("resolve relative path %s: %w", path, relErr)
 		}
 		files.Add(filepath.ToSlash(rel))
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("walk %s: %w", absolutePath, err)
 	}
 
 	values := files.Values()
-	sort.Strings(values)
+	slices.Sort(values)
 	return values, nil
 }
 
-func DigestFile(path string) (string, error) {
-	file, err := os.Open(path)
+func DigestFile(fs afero.Fs, path string) (result string, err error) {
+	file, err := fs.Open(path)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("open %s: %w", path, err)
 	}
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); err == nil && closeErr != nil {
+			err = fmt.Errorf("close %s: %w", path, closeErr)
+		}
+	}()
 
 	hash := sha256.New()
 	if _, err := io.Copy(hash, file); err != nil {
-		return "", err
+		return "", fmt.Errorf("read %s: %w", path, err)
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
@@ -150,23 +153,27 @@ func hasGlob(pattern string) bool {
 	return strings.ContainsAny(pattern, "*?[")
 }
 
-func relativeFiles(root string, paths []string) ([]string, error) {
+func relativeFiles(fs afero.Fs, root string, paths []string) ([]string, error) {
 	files := collectionx.NewList[string]()
 	for _, path := range paths {
-		info, err := os.Stat(path)
+		info, err := fs.Stat(path)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("stat %s: %w", path, err)
 		}
 		if info.IsDir() {
 			continue
 		}
 		rel, err := filepath.Rel(root, path)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("resolve relative path %s: %w", path, err)
 		}
 		files.Add(filepath.ToSlash(rel))
 	}
 	values := files.Values()
-	sort.Strings(values)
+	slices.Sort(values)
 	return values, nil
+}
+
+func isNotExist(err error) bool {
+	return err != nil && os.IsNotExist(err)
 }

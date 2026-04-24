@@ -111,9 +111,9 @@ func (l *Lexer) readScriptExprToken() Token {
 	l.readChar()
 
 	open := l.ch
-	close := ')'
+	closing := ')'
 	if open == '{' {
-		close = '}'
+		closing = '}'
 	}
 	l.readChar()
 
@@ -132,7 +132,7 @@ func (l *Lexer) readScriptExprToken() Token {
 		if l.ch == open {
 			depth++
 		}
-		if l.ch == close {
+		if l.ch == closing {
 			depth--
 			if depth == 0 {
 				l.readChar()

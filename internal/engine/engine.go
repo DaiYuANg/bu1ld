@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -16,8 +17,8 @@ import (
 	"bu1ld/internal/graph"
 	"bu1ld/internal/snapshot"
 
-	"github.com/DaiYuANg/arcgo/collectionx"
-	"github.com/DaiYuANg/arcgo/eventx"
+	"github.com/arcgolabs/collectionx"
+	"github.com/arcgolabs/eventx"
 	"github.com/samber/oops"
 )
 
@@ -39,7 +40,13 @@ func (r *ExecRunner) Run(ctx context.Context, workDir string, command []string, 
 	cmd.Dir = workDir
 	cmd.Stdout = output
 	cmd.Stderr = output
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return oops.In("bu1ld.engine").
+			With("work_dir", workDir).
+			With("command", command).
+			Wrapf(err, "run command %q", command[0])
+	}
+	return nil
 }
 
 type Engine struct {
@@ -124,8 +131,15 @@ func (e *Engine) Run(ctx context.Context, project build.Project, targets []strin
 			}
 		} else if err := e.runner.Run(ctx, e.cfg.WorkDir, build.Values(task.Command), e.output); err != nil {
 			duration := time.Since(startedAt)
-			_ = e.publish(ctx, events.TaskFailed{Task: task.Name, Duration: duration, Err: err})
-			return fmt.Errorf("task %s failed: %w", task.Name, err)
+			taskErr := oops.In("bu1ld.engine").
+				With("task", task.Name).
+				With("action_key", key).
+				With("duration", duration.String()).
+				Wrapf(err, "run task")
+			if publishErr := e.publish(ctx, events.TaskFailed{Task: task.Name, Duration: duration, Err: err}); publishErr != nil {
+				return errors.Join(taskErr, publishErr)
+			}
+			return taskErr
 		}
 
 		if !e.cfg.NoCache {
@@ -150,7 +164,7 @@ func (e *Engine) Run(ctx context.Context, project build.Project, targets []strin
 func (e *Engine) actionKey(task build.Task, actionKeys collectionx.Map[string, string]) (string, error) {
 	files, err := e.snapshotter.Inputs(e.cfg.WorkDir, build.Values(task.Inputs))
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("snapshot task inputs for %q: %w", task.Name, err)
 	}
 
 	dependencyKeys := collectionx.NewMap[string, string]()
@@ -183,7 +197,7 @@ func (e *Engine) actionKey(task build.Task, actionKeys collectionx.Map[string, s
 
 	data, err := json.Marshal(payload)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("marshal action key payload for %q: %w", task.Name, err)
 	}
 	return snapshot.HashBytes(data), nil
 }
@@ -192,5 +206,8 @@ func (e *Engine) publish(ctx context.Context, event eventx.Event) error {
 	if e.bus == nil {
 		return nil
 	}
-	return e.bus.Publish(ctx, event)
+	if err := e.bus.Publish(ctx, event); err != nil {
+		return fmt.Errorf("publish event %T: %w", event, err)
+	}
+	return nil
 }

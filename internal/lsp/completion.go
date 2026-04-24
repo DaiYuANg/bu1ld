@@ -1,105 +1,171 @@
 package lsp
 
 import (
-	"fmt"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
+	"bu1ld/internal/dsl"
 	buildplugin "bu1ld/internal/plugin"
 
+	"github.com/arcgolabs/collectionx"
 	"go.lsp.dev/protocol"
 )
 
-func (s *Server) completions(text string, pos protocol.Position) protocol.CompletionList {
-	if inside, kind := blockContext(text, pos); inside {
-		return protocol.CompletionList{Items: s.fieldCompletions(kind)}
-	}
-	return protocol.CompletionList{Items: s.topLevelCompletions()}
+type completionIndex struct {
+	topLevelItems          collectionx.List[protocol.CompletionItem]
+	topLevelTrie           collectionx.Trie[protocol.CompletionItem]
+	ruleSchemasByNamespace collectionx.MultiMap[string, buildplugin.RuleSchema]
+	fieldItemsByKind       collectionx.Map[string, []protocol.CompletionItem]
+	fieldTriesByKind       collectionx.Map[string, collectionx.Trie[protocol.CompletionItem]]
 }
 
-func (s *Server) topLevelCompletions() []protocol.CompletionItem {
-	items := []protocol.CompletionItem{
+func newCompletionIndex(parser *dsl.Parser) *completionIndex {
+	index := &completionIndex{
+		topLevelItems:          collectionx.NewList[protocol.CompletionItem](),
+		topLevelTrie:           collectionx.NewTrie[protocol.CompletionItem](),
+		ruleSchemasByNamespace: collectionx.NewMultiMap[string, buildplugin.RuleSchema](),
+		fieldItemsByKind:       collectionx.NewMap[string, []protocol.CompletionItem](),
+		fieldTriesByKind:       collectionx.NewMap[string, collectionx.Trie[protocol.CompletionItem]](),
+	}
+
+	index.addTopLevelItems(coreTopLevelCompletionItems())
+	for _, kind := range []string{"workspace", "plugin", "toolchain", "task"} {
+		index.registerFieldItems(kind, completionItemsForFields(coreFields(kind)))
+	}
+	index.registerFieldItems("run:task", actionCompletionItems())
+
+	schemas, err := parser.Schemas()
+	if err != nil {
+		return index
+	}
+	for _, schema := range schemas {
+		for _, rule := range schema.Rules {
+			index.ruleSchemasByNamespace.Put(schema.Namespace, rule)
+
+			label := schema.Namespace + "." + rule.Name
+			index.addTopLevelItems([]protocol.CompletionItem{{
+				Label:      label,
+				Kind:       protocol.CompletionItemKindModule,
+				Detail:     schema.ID + " rule",
+				InsertText: label + " name {\n}",
+			}})
+		}
+	}
+
+	index.topLevelItems = collectionx.NewList[protocol.CompletionItem](sortedCompletions(index.topLevelItems.Values())...)
+	return index
+}
+
+func (s *Server) completions(text string, pos protocol.Position) protocol.CompletionList {
+	prefix := completionPrefix(text, pos)
+	if inside, kind := blockContext(text, pos); inside {
+		return protocol.CompletionList{Items: s.fieldCompletions(kind, prefix)}
+	}
+	return protocol.CompletionList{Items: s.topLevelCompletions(prefix)}
+}
+
+func (s *Server) topLevelCompletions(prefix string) []protocol.CompletionItem {
+	if s.index == nil {
+		return nil
+	}
+	return filteredCompletionItems(s.index.topLevelItems.Values(), s.index.topLevelTrie, prefix)
+}
+
+func (s *Server) fieldCompletions(kind string, prefix string) []protocol.CompletionItem {
+	if inside, parent := runContext(kind); inside && parent != "task" {
+		return nil
+	}
+	if s.index == nil {
+		return nil
+	}
+	items, ok := s.index.fieldItemsByKind.Get(kind)
+	if !ok {
+		schema, ok := s.index.ruleSchema(kind)
+		if !ok {
+			return nil
+		}
+		s.index.registerFieldItems(kind, completionItemsForFields(schema.Fields))
+		items, _ = s.index.fieldItemsByKind.Get(kind)
+	}
+	trie, _ := s.index.fieldTriesByKind.Get(kind)
+	return filteredCompletionItems(items, trie, prefix)
+}
+
+func coreTopLevelCompletionItems() []protocol.CompletionItem {
+	return []protocol.CompletionItem{
 		{Label: "import", Kind: protocol.CompletionItemKindKeyword, Detail: "import another build file", InsertText: "import \"\""},
 		{Label: "workspace", Kind: protocol.CompletionItemKindKeyword, Detail: "workspace block", InsertText: "workspace {\n  name = \"\"\n  default = build\n}"},
 		{Label: "plugin", Kind: protocol.CompletionItemKindKeyword, Detail: "plugin declaration", InsertText: "plugin name {\n  source = builtin\n  id = \"\"\n}"},
 		{Label: "toolchain", Kind: protocol.CompletionItemKindKeyword, Detail: "toolchain block", InsertText: "toolchain name {\n  version = \"\"\n}"},
 		{Label: "task", Kind: protocol.CompletionItemKindKeyword, Detail: "task block", InsertText: "task name {\n  command = []\n}"},
 	}
-
-	for _, schema := range s.schemas() {
-		for _, rule := range schema.Rules {
-			label := schema.Namespace + "." + rule.Name
-			items = append(items, protocol.CompletionItem{
-				Label:      label,
-				Kind:       protocol.CompletionItemKindModule,
-				Detail:     fmt.Sprintf("%s rule", schema.ID),
-				InsertText: label + " name {\n}",
-			})
-		}
-	}
-	return sortedCompletions(items)
 }
 
-func (s *Server) fieldCompletions(kind string) []protocol.CompletionItem {
-	if inside, parent := runContext(kind); inside && parent == "task" {
-		return actionCompletions()
-	} else if inside {
-		return nil
-	}
-	fields := coreFields(kind)
-	if len(fields) == 0 {
-		if schema, ok := s.ruleSchema(kind); ok {
-			fields = schema.Fields
-		}
-	}
-
-	items := make([]protocol.CompletionItem, 0, len(fields))
+func completionItemsForFields(fields []buildplugin.FieldSchema) []protocol.CompletionItem {
+	items := collectionx.NewListWithCapacity[protocol.CompletionItem](len(fields))
 	for _, field := range fields {
 		detail := string(field.Type)
 		if field.Required {
 			detail += " required"
 		}
-		items = append(items, protocol.CompletionItem{
+		items.Add(protocol.CompletionItem{
 			Label:      field.Name,
 			Kind:       protocol.CompletionItemKindField,
 			Detail:     detail,
 			InsertText: field.Name + " = ",
 		})
 	}
-	return sortedCompletions(items)
+	return sortedCompletions(items.Values())
 }
 
-func actionCompletions() []protocol.CompletionItem {
+func actionCompletionItems() []protocol.CompletionItem {
 	return sortedCompletions([]protocol.CompletionItem{
 		{Label: "exec", Kind: protocol.CompletionItemKindModule, Detail: "run external command", InsertText: "exec()"},
 		{Label: "shell", Kind: protocol.CompletionItemKindModule, Detail: "run shell script", InsertText: "shell(\"\")"},
 	})
 }
 
-func (s *Server) ruleSchema(kind string) (buildplugin.RuleSchema, bool) {
+func (i *completionIndex) addTopLevelItems(items []protocol.CompletionItem) {
+	for _, item := range items {
+		i.topLevelItems.Add(item)
+		i.topLevelTrie.Put(item.Label, item)
+	}
+}
+
+func (i *completionIndex) registerFieldItems(kind string, items []protocol.CompletionItem) {
+	sorted := sortedCompletions(items)
+	trie := collectionx.NewTrie[protocol.CompletionItem]()
+	for _, item := range sorted {
+		trie.Put(item.Label, item)
+	}
+	i.fieldItemsByKind.Set(kind, sorted)
+	i.fieldTriesByKind.Set(kind, trie)
+}
+
+func (i *completionIndex) ruleSchema(kind string) (buildplugin.RuleSchema, bool) {
 	namespace, ruleName, ok := strings.Cut(kind, ".")
 	if !ok {
 		return buildplugin.RuleSchema{}, false
 	}
-	for _, schema := range s.schemas() {
-		if schema.Namespace != namespace {
-			continue
-		}
-		for _, rule := range schema.Rules {
-			if rule.Name == ruleName {
-				return rule, true
-			}
+	rules, ok := i.ruleSchemasByNamespace.GetOption(namespace).Get()
+	if !ok {
+		return buildplugin.RuleSchema{}, false
+	}
+	for _, rule := range rules {
+		if rule.Name == ruleName {
+			return rule, true
 		}
 	}
 	return buildplugin.RuleSchema{}, false
 }
 
-func (s *Server) schemas() []buildplugin.Metadata {
-	schemas, err := s.parser.Schemas()
-	if err != nil {
-		return nil
+func filteredCompletionItems(items []protocol.CompletionItem, trie collectionx.Trie[protocol.CompletionItem], prefix string) []protocol.CompletionItem {
+	if prefix == "" || trie == nil {
+		return sortedCompletions(append([]protocol.CompletionItem(nil), items...))
 	}
-	return schemas
+	return sortedCompletions(trie.ValuesWithPrefix(prefix))
 }
 
 func coreFields(kind string) []buildplugin.FieldSchema {
@@ -140,8 +206,8 @@ func blockContext(text string, pos protocol.Position) (bool, string) {
 	}
 	before := text[:offset]
 	open := strings.LastIndex(before, "{")
-	close := strings.LastIndex(before, "}")
-	if open == -1 || close > open {
+	closing := strings.LastIndex(before, "}")
+	if open == -1 || closing > open {
 		return false, ""
 	}
 
@@ -180,6 +246,26 @@ func blockContext(text string, pos protocol.Position) (bool, string) {
 func runContext(kind string) (bool, string) {
 	parent, ok := strings.CutPrefix(kind, "run:")
 	return ok, parent
+}
+
+func completionPrefix(text string, pos protocol.Position) string {
+	offset := offsetAt(text, pos)
+	if offset <= 0 {
+		return ""
+	}
+	start := offset
+	for start > 0 {
+		ch, size := utf8.DecodeLastRuneInString(text[:start])
+		if !isCompletionPrefixRune(ch) {
+			break
+		}
+		start -= size
+	}
+	return text[start:offset]
+}
+
+func isCompletionPrefixRune(ch rune) bool {
+	return ch == '.' || ch == '_' || unicode.IsLetter(ch) || unicode.IsDigit(ch)
 }
 
 func offsetAt(text string, pos protocol.Position) int {

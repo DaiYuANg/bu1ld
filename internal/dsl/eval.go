@@ -3,6 +3,7 @@ package dsl
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"runtime"
 	"sort"
@@ -11,7 +12,7 @@ import (
 	"bu1ld/internal/build"
 	buildplugin "bu1ld/internal/plugin"
 
-	"github.com/DaiYuANg/arcgo/collectionx"
+	"github.com/arcgolabs/collectionx"
 	"github.com/expr-lang/expr"
 	"mvdan.cc/sh/v3/syntax"
 )
@@ -113,7 +114,7 @@ func PluginDeclarations(file *File) ([]PluginDeclaration, error) {
 }
 
 func pluginDeclarations(file *File, ctx evalContext) ([]PluginDeclaration, error) {
-	declarations := []PluginDeclaration{}
+	declarations := collectionx.NewList[PluginDeclaration]()
 	for _, statement := range file.Statements {
 		node, ok := statement.(*BlockNode)
 		if !ok || node.Kind != "plugin" {
@@ -123,12 +124,12 @@ func pluginDeclarations(file *File, ctx evalContext) ([]PluginDeclaration, error
 		if err != nil {
 			return nil, err
 		}
-		declarations = append(declarations, PluginDeclaration{
+		declarations.Add(PluginDeclaration{
 			Declaration: declaration,
 			Pos:         node.Position(),
 		})
 	}
-	return declarations, nil
+	return declarations.Values(), nil
 }
 
 func isPluginDeclaration(statement Statement) bool {
@@ -143,7 +144,7 @@ func evaluateStatement(statement Statement, ctx evalContext) ([]build.Task, erro
 	case *BlockNode:
 		return evaluateBlock(node, ctx)
 	case *RuleNode:
-		return evaluateRule(node, ctx)
+		return evaluateRule(node)
 	default:
 		return nil, fmt.Errorf("dsl:%d:%d: unsupported statement", statement.Position().Line, statement.Position().Column)
 	}
@@ -182,10 +183,10 @@ func evaluateWorkspace(node *BlockNode, ctx evalContext) error {
 		return fmt.Errorf("dsl:%d:%d: workspace does not take a block name; use workspace { name = ... }", node.Name.Position().Line, node.Name.Position().Column)
 	}
 	fields := newFieldSet("workspace", node.Assignments, ctx)
-	if _, err := fields.optionalString("name", ""); err != nil {
+	if _, err := fields.optionalString("name"); err != nil {
 		return err
 	}
-	if _, err := fields.optionalString("default", ""); err != nil {
+	if _, err := fields.optionalString("default"); err != nil {
 		return err
 	}
 	return fields.rejectUnknown("name", "default")
@@ -197,19 +198,19 @@ func evaluatePluginDeclaration(node *BlockNode, ctx evalContext) (buildplugin.De
 		return buildplugin.Declaration{}, err
 	}
 	fields := newFieldSet("plugin", node.Assignments, ctx)
-	id, err := fields.optionalString("id", "")
+	id, err := fields.optionalString("id")
 	if err != nil {
 		return buildplugin.Declaration{}, err
 	}
-	source, err := fields.optionalString("source", "")
+	source, err := fields.optionalString("source")
 	if err != nil {
 		return buildplugin.Declaration{}, err
 	}
-	version, err := fields.optionalString("version", "")
+	version, err := fields.optionalString("version")
 	if err != nil {
 		return buildplugin.Declaration{}, err
 	}
-	path, err := fields.optionalString("path", "")
+	path, err := fields.optionalString("path")
 	if err != nil {
 		return buildplugin.Declaration{}, err
 	}
@@ -230,7 +231,7 @@ func evaluateToolchain(node *BlockNode, ctx evalContext) error {
 		return err
 	}
 	fields := newFieldSet("toolchain", node.Assignments, ctx)
-	if _, err := fields.optionalString("version", ""); err != nil {
+	if _, err := fields.optionalString("version"); err != nil {
 		return err
 	}
 	if _, err := fields.optionalValue("settings"); err != nil {
@@ -249,20 +250,20 @@ func evaluateTask(node *BlockNode, ctx evalContext) (build.Task, error) {
 	hasCommand := false
 
 	for _, assignment := range node.Assignments {
-		values, err := evaluateStringList(assignment.Value, taskCtx)
-		if err != nil {
-			return build.Task{}, fieldError("task", assignment, err)
+		values, evalErr := evaluateStringList(assignment.Value, taskCtx)
+		if evalErr != nil {
+			return build.Task{}, fieldError("task", assignment, evalErr)
 		}
 		switch assignment.Name {
 		case "deps":
-			task.Deps = collectionx.NewList(values...)
+			task.Deps = collectionx.NewList[string](values...)
 		case "inputs":
-			task.Inputs = collectionx.NewList(values...)
+			task.Inputs = collectionx.NewList[string](values...)
 		case "outputs":
-			task.Outputs = collectionx.NewList(values...)
+			task.Outputs = collectionx.NewList[string](values...)
 		case "command":
 			hasCommand = true
-			task.Command = collectionx.NewList(values...)
+			task.Command = collectionx.NewList[string](values...)
 		default:
 			return build.Task{}, fmt.Errorf(
 				"dsl:%d:%d: unknown task field %q",
@@ -280,7 +281,7 @@ func evaluateTask(node *BlockNode, ctx evalContext) (build.Task, error) {
 		return build.Task{}, err
 	}
 	if len(command) > 0 {
-		task.Command = collectionx.NewList(command...)
+		task.Command = collectionx.NewList[string](command...)
 	}
 
 	if err := task.Validate(); err != nil {
@@ -336,7 +337,7 @@ func validateShellScript(script string, pos Position) error {
 	return nil
 }
 
-func evaluateRule(node *RuleNode, ctx evalContext) ([]build.Task, error) {
+func evaluateRule(node *RuleNode) ([]build.Task, error) {
 	return nil, fmt.Errorf("dsl:%d:%d: call-style top-level rule %q is not supported; use namespace.rule target { ... }", node.Position().Line, node.Position().Column, node.Call.Name)
 }
 
@@ -360,22 +361,26 @@ func evaluatePluginRuleBlock(node *BlockNode, namespace string, rule string, ctx
 	if err != nil {
 		return nil, err
 	}
-	return ctx.registry.Expand(ctx.context, buildplugin.Invocation{
+	tasks, err := ctx.registry.Expand(ctx.context, buildplugin.Invocation{
 		Namespace: namespace,
 		Rule:      rule,
 		Target:    target,
 		Fields:    fields,
 	})
+	if err != nil {
+		return nil, fmt.Errorf("expand rule %s.%s: %w", namespace, rule, err)
+	}
+	return tasks, nil
 }
 
 func evaluateFields(assignments []*AssignmentNode, ctx evalContext) (map[string]any, error) {
 	fields := map[string]any{}
 	for _, assignment := range assignments {
-		value, err := evaluate(assignment.Value, ctx)
+		evaluated, err := evaluate(assignment.Value, ctx)
 		if err != nil {
 			return nil, fieldError("rule", assignment, err)
 		}
-		fields[assignment.Name] = valueAny(value)
+		fields[assignment.Name] = valueAny(evaluated)
 	}
 	return fields, nil
 }
@@ -407,28 +412,31 @@ func splitRuleKind(kind string) (string, string, bool) {
 }
 
 func evaluateString(expr Expr, ctx evalContext) (string, error) {
-	value, err := evaluate(expr, ctx)
+	evaluated, err := evaluate(expr, ctx)
 	if err != nil {
 		return "", err
 	}
-	if value.kind != valueString {
+	if evaluated.kind != valueString {
 		return "", fmt.Errorf("dsl:%d:%d: expected string expression", expr.Position().Line, expr.Position().Column)
 	}
-	return value.text, nil
+	return evaluated.text, nil
 }
 
 func evaluateStringList(expr Expr, ctx evalContext) ([]string, error) {
-	value, err := evaluate(expr, ctx)
+	evaluated, err := evaluate(expr, ctx)
 	if err != nil {
 		return nil, err
 	}
-	if value.kind == valueString {
-		return []string{value.text}, nil
-	}
-	if value.kind != valueList {
+	switch evaluated.kind {
+	case valueString:
+		return []string{evaluated.text}, nil
+	case valueList:
+		return evaluated.list, nil
+	case valueObject:
+		return nil, fmt.Errorf("dsl:%d:%d: expected string or list expression", expr.Position().Line, expr.Position().Column)
+	default:
 		return nil, fmt.Errorf("dsl:%d:%d: expected string or list expression", expr.Position().Line, expr.Position().Column)
 	}
-	return value.list, nil
 }
 
 func evaluate(exprNode Expr, ctx evalContext) (value, error) {
@@ -443,36 +451,47 @@ func evaluate(exprNode Expr, ctx evalContext) (value, error) {
 		}
 		return value{kind: valueString, text: node.Name}, nil
 	case *ArrayExpr:
-		items := collectionx.NewList[string]()
-		for _, element := range node.Elements {
-			value, err := evaluate(element, ctx)
-			if err != nil {
-				return value, err
-			}
-			if value.kind == valueString {
-				items.Add(value.text)
-			} else if value.kind == valueList {
-				items.Add(value.list...)
-			} else {
-				return value, fmt.Errorf("dsl:%d:%d: object values cannot be used in arrays", element.Position().Line, element.Position().Column)
-			}
-		}
-		return value{kind: valueList, list: items.Values()}, nil
+		return evaluateArray(node, ctx)
 	case *ObjectExpr:
-		object := collectionx.NewMap[string, value]()
-		for _, entry := range node.Entries {
-			value, err := evaluate(entry.Value, ctx)
-			if err != nil {
-				return value, err
-			}
-			object.Set(entry.Key, value)
-		}
-		return value{kind: valueObject, object: object}, nil
+		return evaluateObject(node, ctx)
 	case *CallExpr:
 		return evaluateCall(node, ctx)
 	default:
 		return value{}, fmt.Errorf("dsl:%d:%d: unsupported expression", exprNode.Position().Line, exprNode.Position().Column)
 	}
+}
+
+func evaluateArray(node *ArrayExpr, ctx evalContext) (value, error) {
+	items := collectionx.NewList[string]()
+	for _, element := range node.Elements {
+		elementValue, err := evaluate(element, ctx)
+		if err != nil {
+			return value{}, err
+		}
+		switch elementValue.kind {
+		case valueString:
+			items.Add(elementValue.text)
+		case valueList:
+			items.Add(elementValue.list...)
+		case valueObject:
+			return value{}, fmt.Errorf("dsl:%d:%d: object values cannot be used in arrays", element.Position().Line, element.Position().Column)
+		default:
+			return value{}, fmt.Errorf("dsl:%d:%d: object values cannot be used in arrays", element.Position().Line, element.Position().Column)
+		}
+	}
+	return value{kind: valueList, list: items.Values()}, nil
+}
+
+func evaluateObject(node *ObjectExpr, ctx evalContext) (value, error) {
+	object := collectionx.NewMap[string, value]()
+	for _, entry := range node.Entries {
+		entryValue, err := evaluate(entry.Value, ctx)
+		if err != nil {
+			return value{}, err
+		}
+		object.Set(entry.Key, entryValue)
+	}
+	return value{kind: valueObject, object: object}, nil
 }
 
 func evaluateCall(call *CallExpr, ctx evalContext) (value, error) {
@@ -573,11 +592,11 @@ func valueFromAny(item any, pos Position) (value, error) {
 	case map[string]any:
 		object := collectionx.NewMap[string, value]()
 		for key, element := range typed {
-			value, err := valueFromAny(element, pos)
+			entryValue, err := valueFromAny(element, pos)
 			if err != nil {
-				return value, err
+				return value{}, err
 			}
-			object.Set(key, value)
+			object.Set(key, entryValue)
 		}
 		return value{kind: valueObject, object: object}, nil
 	default:
@@ -598,9 +617,7 @@ func scalarString(item any) (string, bool) {
 
 func (c evalContext) with(key string, item any) evalContext {
 	vars := map[string]any{}
-	for k, v := range c.vars {
-		vars[k] = v
-	}
+	maps.Copy(vars, c.vars)
 	vars[key] = item
 	return evalContext{
 		context:  c.context,
@@ -618,9 +635,7 @@ func (c evalContext) exprEnv() map[string]any {
 		"concat": exprConcat,
 		"list":   exprList,
 	}
-	for key, item := range c.vars {
-		env[key] = item
-	}
+	maps.Copy(env, c.vars)
 	return env
 }
 
@@ -695,28 +710,12 @@ func newFieldSet(rule string, assignments []*AssignmentNode, ctx evalContext) fi
 	return fieldSet{rule: rule, assignments: items, ctx: ctx}
 }
 
-func (s fieldSet) requiredString(name string) (string, error) {
+func (s fieldSet) optionalString(name string) (string, error) {
 	assignment, ok := s.assignments.Get(name)
 	if !ok {
-		return "", fmt.Errorf("dsl: %s requires field %q", s.rule, name)
+		return "", nil
 	}
 	return s.string(assignment)
-}
-
-func (s fieldSet) optionalString(name string, fallback string) (string, error) {
-	assignment, ok := s.assignments.Get(name)
-	if !ok {
-		return fallback, nil
-	}
-	return s.string(assignment)
-}
-
-func (s fieldSet) optionalList(name string, fallback []string) ([]string, error) {
-	assignment, ok := s.assignments.Get(name)
-	if !ok {
-		return fallback, nil
-	}
-	return s.list(assignment)
 }
 
 func (s fieldSet) optionalValue(name string) (value, error) {
@@ -739,16 +738,8 @@ func (s fieldSet) string(assignment *AssignmentNode) (string, error) {
 	return item, nil
 }
 
-func (s fieldSet) list(assignment *AssignmentNode) ([]string, error) {
-	items, err := evaluateStringList(assignment.Value, s.ctx)
-	if err != nil {
-		return nil, fieldError(s.rule, assignment, err)
-	}
-	return items, nil
-}
-
 func (s fieldSet) rejectUnknown(allowed ...string) error {
-	known := collectionx.NewSet(allowed...)
+	known := collectionx.NewSet[string](allowed...)
 	var unknown *AssignmentNode
 	s.assignments.Range(func(name string, assignment *AssignmentNode) bool {
 		if known.Contains(name) {

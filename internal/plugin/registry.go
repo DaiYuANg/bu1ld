@@ -2,12 +2,13 @@ package plugin
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"strings"
 
 	"bu1ld/internal/build"
 
-	"github.com/DaiYuANg/arcgo/collectionx"
+	"github.com/arcgolabs/collectionx"
+	"github.com/samber/oops"
 )
 
 type LoadOptions struct {
@@ -72,7 +73,7 @@ func (r *Registry) CloneWithOptions(options LoadOptions) *Registry {
 
 func (r *Registry) Declare(ctx context.Context, declaration Declaration) error {
 	if declaration.Namespace == "" {
-		return fmt.Errorf("plugin namespace is required")
+		return errors.New("plugin namespace is required")
 	}
 	declaration = normalizeDeclaration(declaration)
 
@@ -84,7 +85,10 @@ func (r *Registry) Declare(ctx context.Context, declaration Declaration) error {
 	case SourceLocal, SourceGlobal:
 		item, err = r.loader.Load(ctx, declaration)
 	default:
-		return fmt.Errorf("unknown plugin source %q", declaration.Source)
+		return oops.In("bu1ld.plugins").
+			With("namespace", declaration.Namespace).
+			With("source", declaration.Source).
+			Errorf("unknown plugin source %q", declaration.Source)
 	}
 	if err != nil {
 		return err
@@ -98,57 +102,79 @@ func (r *Registry) Declare(ctx context.Context, declaration Declaration) error {
 func (r *Registry) Expand(ctx context.Context, invocation Invocation) ([]build.Task, error) {
 	item, ok := r.active.Get(invocation.Namespace)
 	if !ok {
-		return nil, fmt.Errorf("plugin namespace %q is not registered", invocation.Namespace)
+		return nil, oops.In("bu1ld.plugins").
+			With("namespace", invocation.Namespace).
+			Errorf("plugin namespace %q is not registered", invocation.Namespace)
 	}
 
 	metadata, err := item.Metadata()
 	if err != nil {
-		return nil, fmt.Errorf("read plugin metadata for %q: %w", invocation.Namespace, err)
+		return nil, oops.In("bu1ld.plugins").
+			With("namespace", invocation.Namespace).
+			Wrapf(err, "read plugin metadata")
 	}
 	schema, ok := findRule(metadata, invocation.Rule)
 	if !ok {
-		return nil, fmt.Errorf("plugin %q does not provide rule %q", invocation.Namespace, invocation.Rule)
+		return nil, oops.In("bu1ld.plugins").
+			With("namespace", invocation.Namespace).
+			With("rule", invocation.Rule).
+			Errorf("plugin %q does not provide rule %q", invocation.Namespace, invocation.Rule)
 	}
-	if err := ValidateInvocation(schema, invocation); err != nil {
-		return nil, err
+	if validationErr := ValidateInvocation(schema, invocation); validationErr != nil {
+		return nil, validationErr
 	}
 	specs, err := item.Expand(ctx, invocation)
 	if err != nil {
-		return nil, err
+		return nil, oops.In("bu1ld.plugins").
+			With("namespace", invocation.Namespace).
+			With("rule", invocation.Rule).
+			Wrapf(err, "expand plugin rule")
 	}
-	tasks := make([]build.Task, 0, len(specs))
+	tasks := collectionx.NewListWithCapacity[build.Task](len(specs))
 	for _, spec := range specs {
-		tasks = append(tasks, TaskSpecToBuild(spec))
+		tasks.Add(TaskSpecToBuild(spec))
 	}
-	for _, task := range tasks {
+	for _, task := range tasks.Values() {
 		if err := task.Validate(); err != nil {
-			return nil, err
+			return nil, oops.In("bu1ld.plugins").
+				With("namespace", invocation.Namespace).
+				With("rule", invocation.Rule).
+				With("task", task.Name).
+				Wrapf(err, "validate expanded plugin task")
 		}
 	}
-	return tasks, nil
+	return tasks.Values(), nil
 }
 
 func (r *Registry) Schemas() ([]Metadata, error) {
-	metadata := []Metadata{}
+	metadata := collectionx.NewList[Metadata]()
 	var firstErr error
 	r.active.Range(func(_ string, item Plugin) bool {
-		itemMetadata, err := item.Metadata()
-		if err != nil {
-			firstErr = err
+		itemMetadata, metadataErr := item.Metadata()
+		if metadataErr != nil {
+			firstErr = oops.In("bu1ld.plugins").Wrapf(metadataErr, "read plugin metadata")
 			return false
 		}
-		metadata = append(metadata, itemMetadata)
+		metadata.Add(itemMetadata)
 		return true
 	})
-	return metadata, firstErr
+	return metadata.Values(), firstErr
 }
 
 func (r *Registry) Metadata(namespace string) (Metadata, error) {
 	item, ok := r.active.Get(namespace)
 	if !ok {
-		return Metadata{}, fmt.Errorf("plugin namespace %q is not registered", namespace)
+		return Metadata{}, oops.In("bu1ld.plugins").
+			With("namespace", namespace).
+			Errorf("plugin namespace %q is not registered", namespace)
 	}
-	return item.Metadata()
+	metadata, err := item.Metadata()
+	if err != nil {
+		return Metadata{}, oops.In("bu1ld.plugins").
+			With("namespace", namespace).
+			Wrapf(err, "read plugin metadata")
+	}
+	return metadata, nil
 }
 
 func (r *Registry) Close() {
@@ -160,10 +186,10 @@ func (r *Registry) Close() {
 func (r *Registry) addBuiltin(item Plugin) error {
 	metadata, err := item.Metadata()
 	if err != nil {
-		return err
+		return oops.In("bu1ld.plugins").Wrapf(err, "read builtin plugin metadata")
 	}
 	if metadata.ID == "" {
-		return fmt.Errorf("builtin plugin id is required")
+		return errors.New("builtin plugin id is required")
 	}
 	r.builtins.Set(metadata.ID, item)
 	if metadata.Namespace != "" {
@@ -197,7 +223,10 @@ func (r *Registry) resolveBuiltin(declaration Declaration) (Plugin, error) {
 			return item, nil
 		}
 	}
-	return nil, fmt.Errorf("builtin plugin %q is not available", declaration.ID)
+	return nil, oops.In("bu1ld.plugins").
+		With("namespace", declaration.Namespace).
+		With("plugin", declaration.ID).
+		New("builtin plugin is not available")
 }
 
 func normalizeDeclaration(declaration Declaration) Declaration {

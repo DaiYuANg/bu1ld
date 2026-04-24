@@ -1,10 +1,12 @@
 package main
 
 import (
-	"fmt"
 	"io"
 	"os"
 
+	"bu1ld/internal/clierr"
+
+	"github.com/samber/oops"
 	"github.com/spf13/cobra"
 )
 
@@ -21,8 +23,10 @@ func Execute() error {
 	cmd.SetErr(os.Stderr)
 
 	if err := cmd.Execute(); err != nil {
-		fmt.Fprintln(cmd.ErrOrStderr(), err)
-		return err
+		if printErr := clierr.Print(cmd.ErrOrStderr(), err); printErr != nil {
+			return oops.In("bu1ld.daemon").Wrapf(printErr, "print daemon error")
+		}
+		return oops.In("bu1ld.daemon").Wrapf(err, "execute daemon command")
 	}
 	return nil
 }

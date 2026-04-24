@@ -6,7 +6,7 @@ import (
 
 	"bu1ld/internal/build"
 
-	"github.com/DaiYuANg/arcgo/collectionx"
+	"github.com/arcgolabs/collectionx"
 )
 
 type visitState int
@@ -43,6 +43,8 @@ func Plan(project build.Project, targets []string) (collectionx.List[build.Task]
 		state, ok := states.Get(name)
 		if ok {
 			switch state {
+			case unvisited:
+				// Continue traversal below.
 			case visited:
 				return nil
 			case visiting:
@@ -52,16 +54,15 @@ func Plan(project build.Project, targets []string) (collectionx.List[build.Task]
 		}
 
 		states.Set(name, visiting)
-		nextStack := collectionx.NewList(stack.Values()...)
+		nextStack := collectionx.NewList[string](stack.Values()...)
 		nextStack.Add(name)
 
-		task.Deps.Range(func(_ int, dep string) bool {
+		for _, dep := range build.Values(task.Deps) {
 			if err := visit(dep, nextStack); err != nil {
 				states.Set(name, unvisited)
-				panic(err)
+				return err
 			}
-			return true
-		})
+		}
 
 		states.Set(name, visited)
 		ordered.Add(task)
@@ -69,23 +70,10 @@ func Plan(project build.Project, targets []string) (collectionx.List[build.Task]
 	}
 
 	for _, target := range targets {
-		if err := runVisit(visit, target); err != nil {
+		if err := visit(target, collectionx.NewList[string]()); err != nil {
 			return nil, err
 		}
 	}
 
 	return ordered, nil
-}
-
-func runVisit(visit func(string, collectionx.List[string]) error, target string) (err error) {
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			if recoveredErr, ok := recovered.(error); ok {
-				err = recoveredErr
-				return
-			}
-			err = fmt.Errorf("%v", recovered)
-		}
-	}()
-	return visit(target, collectionx.NewList[string]())
 }

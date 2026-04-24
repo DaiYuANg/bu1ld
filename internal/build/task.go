@@ -1,10 +1,10 @@
 package build
 
 import (
-	"fmt"
+	"errors"
 	"sort"
 
-	"github.com/DaiYuANg/arcgo/collectionx"
+	"github.com/arcgolabs/collectionx"
 )
 
 type Task struct {
@@ -27,7 +27,7 @@ func NewTask(name string) Task {
 
 func (t Task) Validate() error {
 	if t.Name == "" {
-		return fmt.Errorf("task name is required")
+		return errors.New("task name is required")
 	}
 	return nil
 }
@@ -37,7 +37,7 @@ type Project struct {
 }
 
 func NewProject(tasks ...Task) Project {
-	return Project{Tasks: collectionx.NewList(tasks...)}
+	return Project{Tasks: collectionx.NewList[Task](tasks...)}
 }
 
 func (p Project) FindTask(name string) (Task, bool) {

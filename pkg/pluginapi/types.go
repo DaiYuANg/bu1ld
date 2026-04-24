@@ -3,9 +3,10 @@ package pluginapi
 import (
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 
-	"github.com/DaiYuANg/arcgo/collectionx"
+	"github.com/arcgolabs/collectionx"
+	"github.com/samber/lo"
 )
 
 type Metadata struct {
@@ -100,11 +101,8 @@ func ValidateInvocation(schema RuleSchema, invocation Invocation) error {
 		}
 	}
 
-	names := make([]string, 0, len(invocation.Fields))
-	for name := range invocation.Fields {
-		names = append(names, name)
-	}
-	sort.Strings(names)
+	names := lo.Keys(invocation.Fields)
+	slices.Sort(names)
 	for _, name := range names {
 		if !known.Contains(name) {
 			return fmt.Errorf("unknown %s.%s field %q", invocation.Namespace, invocation.Rule, name)

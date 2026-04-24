@@ -4,8 +4,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/DaiYuANg/arcgo/collectionx"
-	"github.com/DaiYuANg/arcgo/configx"
+	"github.com/arcgolabs/collectionx"
+	"github.com/arcgolabs/configx"
 	"github.com/samber/oops"
 )
 
@@ -93,7 +93,7 @@ func (c Config) LogPath() string {
 }
 
 func existingConfigFiles(workDir string) collectionx.List[string] {
-	candidates := collectionx.NewList(
+	candidates := collectionx.NewList[string](
 		"bu1ld.yaml",
 		"bu1ld.yml",
 		"bu1ld.toml",

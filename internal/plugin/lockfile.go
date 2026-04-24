@@ -1,13 +1,17 @@
 package plugin
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"io"
-	"os"
-	"sort"
+	iofs "io/fs"
+	"slices"
+
+	"github.com/samber/oops"
+	"github.com/spf13/afero"
 )
 
 const LockFileName = "bu1ld.lock"
@@ -27,11 +31,9 @@ type LockedPlugin struct {
 }
 
 func NewLockFile(plugins []LockedPlugin) LockFile {
-	items := append([]LockedPlugin(nil), plugins...)
-	sort.SliceStable(items, func(i, j int) bool {
-		left := lockKey(items[i])
-		right := lockKey(items[j])
-		return left < right
+	items := slices.Clone(plugins)
+	slices.SortFunc(items, func(left, right LockedPlugin) int {
+		return cmp.Compare(lockKey(left), lockKey(right))
 	})
 	return LockFile{
 		Version: 1,
@@ -40,19 +42,26 @@ func NewLockFile(plugins []LockedPlugin) LockFile {
 }
 
 func ReadLockFile(path string) (LockFile, bool, error) {
-	data, err := os.ReadFile(path)
+	fs := afero.NewOsFs()
+	data, err := afero.ReadFile(fs, path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if isNotExist(err) {
 			return LockFile{}, false, nil
 		}
-		return LockFile{}, false, err
+		return LockFile{}, false, oops.In("bu1ld.plugins").
+			With("file", path).
+			Wrapf(err, "read plugin lockfile")
 	}
 	var lock LockFile
 	if err := json.Unmarshal(data, &lock); err != nil {
-		return LockFile{}, true, fmt.Errorf("parse %s: %w", path, err)
+		return LockFile{}, true, oops.In("bu1ld.plugins").
+			With("file", path).
+			Wrapf(err, "parse plugin lockfile")
 	}
 	if lock.Version == 0 {
-		return LockFile{}, true, fmt.Errorf("validate %s: lockfile version is required", path)
+		return LockFile{}, true, oops.In("bu1ld.plugins").
+			With("file", path).
+			New("plugin lockfile version is required")
 	}
 	return lock, true, nil
 }
@@ -60,10 +69,17 @@ func ReadLockFile(path string) (LockFile, bool, error) {
 func WriteLockFile(path string, lock LockFile) error {
 	data, err := json.MarshalIndent(lock, "", "  ")
 	if err != nil {
-		return err
+		return oops.In("bu1ld.plugins").
+			With("file", path).
+			Wrapf(err, "marshal plugin lockfile")
 	}
 	data = append(data, '\n')
-	return os.WriteFile(path, data, 0o644)
+	if err := afero.WriteFile(afero.NewOsFs(), path, data, 0o600); err != nil {
+		return oops.In("bu1ld.plugins").
+			With("file", path).
+			Wrapf(err, "write plugin lockfile")
+	}
+	return nil
 }
 
 func (l LockFile) Find(source Source, namespace string, id string) (LockedPlugin, bool) {
@@ -75,20 +91,34 @@ func (l LockFile) Find(source Source, namespace string, id string) (LockedPlugin
 	return LockedPlugin{}, false
 }
 
-func ChecksumFile(path string) (string, error) {
-	file, err := os.Open(path)
+func ChecksumFile(path string) (result string, err error) {
+	file, err := afero.NewOsFs().Open(path)
 	if err != nil {
-		return "", err
+		return "", oops.In("bu1ld.plugins").
+			With("file", path).
+			Wrapf(err, "open plugin file")
 	}
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); err == nil && closeErr != nil {
+			err = oops.In("bu1ld.plugins").
+				With("file", path).
+				Wrapf(closeErr, "close plugin file")
+		}
+	}()
 
 	hash := sha256.New()
 	if _, err := io.Copy(hash, file); err != nil {
-		return "", err
+		return "", oops.In("bu1ld.plugins").
+			With("file", path).
+			Wrapf(err, "hash plugin file")
 	}
 	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 func lockKey(plugin LockedPlugin) string {
 	return string(plugin.Source) + "\x00" + plugin.Namespace + "\x00" + plugin.ID + "\x00" + plugin.Version + "\x00" + plugin.Path
+}
+
+func isNotExist(err error) bool {
+	return err != nil && errors.Is(err, iofs.ErrNotExist)
 }

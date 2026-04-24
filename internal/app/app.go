@@ -1,8 +1,9 @@
 package app
 
 import (
+	"cmp"
 	"context"
-	"fmt"
+	"errors"
 	"io"
 	"log/slog"
 	"strings"
@@ -13,12 +14,16 @@ import (
 	"bu1ld/internal/dsl"
 	"bu1ld/internal/engine"
 	"bu1ld/internal/events"
+	"bu1ld/internal/fsx"
 	"bu1ld/internal/graph"
+	buildplugin "bu1ld/internal/plugin"
+	"bu1ld/internal/plugins/golang"
 	"bu1ld/internal/snapshot"
 
-	"github.com/DaiYuANg/arcgo/dix"
-	"github.com/DaiYuANg/arcgo/eventx"
-	"github.com/DaiYuANg/arcgo/logx"
+	"github.com/arcgolabs/collectionx"
+	"github.com/arcgolabs/dix"
+	"github.com/arcgolabs/eventx"
+	"github.com/arcgolabs/logx"
 	"github.com/samber/oops"
 )
 
@@ -47,30 +52,29 @@ type CommandRequest struct {
 }
 
 type App struct {
-	request CommandRequest
-	loader  *dsl.Loader
-	engine  *engine.Engine
-	store   *cache.Store
-	output  io.Writer
+	request  CommandRequest
+	loader   *dsl.Loader
+	registry *buildplugin.Registry
+	engine   *engine.Engine
+	store    *cache.Store
+	output   io.Writer
 }
 
 func New(
 	request CommandRequest,
 	loader *dsl.Loader,
+	registry *buildplugin.Registry,
 	engine *engine.Engine,
 	store *cache.Store,
 	output io.Writer,
-	bus eventx.BusRuntime,
 ) (*App, error) {
-	if err := subscribeConsole(bus, output); err != nil {
-		return nil, err
-	}
 	return &App{
-		request: request,
-		loader:  loader,
-		engine:  engine,
-		store:   store,
-		output:  output,
+		request:  request,
+		loader:   loader,
+		registry: registry,
+		engine:   engine,
+		store:    store,
+		output:   output,
 	}, nil
 }
 
@@ -83,7 +87,13 @@ func (a *App) Run(ctx context.Context) error {
 				With("command", a.request.Kind).
 				Wrapf(err, "load project")
 		}
-		return a.engine.Run(ctx, project, a.request.Targets)
+		if err := a.engine.Run(ctx, project, a.request.Targets); err != nil {
+			return oops.In("bu1ld.app").
+				With("command", a.request.Kind).
+				With("targets", a.request.Targets).
+				Wrapf(err, "run build graph")
+		}
+		return nil
 	case CommandGraph:
 		project, err := a.loadProject()
 		if err != nil {
@@ -102,8 +112,7 @@ func (a *App) Run(ctx context.Context) error {
 				With("command", a.request.Kind).
 				Wrapf(err, "clean cache")
 		}
-		_, err := fmt.Fprintln(a.output, "cache cleaned")
-		return err
+		return writeLine(a.output, "cache cleaned")
 	case CommandPluginsList:
 		return a.printPlugins(ctx, false)
 	case CommandPluginsDoctor:
@@ -111,21 +120,21 @@ func (a *App) Run(ctx context.Context) error {
 	case CommandPluginsLock:
 		return a.writePluginsLock(ctx)
 	case CommandDaemonStatus:
-		_, err := fmt.Fprintln(a.output, "daemon status: unavailable (not implemented)")
-		return err
+		return writeLine(a.output, "daemon status: unavailable (not implemented)")
 	case CommandDaemonStart, CommandDaemonStop:
 		return oops.In("bu1ld.daemon").
 			With("command", a.request.Kind).
 			New("daemon runtime is reserved for the next build engine iteration")
 	case CommandServerStatus:
-		_, err := fmt.Fprintln(a.output, "server status: unavailable (not implemented)")
-		return err
+		return writeLine(a.output, "server status: unavailable (not implemented)")
 	case CommandServerCoordinator, CommandServerWorker:
 		return oops.In("bu1ld.server").
 			With("command", a.request.Kind).
 			New("distributed build server is reserved for a future implementation")
 	default:
-		return fmt.Errorf("unknown command kind %q", a.request.Kind)
+		return oops.In("bu1ld.app").
+			With("command", a.request.Kind).
+			Errorf("unknown command kind %q", a.request.Kind)
 	}
 }
 
@@ -150,7 +159,7 @@ func (a *App) printGraph(project build.Project) error {
 		if len(deps) > 0 {
 			line += " -> " + strings.Join(deps, ", ")
 		}
-		if _, err := fmt.Fprintln(a.output, line); err != nil {
+		if err := writeLine(a.output, line); err != nil {
 			return err
 		}
 	}
@@ -159,12 +168,17 @@ func (a *App) printGraph(project build.Project) error {
 
 func (a *App) graphTasks(project build.Project) ([]build.Task, error) {
 	if len(a.request.Targets) == 0 {
-		tasks := make([]build.Task, 0, len(project.TaskNames()))
-		for _, name := range project.TaskNames() {
-			task, _ := project.FindTask(name)
-			tasks = append(tasks, task)
+		tasks := collectionx.NewList[build.Task]()
+		if project.Tasks != nil {
+			project.Tasks.Range(func(_ int, task build.Task) bool {
+				tasks.Add(task)
+				return true
+			})
 		}
-		return tasks, nil
+		tasks.Sort(func(left, right build.Task) int {
+			return cmp.Compare(left.Name, right.Name)
+		})
+		return tasks.Values(), nil
 	}
 
 	plan, err := graph.Plan(project, a.request.Targets)
@@ -179,14 +193,14 @@ func (a *App) graphTasks(project build.Project) ([]build.Task, error) {
 
 func (a *App) printTasks(project build.Project) error {
 	for _, name := range project.TaskNames() {
-		if _, err := fmt.Fprintln(a.output, name); err != nil {
+		if err := writeLine(a.output, name); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func RunCommand(ctx context.Context, cfg config.Config, output io.Writer, request CommandRequest) error {
+func RunCommand(ctx context.Context, cfg config.Config, output io.Writer, request CommandRequest) (err error) {
 	spec := NewDixApp(cfg, output, request)
 	runtime, err := spec.Start(ctx)
 	if err != nil {
@@ -196,7 +210,16 @@ func RunCommand(ctx context.Context, cfg config.Config, output io.Writer, reques
 	}
 	defer func() {
 		stopCtx := context.WithoutCancel(ctx)
-		_ = runtime.Stop(stopCtx)
+		if stopErr := runtime.Stop(stopCtx); stopErr != nil {
+			stopErr = oops.In("bu1ld.app").
+				With("command", request.Kind).
+				Wrapf(stopErr, "stop dix runtime")
+			if err == nil {
+				err = stopErr
+				return
+			}
+			err = errors.Join(err, stopErr)
+		}
 	}()
 
 	app, err := dix.ResolveAs[*App](runtime.Container())
@@ -227,20 +250,24 @@ func coreModule(cfg config.Config, output io.Writer) dix.Module {
 			dix.Value(cfg),
 			dix.Value[io.Writer](output),
 			dix.ProviderErr1(newLogger),
+			dix.Provider0(fsx.NewOsFS),
 			dix.Provider0(dsl.NewParser),
-			dix.Provider2(dsl.NewLoader),
-			dix.Provider0(snapshot.NewSnapshotter),
+			dix.Provider3(dsl.NewLoader),
+			dix.Provider1(snapshot.NewSnapshotter),
 			dix.Provider2(cache.NewStore),
 			dix.Provider0[engine.CommandRunner](engine.NewExecRunner),
-			dix.Provider0[eventx.BusRuntime](func() eventx.BusRuntime {
-				return eventx.New()
-			}),
+			dix.ProviderErr1(newEventBus),
+			dix.ProviderErr1(newPluginRegistry),
 			dix.Provider6(engine.New),
 			dix.ProviderErr6(New),
 		),
 		dix.WithModuleHooks(
 			dix.OnStop[eventx.BusRuntime](func(_ context.Context, bus eventx.BusRuntime) error {
 				return bus.Close()
+			}),
+			dix.OnStop[*buildplugin.Registry](func(_ context.Context, registry *buildplugin.Registry) error {
+				registry.Close()
+				return nil
 			}),
 			dix.OnStop[*slog.Logger](func(_ context.Context, logger *slog.Logger) error {
 				return logx.Close(logger)
@@ -258,19 +285,43 @@ func commandModule(request CommandRequest) dix.Module {
 }
 
 func newLogger(cfg config.Config) (*slog.Logger, error) {
-	return logx.New(
+	logger, err := logx.New(
 		logx.WithConsole(false),
 		logx.WithFile(cfg.LogPath()),
 		logx.WithLevelString(cfg.LogLevel),
 	)
+	if err != nil {
+		return nil, oops.In("bu1ld.app").
+			With("file", cfg.LogPath()).
+			Wrapf(err, "create logger")
+	}
+	return logger, nil
+}
+
+func newEventBus(output io.Writer) (eventx.BusRuntime, error) {
+	bus := eventx.New()
+	if err := subscribeConsole(bus, output); err != nil {
+		if closeErr := bus.Close(); closeErr != nil {
+			return nil, errors.Join(err, closeErr)
+		}
+		return nil, err
+	}
+	return bus, nil
+}
+
+func newPluginRegistry(loader *dsl.Loader) (*buildplugin.Registry, error) {
+	registry, err := buildplugin.NewRegistry(loader.LoadOptions(), golang.New())
+	if err != nil {
+		return nil, oops.In("bu1ld.app").Wrapf(err, "create plugin registry")
+	}
+	return registry, nil
 }
 
 func subscribeConsole(bus eventx.BusRuntime, output io.Writer) error {
 	if _, err := eventx.Subscribe[events.TaskStarted](bus, func(_ context.Context, event events.TaskStarted) error {
-		_, err := fmt.Fprintf(output, "> %s\n", event.Task)
-		return err
+		return writef(output, "> %s\n", event.Task)
 	}); err != nil {
-		return err
+		return oops.In("bu1ld.app").Wrapf(err, "subscribe task started events")
 	}
 
 	if _, err := eventx.Subscribe[events.TaskCacheHit](bus, func(_ context.Context, event events.TaskCacheHit) error {
@@ -278,31 +329,27 @@ func subscribeConsole(bus eventx.BusRuntime, output io.Writer) error {
 		if event.Restored {
 			status = "RESTORED"
 		}
-		_, err := fmt.Fprintf(output, "  %s %s\n", status, event.Task)
-		return err
+		return writef(output, "  %s %s\n", status, event.Task)
 	}); err != nil {
-		return err
+		return oops.In("bu1ld.app").Wrapf(err, "subscribe task cache hit events")
 	}
 
 	if _, err := eventx.Subscribe[events.TaskNoop](bus, func(_ context.Context, event events.TaskNoop) error {
-		_, err := fmt.Fprintf(output, "  NOOP %s\n", event.Task)
-		return err
+		return writef(output, "  NOOP %s\n", event.Task)
 	}); err != nil {
-		return err
+		return oops.In("bu1ld.app").Wrapf(err, "subscribe task noop events")
 	}
 
 	if _, err := eventx.Subscribe[events.TaskCompleted](bus, func(_ context.Context, event events.TaskCompleted) error {
-		_, err := fmt.Fprintf(output, "  DONE %s (%s)\n", event.Task, event.Duration.Round(1_000_000))
-		return err
+		return writef(output, "  DONE %s (%s)\n", event.Task, event.Duration.Round(1_000_000))
 	}); err != nil {
-		return err
+		return oops.In("bu1ld.app").Wrapf(err, "subscribe task completed events")
 	}
 
 	if _, err := eventx.Subscribe[events.TaskFailed](bus, func(_ context.Context, event events.TaskFailed) error {
-		_, err := fmt.Fprintf(output, "  FAILED %s (%s): %v\n", event.Task, event.Duration.Round(1_000_000), event.Err)
-		return err
+		return writef(output, "  FAILED %s (%s): %v\n", event.Task, event.Duration.Round(1_000_000), event.Err)
 	}); err != nil {
-		return err
+		return oops.In("bu1ld.app").Wrapf(err, "subscribe task failed events")
 	}
 
 	return nil

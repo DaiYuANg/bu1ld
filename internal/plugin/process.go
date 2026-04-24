@@ -2,16 +2,16 @@ package plugin
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"bu1ld/pkg/pluginapi"
 
 	hplugin "github.com/hashicorp/go-plugin"
+	"github.com/samber/oops"
 )
 
 type ProcessLoader struct {
@@ -38,17 +38,29 @@ func (l *ProcessLoader) Load(ctx context.Context, declaration Declaration) (Plug
 	rpcClient, err := client.Client()
 	if err != nil {
 		client.Kill()
-		return nil, fmt.Errorf("start plugin %q: %w", declaration.Namespace, err)
+		return nil, oops.In("bu1ld.plugins").
+			With("namespace", declaration.Namespace).
+			With("source", declaration.Source).
+			With("path", path).
+			Wrapf(err, "start plugin process")
 	}
 	raw, err := rpcClient.Dispense(pluginapi.ProcessPluginName)
 	if err != nil {
 		client.Kill()
-		return nil, fmt.Errorf("dispense plugin %q: %w", declaration.Namespace, err)
+		return nil, oops.In("bu1ld.plugins").
+			With("namespace", declaration.Namespace).
+			With("source", declaration.Source).
+			With("path", path).
+			Wrapf(err, "dispense plugin client")
 	}
 	item, ok := raw.(Plugin)
 	if !ok {
 		client.Kill()
-		return nil, fmt.Errorf("plugin %q returned incompatible client %T", declaration.Namespace, raw)
+		return nil, oops.In("bu1ld.plugins").
+			With("namespace", declaration.Namespace).
+			With("source", declaration.Source).
+			With("path", path).
+			Errorf("plugin returned incompatible client %T", raw)
 	}
 	l.clients = append(l.clients, client)
 	return item, nil
@@ -67,6 +79,11 @@ func (l *ProcessLoader) ResolvePath(declaration Declaration) (string, error) {
 
 func (l *ProcessLoader) resolvePath(declaration Declaration) (string, error) {
 	switch declaration.Source {
+	case SourceBuiltin:
+		return "", oops.In("bu1ld.plugins").
+			With("namespace", declaration.Namespace).
+			With("source", declaration.Source).
+			New("builtin plugins are not process-backed")
 	case SourceLocal:
 		if filepath.IsAbs(declaration.Path) {
 			return declaration.Path, nil
@@ -87,7 +104,10 @@ func (l *ProcessLoader) resolvePath(declaration Declaration) (string, error) {
 		}
 		return l.resolveInstalledPath(globalPluginDir(l.options.GlobalDir), declaration)
 	default:
-		return "", fmt.Errorf("%s plugin %q is not process-backed", declaration.Source, declaration.Namespace)
+		return "", oops.In("bu1ld.plugins").
+			With("namespace", declaration.Namespace).
+			With("source", declaration.Source).
+			Errorf("plugin source %q is not process-backed", declaration.Source)
 	}
 }
 
@@ -128,9 +148,12 @@ func discoverInstalledPlugin(root string, declaration Declaration) (string, bool
 	for _, pattern := range patterns {
 		matches, err := hplugin.Discover(pattern, root)
 		if err != nil {
-			return "", false, err
+			return "", false, oops.In("bu1ld.plugins").
+				With("root", root).
+				With("pattern", pattern).
+				Wrapf(err, "discover installed plugins")
 		}
-		sort.Strings(matches)
+		slices.Sort(matches)
 		for _, match := range matches {
 			if fileExists(match) {
 				return match, true, nil

@@ -14,8 +14,8 @@ The first version includes:
 - A configuration cache for unchanged build scripts and plugin binaries
 - Input fingerprints and a local action cache
 - Cached output blobs for declared outputs
-- A full `arcgo/dix` runtime per subcommand
-- `arcgo/collectionx`, `configx`, `eventx`, and `logx` integration
+- A full `arcgolabs/dix` runtime per subcommand
+- `arcgolabs/collectionx`, `configx`, `eventx`, and `logx` integration
 
 ## Structure
 
@@ -186,7 +186,7 @@ the `go-plugin` handshake.
 version, resolved path, and binary checksum. When `bu1ld.lock` exists,
 `plugins doctor` verifies locked plugin paths and checksums.
 
-Project configuration is cached under `.bu1ld/cache/config/project.json`.
+Project configuration is cached under `.bu1ld/cache/config/project.bin`.
 `bu1ld` reuses the evaluated task graph when the root build file, imported
 files, import glob expansions, environment variables read through `env(...)`,
 and external plugin binaries are unchanged. Pass `--no-cache` to bypass both

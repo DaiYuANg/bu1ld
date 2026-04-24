@@ -44,7 +44,7 @@ func TestChecksumFile(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "plugin")
-	if err := os.WriteFile(path, []byte("hello"), 0o755); err != nil {
+	if err := os.WriteFile(path, []byte("hello"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 	checksum, err := ChecksumFile(path)

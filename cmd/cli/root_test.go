@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/afero"
 )
 
 func TestGraphCommand(t *testing.T) {
@@ -141,7 +143,7 @@ func TestPluginsListIncludesInstalledManifest(t *testing.T) {
 	projectDir := t.TempDir()
 	writeBuildFile(t, projectDir, ``)
 	pluginDir := filepath.Join(projectDir, ".bu1ld", "plugins", "org.bu1ld.rust", "0.1.0")
-	if err := os.MkdirAll(pluginDir, 0o755); err != nil {
+	if err := os.MkdirAll(pluginDir, 0o750); err != nil {
 		t.Fatalf("mkdir plugin dir: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(pluginDir, "plugin.json"), []byte(`{
@@ -150,11 +152,15 @@ func TestPluginsListIncludesInstalledManifest(t *testing.T) {
   "version": "0.1.0",
   "binary": "bu1ld-rust",
   "rules": [{"name": "binary"}]
-}`), 0o644); err != nil {
+}`), 0o600); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(pluginDir, "bu1ld-rust"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+	pluginBinary := filepath.Join(pluginDir, "bu1ld-rust")
+	if err := os.WriteFile(pluginBinary, []byte("#!/bin/sh\n"), 0o600); err != nil {
 		t.Fatalf("write plugin binary: %v", err)
+	}
+	if err := os.Chmod(pluginBinary, 0o500); err != nil {
+		t.Fatalf("chmod plugin binary: %v", err)
 	}
 
 	var out bytes.Buffer
@@ -202,7 +208,7 @@ plugin go {
 		t.Fatalf("output = %q, want wrote", got)
 	}
 
-	lock, err := os.ReadFile(filepath.Join(projectDir, "bu1ld.lock"))
+	lock, err := afero.ReadFile(afero.NewOsFs(), filepath.Join(projectDir, "bu1ld.lock"))
 	if err != nil {
 		t.Fatalf("read lockfile: %v", err)
 	}
@@ -223,7 +229,7 @@ func TestPluginsDoctorReportsLockChecksumMismatch(t *testing.T) {
 	projectDir := t.TempDir()
 	writeBuildFile(t, projectDir, ``)
 	pluginDir := filepath.Join(projectDir, ".bu1ld", "plugins", "org.bu1ld.rust", "0.1.0")
-	if err := os.MkdirAll(pluginDir, 0o755); err != nil {
+	if err := os.MkdirAll(pluginDir, 0o750); err != nil {
 		t.Fatalf("mkdir plugin dir: %v", err)
 	}
 	binary := filepath.Join(pluginDir, "bu1ld-rust")
@@ -232,11 +238,14 @@ func TestPluginsDoctorReportsLockChecksumMismatch(t *testing.T) {
   "namespace": "rust",
   "version": "0.1.0",
   "binary": "bu1ld-rust"
-}`), 0o644); err != nil {
+}`), 0o600); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
-	if err := os.WriteFile(binary, []byte("#!/bin/sh\n"), 0o755); err != nil {
+	if err := os.WriteFile(binary, []byte("#!/bin/sh\n"), 0o600); err != nil {
 		t.Fatalf("write plugin binary: %v", err)
+	}
+	if err := os.Chmod(binary, 0o500); err != nil {
+		t.Fatalf("chmod plugin binary: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(projectDir, "bu1ld.lock"), []byte(`{
   "version": 1,
@@ -250,7 +259,7 @@ func TestPluginsDoctorReportsLockChecksumMismatch(t *testing.T) {
       "checksum": "sha256:wrong"
     }
   ]
-}`), 0o644); err != nil {
+}`), 0o600); err != nil {
 		t.Fatalf("write lockfile: %v", err)
 	}
 
@@ -364,7 +373,7 @@ func TestServerStatusCommand(t *testing.T) {
 
 func writeBuildFile(t *testing.T, dir string, content string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(dir, "build.bu1ld"), []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "build.bu1ld"), []byte(content), 0o600); err != nil {
 		t.Fatalf("write build file: %v", err)
 	}
 }

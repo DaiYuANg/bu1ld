@@ -2,12 +2,13 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 
+	"bu1ld/internal/clierr"
 	"bu1ld/internal/lsp"
 
+	"github.com/samber/oops"
 	"github.com/spf13/cobra"
 )
 
@@ -20,8 +21,10 @@ type options struct {
 func Execute() error {
 	cmd := NewRootCommand(os.Stdin, os.Stdout, os.Stderr)
 	if err := cmd.Execute(); err != nil {
-		fmt.Fprintln(cmd.ErrOrStderr(), err)
-		return err
+		if printErr := clierr.Print(cmd.ErrOrStderr(), err); printErr != nil {
+			return oops.In("bu1ld.lsp").Wrapf(printErr, "print lsp error")
+		}
+		return oops.In("bu1ld.lsp").Wrapf(err, "execute lsp command")
 	}
 	return nil
 }
@@ -61,5 +64,8 @@ func newStdioCommand(opts *options) *cobra.Command {
 }
 
 func runStdio(ctx context.Context, opts *options) error {
-	return lsp.Run(ctx, opts.in, opts.out)
+	if err := lsp.Run(ctx, opts.in, opts.out); err != nil {
+		return oops.In("bu1ld.lsp").Wrapf(err, "run lsp stdio server")
+	}
+	return nil
 }

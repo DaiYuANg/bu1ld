@@ -30,7 +30,11 @@ func NewParserWithRegistry(registry *buildplugin.Registry) *Parser {
 }
 
 func (p *Parser) Schemas() ([]buildplugin.Metadata, error) {
-	return p.registry.Schemas()
+	schemas, err := p.registry.Schemas()
+	if err != nil {
+		return nil, fmt.Errorf("read plugin schemas: %w", err)
+	}
+	return schemas, nil
 }
 
 func (p *Parser) Parse(reader io.Reader) (build.Project, error) {
@@ -40,7 +44,7 @@ func (p *Parser) Parse(reader io.Reader) (build.Project, error) {
 func (p *Parser) ParseWithOptions(reader io.Reader, options buildplugin.LoadOptions) (build.Project, error) {
 	data, err := io.ReadAll(reader)
 	if err != nil {
-		return build.Project{}, err
+		return build.Project{}, fmt.Errorf("read DSL source: %w", err)
 	}
 
 	file, err := p.ParseFile(string(data))
@@ -249,6 +253,8 @@ func (p *Parser) parseExpr() (Expr, error) {
 		return p.parseArray()
 	case TokenLBrace:
 		return p.parseObject()
+	case TokenIllegal, TokenEOF, TokenAssign, TokenComma, TokenRBrace, TokenRBrack, TokenLParen, TokenRParen:
+		return nil, p.errorf(p.cur, "expected expression, got %s", p.cur.Type)
 	default:
 		return nil, p.errorf(p.cur, "expected expression, got %s", p.cur.Type)
 	}
@@ -355,14 +361,6 @@ func (p *Parser) parseCall() (Expr, error) {
 func (p *Parser) expect(tokenType TokenType) error {
 	if p.cur.Type != tokenType {
 		return p.errorf(p.cur, "expected %s, got %s", tokenType, p.cur.Type)
-	}
-	p.next()
-	return nil
-}
-
-func (p *Parser) expectIdent(value string) error {
-	if p.cur.Type != TokenIdent || p.cur.Literal != value {
-		return p.errorf(p.cur, "expected %q, got %q", value, p.cur.Literal)
 	}
 	p.next()
 	return nil

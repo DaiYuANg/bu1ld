@@ -11,7 +11,7 @@ func TestResolveManifestPathUsesManifestBinary(t *testing.T) {
 
 	root := t.TempDir()
 	dir := filepath.Join(root, "org.bu1ld.rust", "0.1.0")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		t.Fatalf("mkdir plugin dir: %v", err)
 	}
 	writePluginManifest(t, filepath.Join(dir, ManifestFileName), `{
@@ -22,8 +22,11 @@ func TestResolveManifestPathUsesManifestBinary(t *testing.T) {
   "rules": [{"name": "binary"}]
 }`)
 	binary := filepath.Join(dir, "bu1ld-rust")
-	if err := os.WriteFile(binary, []byte("#!/bin/sh\n"), 0o755); err != nil {
+	if err := os.WriteFile(binary, []byte("#!/bin/sh\n"), 0o600); err != nil {
 		t.Fatalf("write plugin binary: %v", err)
+	}
+	if err := os.Chmod(binary, 0o500); err != nil {
+		t.Fatalf("chmod plugin binary: %v", err)
 	}
 
 	path, ok, err := ResolveManifestPath(root, Declaration{
@@ -46,7 +49,7 @@ func TestDiscoverManifests(t *testing.T) {
 
 	root := t.TempDir()
 	dir := filepath.Join(root, "org.bu1ld.rust", "0.1.0")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		t.Fatalf("mkdir plugin dir: %v", err)
 	}
 	writePluginManifest(t, filepath.Join(dir, ManifestFileName), `{
@@ -70,7 +73,7 @@ func TestDiscoverManifests(t *testing.T) {
 
 func writePluginManifest(t *testing.T, path string, content string) {
 	t.Helper()
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
 }

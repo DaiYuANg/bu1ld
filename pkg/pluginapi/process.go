@@ -3,6 +3,7 @@ package pluginapi
 import (
 	"context"
 	"encoding/gob"
+	"fmt"
 	"net/rpc"
 
 	hplugin "github.com/hashicorp/go-plugin"
@@ -39,11 +40,11 @@ type rpcPlugin struct {
 	Impl Plugin
 }
 
-func (p *rpcPlugin) Server(*hplugin.MuxBroker) (interface{}, error) {
+func (p *rpcPlugin) Server(*hplugin.MuxBroker) (any, error) {
 	return &rpcServer{Impl: p.Impl}, nil
 }
 
-func (p *rpcPlugin) Client(_ *hplugin.MuxBroker, client *rpc.Client) (interface{}, error) {
+func (p *rpcPlugin) Client(_ *hplugin.MuxBroker, client *rpc.Client) (any, error) {
 	return &rpcClient{client: client}, nil
 }
 
@@ -54,7 +55,7 @@ type rpcClient struct {
 func (c *rpcClient) Metadata() (Metadata, error) {
 	var response metadataResponse
 	if err := c.client.Call("Plugin.Metadata", metadataRequest{}, &response); err != nil {
-		return Metadata{}, err
+		return Metadata{}, fmt.Errorf("call plugin metadata: %w", err)
 	}
 	return response.Metadata, nil
 }
@@ -62,7 +63,7 @@ func (c *rpcClient) Metadata() (Metadata, error) {
 func (c *rpcClient) Expand(ctx context.Context, invocation Invocation) ([]TaskSpec, error) {
 	var response expandResponse
 	if err := c.client.Call("Plugin.Expand", expandRequest{Invocation: invocation}, &response); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("call plugin expand: %w", err)
 	}
 	return response.Tasks, nil
 }
@@ -74,7 +75,7 @@ type rpcServer struct {
 func (s *rpcServer) Metadata(_ metadataRequest, response *metadataResponse) error {
 	metadata, err := s.Impl.Metadata()
 	if err != nil {
-		return err
+		return fmt.Errorf("read plugin metadata: %w", err)
 	}
 	response.Metadata = metadata
 	return nil
@@ -83,7 +84,7 @@ func (s *rpcServer) Metadata(_ metadataRequest, response *metadataResponse) erro
 func (s *rpcServer) Expand(request expandRequest, response *expandResponse) error {
 	tasks, err := s.Impl.Expand(context.Background(), request.Invocation)
 	if err != nil {
-		return err
+		return fmt.Errorf("expand plugin invocation: %w", err)
 	}
 	response.Tasks = tasks
 	return nil

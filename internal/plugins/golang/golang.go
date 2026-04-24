@@ -2,6 +2,7 @@ package golang
 
 import (
 	"context"
+	"fmt"
 
 	buildplugin "bu1ld/internal/plugin"
 )
@@ -62,15 +63,15 @@ func (p *Plugin) Expand(_ context.Context, invocation buildplugin.Invocation) ([
 func expandBinary(invocation buildplugin.Invocation) (buildplugin.TaskSpec, error) {
 	mainPkg, err := invocation.RequiredString("main")
 	if err != nil {
-		return buildplugin.TaskSpec{}, err
+		return buildplugin.TaskSpec{}, fmt.Errorf("read go.binary main field: %w", err)
 	}
 	out, err := invocation.RequiredString("out")
 	if err != nil {
-		return buildplugin.TaskSpec{}, err
+		return buildplugin.TaskSpec{}, fmt.Errorf("read go.binary out field: %w", err)
 	}
 	deps, err := invocation.OptionalList("deps", nil)
 	if err != nil {
-		return buildplugin.TaskSpec{}, err
+		return buildplugin.TaskSpec{}, fmt.Errorf("read go.binary deps field: %w", err)
 	}
 	inputs, err := goInputs(invocation)
 	if err != nil {
@@ -89,7 +90,7 @@ func expandBinary(invocation buildplugin.Invocation) (buildplugin.TaskSpec, erro
 func expandTest(invocation buildplugin.Invocation) (buildplugin.TaskSpec, error) {
 	deps, err := invocation.OptionalList("deps", nil)
 	if err != nil {
-		return buildplugin.TaskSpec{}, err
+		return buildplugin.TaskSpec{}, fmt.Errorf("read go.test deps field: %w", err)
 	}
 	inputs, err := goInputs(invocation)
 	if err != nil {
@@ -97,7 +98,7 @@ func expandTest(invocation buildplugin.Invocation) (buildplugin.TaskSpec, error)
 	}
 	packages, err := invocation.OptionalList("packages", []string{"./..."})
 	if err != nil {
-		return buildplugin.TaskSpec{}, err
+		return buildplugin.TaskSpec{}, fmt.Errorf("read go.test packages field: %w", err)
 	}
 
 	return buildplugin.TaskSpec{
@@ -111,10 +112,14 @@ func expandTest(invocation buildplugin.Invocation) (buildplugin.TaskSpec, error)
 func goInputs(invocation buildplugin.Invocation) ([]string, error) {
 	inputs, err := invocation.OptionalList("inputs", nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read go inputs field: %w", err)
 	}
 	if len(inputs) > 0 {
 		return inputs, nil
 	}
-	return invocation.OptionalList("srcs", []string{"build.bu1ld", "go.mod", "go.sum", "**/*.go"})
+	srcs, err := invocation.OptionalList("srcs", []string{"build.bu1ld", "go.mod", "go.sum", "**/*.go"})
+	if err != nil {
+		return nil, fmt.Errorf("read go srcs field: %w", err)
+	}
+	return srcs, nil
 }

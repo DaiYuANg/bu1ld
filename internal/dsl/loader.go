@@ -1,29 +1,31 @@
 package dsl
 
 import (
-	"fmt"
-	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"bu1ld/internal/build"
 	"bu1ld/internal/config"
+	"bu1ld/internal/fsx"
 	buildplugin "bu1ld/internal/plugin"
 
-	"github.com/DaiYuANg/arcgo/collectionx"
+	"github.com/arcgolabs/collectionx"
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/samber/oops"
+	"github.com/spf13/afero"
 )
 
 type Loader struct {
 	cfg    config.Config
+	fs     afero.Fs
 	parser *Parser
 }
 
-func NewLoader(cfg config.Config, parser *Parser) *Loader {
+func NewLoader(cfg config.Config, fs afero.Fs, parser *Parser) *Loader {
 	return &Loader{
 		cfg:    cfg,
+		fs:     fs,
 		parser: parser,
 	}
 }
@@ -46,7 +48,11 @@ func (l *Loader) Load() (build.Project, error) {
 			Wrapf(err, "parse build file")
 	}
 	if !l.cfg.NoCache {
-		_ = l.saveConfigCache(project, file, filePaths, imports, envs)
+		if err := l.saveConfigCache(project, file, filePaths, imports, envs); err != nil {
+			return build.Project{}, oops.In("bu1ld.dsl").
+				With("file", l.cfg.BuildFilePath()).
+				Wrapf(err, "write configuration cache")
+		}
 	}
 	return project, nil
 }
@@ -83,11 +89,15 @@ func (l *Loader) LockFilePath() string {
 func (l *Loader) loadFile(path string, stack map[string]bool, seen map[string]bool, collector *loadCollector) (*File, error) {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return nil, err
+		return nil, oops.In("bu1ld.dsl").
+			With("file", path).
+			Wrapf(err, "resolve build file path")
 	}
 	absPath = filepath.Clean(absPath)
 	if stack[absPath] {
-		return nil, fmt.Errorf("import cycle detected at %s", absPath)
+		return nil, oops.In("bu1ld.dsl").
+			With("file", absPath).
+			New("import cycle detected")
 	}
 	if seen[absPath] {
 		return &File{}, nil
@@ -96,14 +106,18 @@ func (l *Loader) loadFile(path string, stack map[string]bool, seen map[string]bo
 	stack[absPath] = true
 	defer delete(stack, absPath)
 
-	data, err := os.ReadFile(absPath)
+	data, err := afero.ReadFile(l.fs, absPath)
 	if err != nil {
-		return nil, err
+		return nil, oops.In("bu1ld.dsl").
+			With("file", absPath).
+			Wrapf(err, "read build file")
 	}
 	collector.addFile(absPath)
 	file, err := l.parser.ParseFile(string(data))
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", absPath, err)
+		return nil, oops.In("bu1ld.dsl").
+			With("file", absPath).
+			Wrapf(err, "parse build file")
 	}
 	seen[absPath] = true
 
@@ -114,9 +128,14 @@ func (l *Loader) loadFile(path string, stack map[string]bool, seen map[string]bo
 			merged.Statements = append(merged.Statements, statement)
 			continue
 		}
-		importedPaths, err := resolveImportPaths(absPath, importNode.Path)
+		importedPaths, err := resolveImportPaths(l.fs, absPath, importNode.Path)
 		if err != nil {
-			return nil, fmt.Errorf("%s:%d:%d: %w", absPath, importNode.Position().Line, importNode.Position().Column, err)
+			return nil, oops.In("bu1ld.dsl").
+				With("file", absPath).
+				With("import", importNode.Path).
+				With("line", importNode.Position().Line).
+				With("column", importNode.Position().Column).
+				Wrapf(err, "resolve import")
 		}
 		collector.addImport(absPath, importNode.Path, importedPaths)
 		for _, importedPath := range importedPaths {
@@ -130,9 +149,11 @@ func (l *Loader) loadFile(path string, stack map[string]bool, seen map[string]bo
 	return merged, nil
 }
 
-func resolveImportPaths(importerPath string, importPath string) ([]string, error) {
+func resolveImportPaths(fs afero.Fs, importerPath string, importPath string) ([]string, error) {
 	if importPath == "" {
-		return nil, fmt.Errorf("import path is required")
+		return nil, oops.In("bu1ld.dsl").
+			With("file", importerPath).
+			New("import path is required")
 	}
 	pattern := importPath
 	if !filepath.IsAbs(pattern) {
@@ -141,17 +162,23 @@ func resolveImportPaths(importerPath string, importPath string) ([]string, error
 	pattern = filepath.Clean(pattern)
 
 	if strings.ContainsAny(pattern, "*?[") {
-		matches, err := doublestar.FilepathGlob(pattern, doublestar.WithFilesOnly(), doublestar.WithNoFollow())
+		matches, err := fsx.Glob(fs, pattern, doublestar.WithFilesOnly(), doublestar.WithNoFollow())
 		if err != nil {
-			return nil, err
+			return nil, oops.In("bu1ld.dsl").
+				With("file", importerPath).
+				With("import", importPath).
+				Wrapf(err, "resolve import glob")
 		}
 		if len(matches) == 0 {
-			return nil, fmt.Errorf("import %q matched no files", importPath)
+			return nil, oops.In("bu1ld.dsl").
+				With("file", importerPath).
+				With("import", importPath).
+				Errorf("import %q matched no files", importPath)
 		}
 		for index, match := range matches {
 			matches[index] = filepath.Clean(match)
 		}
-		sort.Strings(matches)
+		slices.Sort(matches)
 		return matches, nil
 	}
 	return []string{pattern}, nil
@@ -192,7 +219,7 @@ func (c *loadCollector) addImport(importer string, path string, matches []string
 	c.imports.Add(importDependency{
 		Importer: importer,
 		Path:     path,
-		Matches:  append([]string(nil), matches...),
+		Matches:  slices.Clone(matches),
 	})
 }
 
@@ -201,6 +228,6 @@ func (c *loadCollector) filePaths() []string {
 		return nil
 	}
 	values := c.files.Values()
-	sort.Strings(values)
+	slices.Sort(values)
 	return values
 }

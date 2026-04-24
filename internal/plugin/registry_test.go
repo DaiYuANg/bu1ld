@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -16,12 +17,12 @@ func TestRegistryExpandsBuiltinAlias(t *testing.T) {
 	}
 	defer registry.Close()
 
-	if err := registry.Declare(context.Background(), Declaration{
+	if declareErr := registry.Declare(context.Background(), Declaration{
 		Namespace: "alias",
 		ID:        "builtin.fake",
 		Source:    SourceBuiltin,
-	}); err != nil {
-		t.Fatalf("Declare() error = %v", err)
+	}); declareErr != nil {
+		t.Fatalf("Declare() error = %v", declareErr)
 	}
 
 	tasks, err := registry.Expand(context.Background(), Invocation{
@@ -118,11 +119,14 @@ func TestProcessLoaderDiscoversInstalledPluginPath(t *testing.T) {
 
 	root := t.TempDir()
 	discovered := filepath.Join(root, "org.bu1ld.rust", "0.1.0", "bu1ld-rust")
-	if err := os.MkdirAll(filepath.Dir(discovered), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(discovered), 0o750); err != nil {
 		t.Fatalf("mkdir plugin dir: %v", err)
 	}
-	if err := os.WriteFile(discovered, []byte("#!/bin/sh\n"), 0o755); err != nil {
+	if err := os.WriteFile(discovered, []byte("#!/bin/sh\n"), 0o600); err != nil {
 		t.Fatalf("write plugin: %v", err)
+	}
+	if err := os.Chmod(discovered, 0o500); err != nil {
+		t.Fatalf("chmod plugin: %v", err)
 	}
 
 	loader := NewProcessLoader(LoadOptions{LocalDir: root})
@@ -160,7 +164,7 @@ func (p fakePlugin) Metadata() (Metadata, error) {
 func (p fakePlugin) Expand(_ context.Context, invocation Invocation) ([]TaskSpec, error) {
 	message, err := invocation.RequiredString("message")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read fake message field: %w", err)
 	}
 	return []TaskSpec{
 		{

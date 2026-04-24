@@ -2,18 +2,19 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
 	"bu1ld/internal/dsl"
 	buildplugin "bu1ld/internal/plugin"
-	"bu1ld/internal/plugins/golang"
 
-	"github.com/DaiYuANg/arcgo/collectionx"
+	"github.com/arcgolabs/collectionx"
+	"github.com/samber/lo"
 	"github.com/samber/oops"
 )
 
@@ -44,10 +45,10 @@ func (a *App) printPluginsDoctor(ctx context.Context) error {
 	localDir := buildplugin.LocalPluginDir(options)
 	globalDir := buildplugin.GlobalPluginDir(options.GlobalDir)
 	lockPath := a.loader.LockFilePath()
-	if _, err := fmt.Fprintf(a.output, "local plugins: %s (%s)\n", localDir, pathStatus(localDir)); err != nil {
+	if err := writef(a.output, "local plugins: %s (%s)\n", localDir, pathStatus(localDir)); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(a.output, "global plugins: %s (%s)\n\n", globalDir, pathStatus(globalDir)); err != nil {
+	if err := writef(a.output, "global plugins: %s (%s)\n\n", globalDir, pathStatus(globalDir)); err != nil {
 		return err
 	}
 
@@ -57,11 +58,13 @@ func (a *App) printPluginsDoctor(ctx context.Context) error {
 	}
 	lock, found, err := buildplugin.ReadLockFile(lockPath)
 	if err != nil {
-		return err
+		return oops.In("bu1ld.plugins").
+			With("file", lockPath).
+			Wrapf(err, "read plugin lockfile")
 	}
 	if found {
 		entries = applyLockDiagnostics(entries, lock)
-	} else if _, err := fmt.Fprintf(a.output, "lockfile: %s (missing)\n\n", lockPath); err != nil {
+	} else if err := writef(a.output, "lockfile: %s (missing)\n\n", lockPath); err != nil {
 		return err
 	}
 	return a.writePluginReport(entries, true)
@@ -89,21 +92,15 @@ func (a *App) pluginEntries(ctx context.Context) ([]pluginEntry, error) {
 
 	file, err := a.loader.LoadFile()
 	if err != nil {
-		return nil, err
+		return nil, oops.In("bu1ld.plugins").Wrapf(err, "load build file")
 	}
 	declarations, err := dsl.PluginDeclarations(file)
 	if err != nil {
 		return nil, oops.In("bu1ld.plugins").Wrapf(err, "read plugin declarations")
 	}
 
-	registry, err := buildplugin.NewRegistry(a.loader.LoadOptions(), golang.New())
-	if err != nil {
-		return nil, oops.In("bu1ld.plugins").Wrapf(err, "create plugin registry")
-	}
-	defer registry.Close()
-
 	for _, item := range declarations {
-		entry := inspectPlugin(ctx, registry, a.loader.LoadOptions(), item.Declaration)
+		entry := inspectPlugin(ctx, a.registry, a.loader.LoadOptions(), item.Declaration)
 		entry.Declared = true
 		key := pluginEntryKey(entry)
 		if seen.Contains(key) {
@@ -123,35 +120,21 @@ func (a *App) pluginEntries(ctx context.Context) ([]pluginEntry, error) {
 	}
 
 	values := entries.Values()
-	sort.SliceStable(values, func(i, j int) bool {
-		left := values[i]
-		right := values[j]
-		if left.Source != right.Source {
-			return left.Source < right.Source
-		}
-		return left.Namespace < right.Namespace
-	})
-	return values, nil
+	return sortPluginEntries(values), nil
 }
 
 func (a *App) declaredPluginEntries(ctx context.Context) ([]pluginEntry, error) {
 	file, err := a.loader.LoadFile()
 	if err != nil {
-		return nil, err
+		return nil, oops.In("bu1ld.plugins").Wrapf(err, "load build file")
 	}
 	declarations, err := dsl.PluginDeclarations(file)
 	if err != nil {
 		return nil, oops.In("bu1ld.plugins").Wrapf(err, "read plugin declarations")
 	}
-	registry, err := buildplugin.NewRegistry(a.loader.LoadOptions(), golang.New())
-	if err != nil {
-		return nil, oops.In("bu1ld.plugins").Wrapf(err, "create plugin registry")
-	}
-	defer registry.Close()
-
 	entries := collectionx.NewList[pluginEntry]()
 	for _, item := range declarations {
-		entry := inspectPlugin(ctx, registry, a.loader.LoadOptions(), item.Declaration)
+		entry := inspectPlugin(ctx, a.registry, a.loader.LoadOptions(), item.Declaration)
 		entry.Declared = true
 		entries.Add(entry)
 	}
@@ -267,14 +250,14 @@ func (a *App) writePluginsLock(ctx context.Context) error {
 				With("namespace", entry.Namespace).
 				Wrapf(entry.Err, "lock plugin")
 		}
-		plugin, err := lockedPluginFromEntry(entry)
-		if err != nil {
+		lockedPlugin, lockErr := lockedPluginFromEntry(entry)
+		if lockErr != nil {
 			return oops.In("bu1ld.plugins").
 				With("plugin", entry.ID).
 				With("namespace", entry.Namespace).
-				Wrapf(err, "lock plugin")
+				Wrapf(lockErr, "lock plugin")
 		}
-		locked.Add(plugin)
+		locked.Add(lockedPlugin)
 	}
 	lock := buildplugin.NewLockFile(locked.Values())
 	path := a.loader.LockFilePath()
@@ -283,8 +266,7 @@ func (a *App) writePluginsLock(ctx context.Context) error {
 			With("file", path).
 			Wrapf(err, "write plugin lockfile")
 	}
-	_, err = fmt.Fprintf(a.output, "wrote %s (%d plugins)\n", path, len(lock.Plugins))
-	return err
+	return writef(a.output, "wrote %s (%d plugins)\n", path, len(lock.Plugins))
 }
 
 func lockedPluginFromEntry(entry pluginEntry) (buildplugin.LockedPlugin, error) {
@@ -300,7 +282,10 @@ func lockedPluginFromEntry(entry pluginEntry) (buildplugin.LockedPlugin, error) 
 	}
 	checksum, err := buildplugin.ChecksumFile(entry.Path)
 	if err != nil {
-		return buildplugin.LockedPlugin{}, err
+		return buildplugin.LockedPlugin{}, oops.In("bu1ld.plugins").
+			With("plugin", entry.ID).
+			With("path", entry.Path).
+			Wrapf(err, "checksum locked plugin")
 	}
 	locked.Checksum = checksum
 	return locked, nil
@@ -333,18 +318,10 @@ func applyLockDiagnostics(entries []pluginEntry, lock buildplugin.LockFile) []pl
 			Path:      locked.Path,
 			Checksum:  locked.Checksum,
 			Status:    "stale-lock",
-			Err:       fmt.Errorf("locked plugin is not present in current plugin graph"),
+			Err:       errors.New("locked plugin is not present in current plugin graph"),
 		})
 	}
-	sort.SliceStable(values, func(i, j int) bool {
-		left := values[i]
-		right := values[j]
-		if left.Source != right.Source {
-			return left.Source < right.Source
-		}
-		return left.Namespace < right.Namespace
-	})
-	return values
+	return sortPluginEntries(values)
 }
 
 func withLockDiagnostic(entry pluginEntry, locked buildplugin.LockedPlugin) pluginEntry {
@@ -391,7 +368,7 @@ func lockDiagnosticKey(source buildplugin.Source, namespace string, id string) s
 func writePluginTable(output io.Writer, entries []pluginEntry) error {
 	writer := tabwriter.NewWriter(output, 0, 0, 2, ' ', 0)
 	if _, err := fmt.Fprintln(writer, "SOURCE\tNAMESPACE\tID\tVERSION\tPATH\tRULES\tSTATUS"); err != nil {
-		return err
+		return oops.In("bu1ld.app").Wrapf(err, "write plugin report")
 	}
 	for _, entry := range entries {
 		status := entry.Status
@@ -409,10 +386,13 @@ func writePluginTable(output io.Writer, entries []pluginEntry) error {
 			emptyDash(strings.Join(entry.Rules, ",")),
 			status,
 		); err != nil {
-			return err
+			return oops.In("bu1ld.app").Wrapf(err, "write plugin report")
 		}
 	}
-	return writer.Flush()
+	if err := writer.Flush(); err != nil {
+		return oops.In("bu1ld.app").Wrapf(err, "flush plugin report")
+	}
+	return nil
 }
 
 func (a *App) writePluginReport(entries []pluginEntry, failOnIssue bool) error {
@@ -433,21 +413,35 @@ func (a *App) writePluginReport(entries []pluginEntry, failOnIssue bool) error {
 }
 
 func ruleNames(rules []buildplugin.RuleSchema) []string {
-	names := make([]string, 0, len(rules))
-	for _, rule := range rules {
-		names = append(names, rule.Name)
-	}
-	sort.Strings(names)
+	names := lo.Map(rules, func(rule buildplugin.RuleSchema, _ int) string {
+		return rule.Name
+	})
+	slices.Sort(names)
 	return names
 }
 
 func manifestRuleNames(rules []buildplugin.ManifestRule) []string {
-	names := make([]string, 0, len(rules))
-	for _, rule := range rules {
-		names = append(names, rule.Name)
-	}
-	sort.Strings(names)
+	names := lo.Map(rules, func(rule buildplugin.ManifestRule, _ int) string {
+		return rule.Name
+	})
+	slices.Sort(names)
 	return names
+}
+
+func sortPluginEntries(entries []pluginEntry) []pluginEntry {
+	slices.SortStableFunc(entries, func(left, right pluginEntry) int {
+		if left.Source != right.Source {
+			return strings.Compare(string(left.Source), string(right.Source))
+		}
+		if left.Namespace != right.Namespace {
+			return strings.Compare(left.Namespace, right.Namespace)
+		}
+		if left.ID != right.ID {
+			return strings.Compare(left.ID, right.ID)
+		}
+		return strings.Compare(left.Path, right.Path)
+	})
+	return entries
 }
 
 func pluginEntryKey(entry pluginEntry) string {
@@ -481,13 +475,19 @@ func pathStatus(path string) string {
 func executableFileError(path string) error {
 	info, err := os.Stat(path)
 	if err != nil {
-		return err
+		return oops.In("bu1ld.plugins").
+			With("path", path).
+			Wrapf(err, "stat plugin executable")
 	}
 	if info.IsDir() {
-		return fmt.Errorf("%s is a directory", path)
+		return oops.In("bu1ld.plugins").
+			With("path", path).
+			Errorf("%s is a directory", path)
 	}
 	if info.Mode()&0o111 == 0 {
-		return fmt.Errorf("%s is not executable", path)
+		return oops.In("bu1ld.plugins").
+			With("path", path).
+			Errorf("%s is not executable", path)
 	}
 	return nil
 }
