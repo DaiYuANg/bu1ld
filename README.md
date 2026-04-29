@@ -66,7 +66,7 @@ plugin go {
 }
 
 toolchain go {
-  version = $(env("GO_VERSION", "1.26.2"))
+  version = env("GO_VERSION", "1.26.2")
 }
 
 import "tasks/go.bu1ld"
@@ -85,28 +85,27 @@ go.binary build {
 }
 ```
 
-Block names are typed symbols instead of string labels. The `$(...)` form is
-evaluated by `expr-lang/expr`, while the outer build script syntax is parsed
-into bu1ld's own AST. Imports are resolved relative to the file that declares
-them and also support doublestar glob patterns such as
+Block names are typed symbols instead of string labels. Expressions are parsed
+directly by `plano`, while imports are resolved relative to the file that
+declares them and also support doublestar glob patterns such as
 `import "tasks/**/*.bu1ld"`.
 
 Custom tasks can use the same built-in functions and expression context:
 
 ```text
 task package {
-  outputs = [$("dist/" + target)]
+  outputs = ["dist/package"]
   run {
-    shell(concat("echo ", target))
+    shell("echo package")
   }
 }
 
 task archive {
   deps = [build]
   inputs = ["dist/bu1ld"]
-  outputs = [$("dist/" + target + ".tgz")]
+  outputs = ["dist/pack.tgz"]
   run {
-    exec("tar", "-czf", $("dist/" + target + ".tgz"), "dist/bu1ld")
+    exec("tar", "-czf", "dist/pack.tgz", "dist/bu1ld")
   }
 }
 ```

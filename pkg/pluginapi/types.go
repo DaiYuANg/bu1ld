@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/arcgolabs/collectionx"
+	"github.com/arcgolabs/collectionx/set"
 	"github.com/samber/lo"
 )
 
@@ -86,7 +86,7 @@ func (i Invocation) OptionalList(name string, fallback []string) ([]string, erro
 }
 
 func ValidateInvocation(schema RuleSchema, invocation Invocation) error {
-	known := collectionx.NewSet[string]()
+	known := set.NewSet[string]()
 	for _, field := range schema.Fields {
 		known.Add(field.Name)
 		value, ok := invocation.Fields[field.Name]

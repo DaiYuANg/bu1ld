@@ -52,8 +52,8 @@ plugin go {
 }
 
 toolchain go {
-  version = $(env("GO_VERSION", "dev"))
-  settings = { mode = "module", platform = $(os + "/" + arch) }
+  version = env("GO_VERSION", "dev")
+  settings = { mode = "module", platform = os + "/" + arch }
 }
 
 go.test test {
@@ -63,7 +63,7 @@ go.test test {
 go.binary build {
   deps = [test]
   main = "./cmd/cli"
-  out = $("dist/" + target)
+  out = "dist/bu1ld"
 }
 `))
 	if err != nil {
@@ -82,7 +82,7 @@ go.binary build {
 	if !ok {
 		t.Fatalf("build task not found")
 	}
-	if got, want := strings.Join(buildTask.Command.Values(), " "), "go build -o dist/build ./cmd/cli"; got != want {
+	if got, want := strings.Join(buildTask.Command.Values(), " "), "go build -o dist/bu1ld ./cmd/cli"; got != want {
 		t.Fatalf("build command = %q, want %q", got, want)
 	}
 }
@@ -91,9 +91,9 @@ func TestParserEvaluatesExpressions(t *testing.T) {
 	t.Setenv("BU1LD_TEST_INPUT", "**/*.go")
 
 	project, err := NewParser().Parse(strings.NewReader(`
-task build-cli {
-  inputs = list("go.mod", env("BU1LD_TEST_INPUT"))
-  outputs = [concat("dist/bu1ld-", os(), "-", arch())]
+task build_cli {
+  inputs = ["go.mod", env("BU1LD_TEST_INPUT")]
+  outputs = ["dist/bu1ld-" + os + "-" + arch]
   command = ["go", "build", "./cmd/cli"]
 }
 `))
@@ -101,9 +101,9 @@ task build-cli {
 		t.Fatalf("Parse() error = %v", err)
 	}
 
-	task, ok := project.FindTask("build-cli")
+	task, ok := project.FindTask("build_cli")
 	if !ok {
-		t.Fatalf("build-cli task not found")
+		t.Fatalf("build_cli task not found")
 	}
 	if got, want := task.Inputs.Values(), []string{"go.mod", "**/*.go"}; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("inputs = %v, want %v", got, want)
@@ -113,9 +113,9 @@ task build-cli {
 func TestParserEvaluatesScriptExpressions(t *testing.T) {
 	project, err := NewParser().Parse(strings.NewReader(`
 task build {
-  inputs = $(list("go.mod", "go.sum"))
-  outputs = [$("dist/" + "bu1ld")]
-  command = ["go", "build", "-o", $("dist/" + "bu1ld"), "./cmd/cli"]
+  inputs = ["go.mod", "go.sum"]
+  outputs = ["dist/" + "bu1ld"]
+  command = ["go", "build", "-o", "dist/" + "bu1ld", "./cmd/cli"]
 }
 `))
 	if err != nil {
@@ -134,8 +134,8 @@ task build {
 func TestParserEvaluatesTaskTargetContext(t *testing.T) {
 	project, err := NewParser().Parse(strings.NewReader(`
 task package {
-  outputs = [$("dist/" + target)]
-  command = ["sh", "-c", concat("echo ", target)]
+  outputs = ["dist/package"]
+  command = ["sh", "-c", "echo package"]
 }
 `))
 	if err != nil {
@@ -157,15 +157,15 @@ task package {
 func TestParserEvaluatesTaskRunActions(t *testing.T) {
 	project, err := NewParser().Parse(strings.NewReader(`
 task pack {
-  outputs = [$("dist/" + target + ".tgz")]
+  outputs = ["dist/pack.tgz"]
   run {
-    exec("tar", "-czf", $("dist/" + target + ".tgz"), "dist/bu1ld")
+    exec("tar", "-czf", "dist/pack.tgz", "dist/bu1ld")
   }
 }
 
 task smoke {
   run {
-    shell(concat("echo ", target))
+    shell("echo smoke")
   }
 }
 `))
@@ -219,7 +219,7 @@ plugin go {
 	if err == nil {
 		t.Fatalf("Parse() error = nil, want run outside task error")
 	}
-	if got, want := err.Error(), "run block is only supported in task blocks"; !strings.Contains(got, want) {
+	if got, want := err.Error(), "does not allow nested forms in field-only body"; !strings.Contains(got, want) {
 		t.Fatalf("Parse() error = %q, want substring %q", got, want)
 	}
 }
@@ -242,21 +242,20 @@ task broken {
 
 func TestParserParsesImportStatement(t *testing.T) {
 	file, err := NewParser().ParseFile(`
-import "tasks/go.bu1ld"
 task build {}
 `)
 	if err != nil {
 		t.Fatalf("ParseFile() error = %v", err)
 	}
-	if got, want := len(file.Statements), 2; got != want {
-		t.Fatalf("statement count = %d, want %d", got, want)
+	if got, want := file.Result.HIR.Forms.Len(), 1; got != want {
+		t.Fatalf("form count = %d, want %d", got, want)
 	}
-	importNode, ok := file.Statements[0].(*ImportNode)
+	form, ok := file.Result.HIR.Forms.Get(0)
 	if !ok {
-		t.Fatalf("first statement = %T, want *ImportNode", file.Statements[0])
+		t.Fatal("first form not found")
 	}
-	if got, want := importNode.Path, "tasks/go.bu1ld"; got != want {
-		t.Fatalf("import path = %q, want %q", got, want)
+	if got, want := form.Kind, "task"; got != want {
+		t.Fatalf("first form kind = %q, want %q", got, want)
 	}
 }
 

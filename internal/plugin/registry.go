@@ -7,7 +7,8 @@ import (
 
 	"bu1ld/internal/build"
 
-	"github.com/arcgolabs/collectionx"
+	"github.com/arcgolabs/collectionx/list"
+	"github.com/arcgolabs/collectionx/mapping"
 	"github.com/samber/oops"
 )
 
@@ -18,21 +19,21 @@ type LoadOptions struct {
 }
 
 type Registry struct {
-	builtins      collectionx.Map[string, Plugin]
-	localPlugins  collectionx.Map[string, Plugin]
-	globalPlugins collectionx.Map[string, Plugin]
-	active        collectionx.Map[string, Plugin]
-	declarations  collectionx.Map[string, Declaration]
+	builtins      *mapping.Map[string, Plugin]
+	localPlugins  *mapping.Map[string, Plugin]
+	globalPlugins *mapping.Map[string, Plugin]
+	active        *mapping.Map[string, Plugin]
+	declarations  *mapping.Map[string, Declaration]
 	loader        *ProcessLoader
 }
 
 func NewRegistry(options LoadOptions, builtins ...Plugin) (*Registry, error) {
 	registry := &Registry{
-		builtins:      collectionx.NewMap[string, Plugin](),
-		localPlugins:  collectionx.NewMap[string, Plugin](),
-		globalPlugins: collectionx.NewMap[string, Plugin](),
-		active:        collectionx.NewMap[string, Plugin](),
-		declarations:  collectionx.NewMap[string, Declaration](),
+		builtins:      mapping.NewMap[string, Plugin](),
+		localPlugins:  mapping.NewMap[string, Plugin](),
+		globalPlugins: mapping.NewMap[string, Plugin](),
+		active:        mapping.NewMap[string, Plugin](),
+		declarations:  mapping.NewMap[string, Declaration](),
 		loader:        NewProcessLoader(options),
 	}
 	for _, item := range builtins {
@@ -45,11 +46,11 @@ func NewRegistry(options LoadOptions, builtins ...Plugin) (*Registry, error) {
 
 func (r *Registry) CloneWithOptions(options LoadOptions) *Registry {
 	clone := &Registry{
-		builtins:      collectionx.NewMap[string, Plugin](),
-		localPlugins:  collectionx.NewMap[string, Plugin](),
-		globalPlugins: collectionx.NewMap[string, Plugin](),
-		active:        collectionx.NewMap[string, Plugin](),
-		declarations:  collectionx.NewMap[string, Declaration](),
+		builtins:      mapping.NewMap[string, Plugin](),
+		localPlugins:  mapping.NewMap[string, Plugin](),
+		globalPlugins: mapping.NewMap[string, Plugin](),
+		active:        mapping.NewMap[string, Plugin](),
+		declarations:  mapping.NewMap[string, Declaration](),
 		loader:        NewProcessLoader(options),
 	}
 	r.builtins.Range(func(id string, item Plugin) bool {
@@ -130,7 +131,7 @@ func (r *Registry) Expand(ctx context.Context, invocation Invocation) ([]build.T
 			With("rule", invocation.Rule).
 			Wrapf(err, "expand plugin rule")
 	}
-	tasks := collectionx.NewListWithCapacity[build.Task](len(specs))
+	tasks := list.NewListWithCapacity[build.Task](len(specs))
 	for _, spec := range specs {
 		tasks.Add(TaskSpecToBuild(spec))
 	}
@@ -147,7 +148,7 @@ func (r *Registry) Expand(ctx context.Context, invocation Invocation) ([]build.T
 }
 
 func (r *Registry) Schemas() ([]Metadata, error) {
-	metadata := collectionx.NewList[Metadata]()
+	metadata := list.NewList[Metadata]()
 	var firstErr error
 	r.active.Range(func(_ string, item Plugin) bool {
 		itemMetadata, metadataErr := item.Metadata()

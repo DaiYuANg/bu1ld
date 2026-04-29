@@ -5,7 +5,11 @@ go 1.26.2
 require github.com/spf13/cobra v1.10.2
 
 require (
-	github.com/expr-lang/expr v1.17.8
+	github.com/arcgolabs/collectionx/list v0.6.0
+	github.com/arcgolabs/collectionx/mapping v0.6.0
+	github.com/arcgolabs/collectionx/prefix v0.6.0
+	github.com/arcgolabs/collectionx/set v0.6.0
+	github.com/arcgolabs/plano v0.2.0
 	github.com/fxamacker/cbor/v2 v2.9.1
 	github.com/hashicorp/go-plugin v1.7.0
 	github.com/klauspost/compress v1.18.5
@@ -16,16 +20,13 @@ require (
 )
 
 require (
-	github.com/arcgolabs/collectionx/internal v0.2.0 // indirect
-	github.com/arcgolabs/collectionx/interval v0.2.0 // indirect
-	github.com/arcgolabs/collectionx/list v0.2.0 // indirect
-	github.com/arcgolabs/collectionx/mapping v0.2.0 // indirect
-	github.com/arcgolabs/collectionx/prefix v0.2.0 // indirect
-	github.com/arcgolabs/collectionx/set v0.2.0 // indirect
-	github.com/arcgolabs/collectionx/tree v0.2.0 // indirect
+	github.com/arcgolabs/collectionx/graph v0.6.0 // indirect
+	github.com/arcgolabs/collectionx/internal v0.6.0 // indirect
+	github.com/arcgolabs/plano/examples/builddsl v0.0.0-20260429150020-93c29b878803 // indirect
 	github.com/fatih/color v1.13.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/hashicorp/go-hclog v1.6.3 // indirect
+	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/hashicorp/yamux v0.1.2 // indirect
 	github.com/oklog/run v1.1.0 // indirect
 	github.com/segmentio/asm v1.1.3 // indirect
@@ -43,12 +44,11 @@ require (
 )
 
 require (
-	github.com/arcgolabs/collectionx v0.2.0
-	github.com/arcgolabs/configx v0.3.0
-	github.com/arcgolabs/dix v0.5.1
-	github.com/arcgolabs/eventx v0.1.0
-	github.com/arcgolabs/logx v0.1.0
-	github.com/arcgolabs/observabilityx v0.2.0 // indirect
+	github.com/arcgolabs/configx v0.3.1
+	github.com/arcgolabs/dix v0.7.1
+	github.com/arcgolabs/eventx v0.1.1
+	github.com/arcgolabs/logx v0.1.1
+	github.com/arcgolabs/observabilityx v0.3.0 // indirect
 	github.com/arcgolabs/pkg/option v0.0.3 // indirect
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

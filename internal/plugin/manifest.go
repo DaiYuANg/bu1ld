@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 
-	"github.com/arcgolabs/collectionx"
+	"github.com/arcgolabs/collectionx/list"
 	"github.com/samber/oops"
 	"github.com/spf13/afero"
 )
@@ -123,7 +123,7 @@ func DiscoverManifests(root string) ([]ManifestFile, error) {
 			Errorf("%s is not a directory", root)
 	}
 
-	items := collectionx.NewList[ManifestFile]()
+	items := list.NewList[ManifestFile]()
 	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err

@@ -9,8 +9,8 @@ plugin go {
 }
 
 toolchain go {
-  version = $(env("GO_VERSION", "1.26.2"))
-  settings = { mode = "module", platform = $(os + "/" + arch) }
+  version = env("GO_VERSION", "1.26.2")
+  settings = { mode = "module", platform = os + "/" + arch }
 }
 
 task prepare {

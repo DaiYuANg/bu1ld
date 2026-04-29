@@ -13,7 +13,8 @@ import (
 	"bu1ld/internal/dsl"
 	buildplugin "bu1ld/internal/plugin"
 
-	"github.com/arcgolabs/collectionx"
+	"github.com/arcgolabs/collectionx/list"
+	"github.com/arcgolabs/collectionx/set"
 	"github.com/samber/lo"
 	"github.com/samber/oops"
 )
@@ -71,8 +72,8 @@ func (a *App) printPluginsDoctor(ctx context.Context) error {
 }
 
 func (a *App) pluginEntries(ctx context.Context) ([]pluginEntry, error) {
-	entries := collectionx.NewList[pluginEntry]()
-	seen := collectionx.NewSet[string]()
+	entries := list.NewList[pluginEntry]()
+	seen := set.NewSet[string]()
 
 	schemas, err := a.loader.PluginSchemas()
 	if err != nil {
@@ -90,11 +91,7 @@ func (a *App) pluginEntries(ctx context.Context) ([]pluginEntry, error) {
 		seen.Add(pluginEntryKey(entry))
 	}
 
-	file, err := a.loader.LoadFile()
-	if err != nil {
-		return nil, oops.In("bu1ld.plugins").Wrapf(err, "load build file")
-	}
-	declarations, err := dsl.PluginDeclarations(file)
+	declarations, err := dsl.RawPluginDeclarationsFromPath(a.loader.FS(), a.loader.BuildFilePath())
 	if err != nil {
 		return nil, oops.In("bu1ld.plugins").Wrapf(err, "read plugin declarations")
 	}
@@ -124,15 +121,11 @@ func (a *App) pluginEntries(ctx context.Context) ([]pluginEntry, error) {
 }
 
 func (a *App) declaredPluginEntries(ctx context.Context) ([]pluginEntry, error) {
-	file, err := a.loader.LoadFile()
-	if err != nil {
-		return nil, oops.In("bu1ld.plugins").Wrapf(err, "load build file")
-	}
-	declarations, err := dsl.PluginDeclarations(file)
+	declarations, err := dsl.RawPluginDeclarationsFromPath(a.loader.FS(), a.loader.BuildFilePath())
 	if err != nil {
 		return nil, oops.In("bu1ld.plugins").Wrapf(err, "read plugin declarations")
 	}
-	entries := collectionx.NewList[pluginEntry]()
+	entries := list.NewList[pluginEntry]()
 	for _, item := range declarations {
 		entry := inspectPlugin(ctx, a.registry, a.loader.LoadOptions(), item.Declaration)
 		entry.Declared = true
@@ -143,7 +136,7 @@ func (a *App) declaredPluginEntries(ctx context.Context) ([]pluginEntry, error) 
 
 func (a *App) installedPluginEntries() []pluginEntry {
 	options := a.loader.LoadOptions()
-	entries := collectionx.NewList[pluginEntry]()
+	entries := list.NewList[pluginEntry]()
 	for _, scope := range []struct {
 		source buildplugin.Source
 		root   string
@@ -242,7 +235,7 @@ func (a *App) writePluginsLock(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	locked := collectionx.NewList[buildplugin.LockedPlugin]()
+	locked := list.NewList[buildplugin.LockedPlugin]()
 	for _, entry := range entries {
 		if entry.Err != nil {
 			return oops.In("bu1ld.plugins").
@@ -293,7 +286,7 @@ func lockedPluginFromEntry(entry pluginEntry) (buildplugin.LockedPlugin, error) 
 
 func applyLockDiagnostics(entries []pluginEntry, lock buildplugin.LockFile) []pluginEntry {
 	values := append([]pluginEntry(nil), entries...)
-	matched := collectionx.NewSet[string]()
+	matched := set.NewSet[string]()
 	for index := range values {
 		entry := values[index]
 		locked, ok := lock.Find(entry.Source, entry.Namespace, entry.ID)

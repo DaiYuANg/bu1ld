@@ -12,7 +12,7 @@ import (
 
 	"bu1ld/internal/dsl"
 
-	"github.com/arcgolabs/collectionx"
+	"github.com/arcgolabs/collectionx/mapping"
 	"github.com/arcgolabs/dix"
 	"github.com/samber/oops"
 	"go.lsp.dev/jsonrpc2"
@@ -26,7 +26,7 @@ type Server struct {
 	in     io.Reader
 	out    io.Writer
 	conn   jsonrpc2.Conn
-	docs   collectionx.Map[string, string]
+	docs   *mapping.Map[string, string]
 	index  *completionIndex
 }
 
@@ -35,7 +35,7 @@ func New(parser *dsl.Parser, in io.Reader, out io.Writer) *Server {
 		parser: parser,
 		in:     in,
 		out:    out,
-		docs:   collectionx.NewMap[string, string](),
+		docs:   mapping.NewMap[string, string](),
 		index:  newCompletionIndex(parser),
 	}
 }

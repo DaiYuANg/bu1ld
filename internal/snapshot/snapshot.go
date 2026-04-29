@@ -12,7 +12,8 @@ import (
 
 	"bu1ld/internal/fsx"
 
-	"github.com/arcgolabs/collectionx"
+	"github.com/arcgolabs/collectionx/list"
+	"github.com/arcgolabs/collectionx/set"
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/spf13/afero"
 )
@@ -33,7 +34,7 @@ func NewSnapshotter(fs afero.Fs) *Snapshotter {
 }
 
 func (s *Snapshotter) Inputs(root string, patterns []string) ([]File, error) {
-	matched := collectionx.NewOrderedSet[string]()
+	matched := set.NewOrderedSet[string]()
 
 	for _, pattern := range patterns {
 		pattern = strings.TrimSpace(pattern)
@@ -51,7 +52,7 @@ func (s *Snapshotter) Inputs(root string, patterns []string) ([]File, error) {
 	files := matched.Values()
 	slices.Sort(files)
 
-	snapshots := collectionx.NewList[File]()
+	snapshots := list.NewList[File]()
 	for _, file := range files {
 		item, err := s.File(root, file)
 		if err != nil {
@@ -108,7 +109,7 @@ func (s *Snapshotter) match(root string, pattern string) ([]string, error) {
 		return []string{filepath.ToSlash(pattern)}, nil
 	}
 
-	files := collectionx.NewList[string]()
+	files := list.NewList[string]()
 	err = fsx.WalkFiles(s.fs, absolutePath, func(path string, _ os.FileInfo) error {
 		rel, relErr := filepath.Rel(root, path)
 		if relErr != nil {
@@ -154,7 +155,7 @@ func hasGlob(pattern string) bool {
 }
 
 func relativeFiles(fs afero.Fs, root string, paths []string) ([]string, error) {
-	files := collectionx.NewList[string]()
+	files := list.NewList[string]()
 	for _, path := range paths {
 		info, err := fs.Stat(path)
 		if err != nil {

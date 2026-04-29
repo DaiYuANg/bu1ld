@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/arcgolabs/collectionx"
+	"github.com/arcgolabs/collectionx/list"
 	"github.com/arcgolabs/configx"
 	"github.com/samber/oops"
 )
@@ -92,8 +92,8 @@ func (c Config) LogPath() string {
 	return filepath.Join(c.StateDir(), "bu1ld.log")
 }
 
-func existingConfigFiles(workDir string) collectionx.List[string] {
-	candidates := collectionx.NewList[string](
+func existingConfigFiles(workDir string) *list.List[string] {
+	candidates := list.NewList[string](
 		"bu1ld.yaml",
 		"bu1ld.yml",
 		"bu1ld.toml",
@@ -103,7 +103,7 @@ func existingConfigFiles(workDir string) collectionx.List[string] {
 		".bu1ld.toml",
 		".bu1ld.json",
 	)
-	files := collectionx.NewList[string]()
+	files := list.NewList[string]()
 	candidates.Range(func(_ int, candidate string) bool {
 		path := filepath.Join(workDir, candidate)
 		if _, err := os.Stat(path); err == nil {

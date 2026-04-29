@@ -53,7 +53,7 @@ func TestServerPublishesDiagnostics(t *testing.T) {
 		`"textDocumentSync":1`,
 		`"completionProvider"`,
 		`"diagnostics":[]`,
-		`unknown task field`,
+		`not allowed in task`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("output = %s, want substring %q", got, want)

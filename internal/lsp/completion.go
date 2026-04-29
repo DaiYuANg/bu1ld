@@ -9,25 +9,27 @@ import (
 	"bu1ld/internal/dsl"
 	buildplugin "bu1ld/internal/plugin"
 
-	"github.com/arcgolabs/collectionx"
+	"github.com/arcgolabs/collectionx/list"
+	"github.com/arcgolabs/collectionx/mapping"
+	"github.com/arcgolabs/collectionx/prefix"
 	"go.lsp.dev/protocol"
 )
 
 type completionIndex struct {
-	topLevelItems          collectionx.List[protocol.CompletionItem]
-	topLevelTrie           collectionx.Trie[protocol.CompletionItem]
-	ruleSchemasByNamespace collectionx.MultiMap[string, buildplugin.RuleSchema]
-	fieldItemsByKind       collectionx.Map[string, []protocol.CompletionItem]
-	fieldTriesByKind       collectionx.Map[string, collectionx.Trie[protocol.CompletionItem]]
+	topLevelItems          *list.List[protocol.CompletionItem]
+	topLevelTrie           *prefix.Trie[protocol.CompletionItem]
+	ruleSchemasByNamespace *mapping.MultiMap[string, buildplugin.RuleSchema]
+	fieldItemsByKind       *mapping.Map[string, []protocol.CompletionItem]
+	fieldTriesByKind       *mapping.Map[string, *prefix.Trie[protocol.CompletionItem]]
 }
 
 func newCompletionIndex(parser *dsl.Parser) *completionIndex {
 	index := &completionIndex{
-		topLevelItems:          collectionx.NewList[protocol.CompletionItem](),
-		topLevelTrie:           collectionx.NewTrie[protocol.CompletionItem](),
-		ruleSchemasByNamespace: collectionx.NewMultiMap[string, buildplugin.RuleSchema](),
-		fieldItemsByKind:       collectionx.NewMap[string, []protocol.CompletionItem](),
-		fieldTriesByKind:       collectionx.NewMap[string, collectionx.Trie[protocol.CompletionItem]](),
+		topLevelItems:          list.NewList[protocol.CompletionItem](),
+		topLevelTrie:           prefix.NewTrie[protocol.CompletionItem](),
+		ruleSchemasByNamespace: mapping.NewMultiMap[string, buildplugin.RuleSchema](),
+		fieldItemsByKind:       mapping.NewMap[string, []protocol.CompletionItem](),
+		fieldTriesByKind:       mapping.NewMap[string, *prefix.Trie[protocol.CompletionItem]](),
 	}
 
 	index.addTopLevelItems(coreTopLevelCompletionItems())
@@ -54,7 +56,7 @@ func newCompletionIndex(parser *dsl.Parser) *completionIndex {
 		}
 	}
 
-	index.topLevelItems = collectionx.NewList[protocol.CompletionItem](sortedCompletions(index.topLevelItems.Values())...)
+	index.topLevelItems = list.NewList[protocol.CompletionItem](sortedCompletions(index.topLevelItems.Values())...)
 	return index
 }
 
@@ -104,7 +106,7 @@ func coreTopLevelCompletionItems() []protocol.CompletionItem {
 }
 
 func completionItemsForFields(fields []buildplugin.FieldSchema) []protocol.CompletionItem {
-	items := collectionx.NewListWithCapacity[protocol.CompletionItem](len(fields))
+	items := list.NewListWithCapacity[protocol.CompletionItem](len(fields))
 	for _, field := range fields {
 		detail := string(field.Type)
 		if field.Required {
@@ -136,7 +138,7 @@ func (i *completionIndex) addTopLevelItems(items []protocol.CompletionItem) {
 
 func (i *completionIndex) registerFieldItems(kind string, items []protocol.CompletionItem) {
 	sorted := sortedCompletions(items)
-	trie := collectionx.NewTrie[protocol.CompletionItem]()
+	trie := prefix.NewTrie[protocol.CompletionItem]()
 	for _, item := range sorted {
 		trie.Put(item.Label, item)
 	}
@@ -161,7 +163,7 @@ func (i *completionIndex) ruleSchema(kind string) (buildplugin.RuleSchema, bool)
 	return buildplugin.RuleSchema{}, false
 }
 
-func filteredCompletionItems(items []protocol.CompletionItem, trie collectionx.Trie[protocol.CompletionItem], prefix string) []protocol.CompletionItem {
+func filteredCompletionItems(items []protocol.CompletionItem, trie *prefix.Trie[protocol.CompletionItem], prefix string) []protocol.CompletionItem {
 	if prefix == "" || trie == nil {
 		return sortedCompletions(append([]protocol.CompletionItem(nil), items...))
 	}

@@ -17,7 +17,7 @@ import (
 	"bu1ld/internal/graph"
 	"bu1ld/internal/snapshot"
 
-	"github.com/arcgolabs/collectionx"
+	"github.com/arcgolabs/collectionx/mapping"
 	"github.com/arcgolabs/eventx"
 	"github.com/samber/oops"
 )
@@ -84,7 +84,7 @@ func (e *Engine) Run(ctx context.Context, project build.Project, targets []strin
 			Wrapf(err, "plan task graph")
 	}
 
-	actionKeys := collectionx.NewMap[string, string]()
+	actionKeys := mapping.NewMap[string, string]()
 	for _, task := range plan.Values() {
 		key, err := e.actionKey(task, actionKeys)
 		if err != nil {
@@ -161,13 +161,13 @@ func (e *Engine) Run(ctx context.Context, project build.Project, targets []strin
 	return nil
 }
 
-func (e *Engine) actionKey(task build.Task, actionKeys collectionx.Map[string, string]) (string, error) {
+func (e *Engine) actionKey(task build.Task, actionKeys *mapping.Map[string, string]) (string, error) {
 	files, err := e.snapshotter.Inputs(e.cfg.WorkDir, build.Values(task.Inputs))
 	if err != nil {
 		return "", fmt.Errorf("snapshot task inputs for %q: %w", task.Name, err)
 	}
 
-	dependencyKeys := collectionx.NewMap[string, string]()
+	dependencyKeys := mapping.NewMap[string, string]()
 	task.Deps.Range(func(_ int, dep string) bool {
 		if key, ok := actionKeys.Get(dep); ok {
 			dependencyKeys.Set(dep, key)

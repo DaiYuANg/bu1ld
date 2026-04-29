@@ -14,7 +14,7 @@ import (
 	"bu1ld/internal/fsx"
 	"bu1ld/internal/snapshot"
 
-	"github.com/arcgolabs/collectionx"
+	"github.com/arcgolabs/collectionx/list"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/samber/oops"
 	"github.com/spf13/afero"
@@ -183,7 +183,7 @@ func (s *Store) captureOutput(output string) (OutputRecord, error) {
 		}, nil
 	}
 
-	files := collectionx.NewList[OutputFile]()
+	files := list.NewList[OutputFile]()
 	err = fsx.WalkFiles(s.fs, path, func(filePath string, fileInfo os.FileInfo) error {
 		rel, relErr := filepath.Rel(path, filePath)
 		if relErr != nil {

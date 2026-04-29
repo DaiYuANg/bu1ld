@@ -11,7 +11,7 @@ import (
 	buildplugin "bu1ld/internal/plugin"
 	"bu1ld/internal/snapshot"
 
-	"github.com/arcgolabs/collectionx"
+	"github.com/arcgolabs/collectionx/list"
 	"github.com/samber/oops"
 	"github.com/spf13/afero"
 )
@@ -150,7 +150,7 @@ func (l *Loader) configCachePath() string {
 }
 
 func configCacheFiles(fs afero.Fs, paths []string) ([]configCacheFile, error) {
-	items := collectionx.NewList[configCacheFile]()
+	items := list.NewList[configCacheFile]()
 	for _, path := range paths {
 		checksum, err := snapshot.DigestFile(fs, path)
 		if err != nil {
@@ -171,7 +171,7 @@ func configCacheFiles(fs afero.Fs, paths []string) ([]configCacheFile, error) {
 }
 
 func configCacheImports(imports []importDependency) []configCacheImport {
-	items := collectionx.NewList[configCacheImport]()
+	items := list.NewList[configCacheImport]()
 	for _, item := range imports {
 		matches := slices.Clone(item.Matches)
 		slices.Sort(matches)
@@ -189,7 +189,7 @@ func configCacheImports(imports []importDependency) []configCacheImport {
 }
 
 func configCacheEnvs(envs []envDependency) []configCacheEnv {
-	items := collectionx.NewList[configCacheEnv]()
+	items := list.NewList[configCacheEnv]()
 	for _, item := range envs {
 		items.Add(configCacheEnv(item))
 	}
@@ -207,7 +207,7 @@ func (l *Loader) configCachePlugins(file *File) ([]configCachePlugin, error) {
 	}
 
 	loader := buildplugin.NewProcessLoader(l.LoadOptions())
-	items := collectionx.NewList[configCachePlugin]()
+	items := list.NewList[configCachePlugin]()
 	for _, item := range declarations {
 		declaration := buildplugin.NormalizeDeclaration(item.Declaration)
 		if declaration.Source != buildplugin.SourceLocal && declaration.Source != buildplugin.SourceGlobal {
@@ -288,7 +288,7 @@ func (l *Loader) configCachePluginValid(item configCachePlugin) bool {
 }
 
 func configCacheProjectFromBuild(project build.Project) configCacheProject {
-	tasks := collectionx.NewList[configCacheTask]()
+	tasks := list.NewList[configCacheTask]()
 	if project.Tasks != nil {
 		project.Tasks.Range(func(_ int, task build.Task) bool {
 			tasks.Add(configCacheTask{
@@ -305,13 +305,13 @@ func configCacheProjectFromBuild(project build.Project) configCacheProject {
 }
 
 func projectFromConfigCache(cached configCacheProject) build.Project {
-	tasks := collectionx.NewList[build.Task]()
+	tasks := list.NewList[build.Task]()
 	for _, item := range cached.Tasks {
 		task := build.NewTask(item.Name)
-		task.Deps = collectionx.NewList[string](item.Deps...)
-		task.Inputs = collectionx.NewList[string](item.Inputs...)
-		task.Outputs = collectionx.NewList[string](item.Outputs...)
-		task.Command = collectionx.NewList[string](item.Command...)
+		task.Deps = list.NewList[string](item.Deps...)
+		task.Inputs = list.NewList[string](item.Inputs...)
+		task.Outputs = list.NewList[string](item.Outputs...)
+		task.Command = list.NewList[string](item.Command...)
 		tasks.Add(task)
 	}
 	return build.Project{Tasks: tasks}

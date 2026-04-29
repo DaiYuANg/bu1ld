@@ -20,7 +20,7 @@ import (
 	"bu1ld/internal/plugins/golang"
 	"bu1ld/internal/snapshot"
 
-	"github.com/arcgolabs/collectionx"
+	"github.com/arcgolabs/collectionx/list"
 	"github.com/arcgolabs/dix"
 	"github.com/arcgolabs/eventx"
 	"github.com/arcgolabs/logx"
@@ -169,7 +169,7 @@ func (a *App) printGraph(project build.Project) error {
 
 func (a *App) graphTasks(project build.Project) ([]build.Task, error) {
 	if len(a.request.Targets) == 0 {
-		tasks := collectionx.NewList[build.Task]()
+		tasks := list.NewList[build.Task]()
 		if project.Tasks != nil {
 			project.Tasks.Range(func(_ int, task build.Task) bool {
 				tasks.Add(task)

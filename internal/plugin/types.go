@@ -4,7 +4,7 @@ import (
 	"bu1ld/internal/build"
 	"bu1ld/pkg/pluginapi"
 
-	"github.com/arcgolabs/collectionx"
+	"github.com/arcgolabs/collectionx/list"
 )
 
 type Source string
@@ -41,9 +41,9 @@ var ValidateInvocation = pluginapi.ValidateInvocation
 
 func TaskSpecToBuild(spec TaskSpec) build.Task {
 	task := build.NewTask(spec.Name)
-	task.Deps = collectionx.NewList[string](spec.Deps...)
-	task.Inputs = collectionx.NewList[string](spec.Inputs...)
-	task.Outputs = collectionx.NewList[string](spec.Outputs...)
-	task.Command = collectionx.NewList[string](spec.Command...)
+	task.Deps = list.NewList[string](spec.Deps...)
+	task.Inputs = list.NewList[string](spec.Inputs...)
+	task.Outputs = list.NewList[string](spec.Outputs...)
+	task.Command = list.NewList[string](spec.Command...)
 	return task
 }

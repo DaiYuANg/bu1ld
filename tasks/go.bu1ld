@@ -5,5 +5,5 @@ go.test test {
 go.binary build {
   deps = [prepare, test]
   main = "./cmd/cli"
-  out = $("dist/" + "bu1ld")
+  out = "dist/" + "bu1ld"
 }

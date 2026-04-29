@@ -6,7 +6,8 @@ import (
 
 	"bu1ld/internal/build"
 
-	"github.com/arcgolabs/collectionx"
+	"github.com/arcgolabs/collectionx/list"
+	"github.com/arcgolabs/collectionx/mapping"
 )
 
 type visitState int
@@ -17,12 +18,12 @@ const (
 	visited
 )
 
-func Plan(project build.Project, targets []string) (collectionx.List[build.Task], error) {
+func Plan(project build.Project, targets []string) (*list.List[build.Task], error) {
 	if len(targets) == 0 {
 		targets = []string{"build"}
 	}
 
-	tasks := collectionx.NewMap[string, build.Task]()
+	tasks := mapping.NewMap[string, build.Task]()
 	if project.Tasks != nil {
 		project.Tasks.Range(func(_ int, task build.Task) bool {
 			tasks.Set(task.Name, task)
@@ -30,11 +31,11 @@ func Plan(project build.Project, targets []string) (collectionx.List[build.Task]
 		})
 	}
 
-	states := collectionx.NewMap[string, visitState]()
-	ordered := collectionx.NewList[build.Task]()
+	states := mapping.NewMap[string, visitState]()
+	ordered := list.NewList[build.Task]()
 
-	var visit func(name string, stack collectionx.List[string]) error
-	visit = func(name string, stack collectionx.List[string]) error {
+	var visit func(name string, stack *list.List[string]) error
+	visit = func(name string, stack *list.List[string]) error {
 		task, ok := tasks.Get(name)
 		if !ok {
 			return fmt.Errorf("unknown task %q", name)
@@ -54,7 +55,7 @@ func Plan(project build.Project, targets []string) (collectionx.List[build.Task]
 		}
 
 		states.Set(name, visiting)
-		nextStack := collectionx.NewList[string](stack.Values()...)
+		nextStack := list.NewList[string](stack.Values()...)
 		nextStack.Add(name)
 
 		for _, dep := range build.Values(task.Deps) {
@@ -70,7 +71,7 @@ func Plan(project build.Project, targets []string) (collectionx.List[build.Task]
 	}
 
 	for _, target := range targets {
-		if err := visit(target, collectionx.NewList[string]()); err != nil {
+		if err := visit(target, list.NewList[string]()); err != nil {
 			return nil, err
 		}
 	}

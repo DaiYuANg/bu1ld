@@ -35,8 +35,8 @@ go.test test {
 `)
 	writeDSLFile(t, projectDir, "tasks/custom.bu1ld", `
 task package {
-  outputs = [$("dist/" + target)]
-  command = ["sh", "-c", concat("echo ", target)]
+  outputs = ["dist/package"]
+  command = ["sh", "-c", "echo package"]
 }
 `)
 
@@ -199,7 +199,7 @@ func TestLoaderInvalidatesConfigCacheWhenEnvChanges(t *testing.T) {
 	t.Setenv("BU1LD_CACHE_SCRIPT_INPUT", "script-first")
 	writeDSLFile(t, projectDir, "build.bu1ld", `
 task envtask {
-  inputs = [env("BU1LD_CACHE_INPUT", "fallback"), $(env("BU1LD_CACHE_SCRIPT_INPUT", "fallback"))]
+  inputs = [env("BU1LD_CACHE_INPUT", "fallback"), env("BU1LD_CACHE_SCRIPT_INPUT", "fallback")]
   command = []
 }
 `)
