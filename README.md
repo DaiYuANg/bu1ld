@@ -48,6 +48,8 @@ The first version includes:
 │   └── snapshot/
 ├── pkg/
 │   └── pluginapi/
+├── integration/
+│   └── vscode/
 ├── build.bu1ld
 ├── go.mod
 └── README.md
@@ -225,6 +227,23 @@ and external plugin binaries are unchanged. Pass `--no-cache` to bypass both
 the configuration cache and build action cache.
 
 Optional config files are loaded through `configx` from `bu1ld.yaml`, `bu1ld.toml`, `bu1ld.json`, or their `.bu1ld.*` variants.
+
+## Editor Integrations
+
+The VS Code extension lives under `integration/vscode`. It registers `.bu1ld`
+files, provides syntax highlighting and snippets, and starts a bundled language
+server over stdio. If no bundled server exists for the current platform, it
+falls back to `bu1ld-lsp` from `PATH`; `bu1ld.lsp.path` can override this.
+
+```bash
+cd integration/vscode
+pnpm install
+pnpm run build:server
+pnpm run compile
+```
+
+Use `pnpm run build:server:all` before packaging a release that should include
+all supported platform binaries.
 
 ## Test
 

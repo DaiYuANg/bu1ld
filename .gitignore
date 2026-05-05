@@ -150,3 +150,8 @@ cython_debug/
 !internal/build/
 !internal/build/**
 .bu1ld/
+integration/vscode/node_modules/
+integration/vscode/out/
+integration/vscode/server/
+integration/vscode/*.vsix
+integration/vscode/package-lock.json

@@ -1,0 +1,91 @@
+{
+  "workspace": {
+    "prefix": "workspace",
+    "body": [
+      "workspace {",
+      "  name = \"${1:name}\"",
+      "  default = ${2:build}",
+      "}"
+    ],
+    "description": "Declare a bu1ld workspace"
+  },
+  "builtin plugin": {
+    "prefix": "plugin-builtin",
+    "body": [
+      "plugin ${1:go} {",
+      "  source = builtin",
+      "  id = \"builtin.${1:go}\"",
+      "}"
+    ],
+    "description": "Declare a builtin plugin"
+  },
+  "task": {
+    "prefix": "task",
+    "body": [
+      "task ${1:name} {",
+      "  deps = [${2}]",
+      "  inputs = [${3}]",
+      "  outputs = [${4}]",
+      "  run {",
+      "    ${5:exec(\"command\")}",
+      "  }",
+      "}"
+    ],
+    "description": "Declare a custom task"
+  },
+  "go binary": {
+    "prefix": "go-binary",
+    "body": [
+      "go.binary ${1:build} {",
+      "  deps = [${2}]",
+      "  main = \"${3:./cmd/cli}\"",
+      "  out = \"${4:dist/bu1ld}\"",
+      "}"
+    ],
+    "description": "Declare a Go binary rule"
+  },
+  "go test": {
+    "prefix": "go-test",
+    "body": [
+      "go.test ${1:test} {",
+      "  packages = [\"${2:./...}\"]",
+      "}"
+    ],
+    "description": "Declare a Go test rule"
+  },
+  "docker image": {
+    "prefix": "docker-image",
+    "body": [
+      "docker.image ${1:image} {",
+      "  context = \"${2:.}\"",
+      "  dockerfile = \"${3:Dockerfile}\"",
+      "  tags = [\"${4:example/app:dev}\"]",
+      "  load = ${5:true}",
+      "}"
+    ],
+    "description": "Declare a Docker image rule"
+  },
+  "archive zip": {
+    "prefix": "archive-zip",
+    "body": [
+      "archive.zip ${1:package_zip} {",
+      "  deps = [${2:build}]",
+      "  srcs = [\"${3:dist/**}\"]",
+      "  out = \"${4:dist/package.zip}\"",
+      "}"
+    ],
+    "description": "Declare a zip archive rule"
+  },
+  "archive tar": {
+    "prefix": "archive-tar",
+    "body": [
+      "archive.tar ${1:package_tgz} {",
+      "  deps = [${2:build}]",
+      "  srcs = [\"${3:dist/**}\"]",
+      "  out = \"${4:dist/package.tar.gz}\"",
+      "  gzip = ${5:true}",
+      "}"
+    ],
+    "description": "Declare a tar archive rule"
+  }
+}

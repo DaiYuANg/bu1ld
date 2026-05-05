@@ -1,0 +1,101 @@
+{
+  "name": "bu1ld-vscode",
+  "displayName": "bu1ld",
+  "description": "VS Code language support for bu1ld build files.",
+  "version": "0.1.0",
+  "publisher": "bu1ld",
+  "license": "MIT",
+  "packageManager": "pnpm@10.26.0",
+  "engines": {
+    "vscode": "^1.92.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:bu1ld",
+    "onCommand:bu1ld.restartLsp"
+  ],
+  "main": "./out/extension.js",
+  "scripts": {
+    "build:server": "node scripts/build-server.mjs",
+    "build:server:all": "node scripts/build-server.mjs --all",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "pnpm run build:server:all && pnpm run compile",
+    "vscode:prepublish": "pnpm run compile"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "bu1ld",
+        "aliases": [
+          "bu1ld",
+          "Bu1ld"
+        ],
+        "extensions": [
+          ".bu1ld"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "bu1ld",
+        "scopeName": "source.bu1ld",
+        "path": "./syntaxes/bu1ld.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "bu1ld",
+        "path": "./snippets/bu1ld.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "bu1ld.restartLsp",
+        "title": "bu1ld: Restart LSP",
+        "category": "bu1ld"
+      }
+    ],
+    "configuration": {
+      "title": "bu1ld",
+      "properties": {
+        "bu1ld.lsp.path": {
+          "type": "string",
+          "default": "",
+          "description": "Optional path to the bu1ld LSP executable. When empty, the extension uses the bundled server and falls back to bu1ld-lsp from PATH."
+        },
+        "bu1ld.lsp.args": {
+          "type": "array",
+          "default": [
+            "stdio"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "Arguments passed to the bu1ld LSP executable."
+        },
+        "bu1ld.lsp.trace.server": {
+          "type": "string",
+          "default": "off",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "description": "Trace communication with the bu1ld language server."
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "@types/vscode": "^1.92.0",
+    "typescript": "^5.5.4"
+  }
+}
