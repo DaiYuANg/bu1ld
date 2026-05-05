@@ -14,6 +14,12 @@ type Task struct {
 	Inputs  *list.List[string]
 	Outputs *list.List[string]
 	Command *list.List[string]
+	Action  Action
+}
+
+type Action struct {
+	Kind   string
+	Params map[string]any
 }
 
 func NewTask(name string) Task {
@@ -29,6 +35,9 @@ func NewTask(name string) Task {
 func (t Task) Validate() error {
 	if t.Name == "" {
 		return errors.New("task name is required")
+	}
+	if t.Command != nil && t.Command.Len() > 0 && t.Action.Kind != "" {
+		return errors.New("task cannot define both command and action")
 	}
 	return nil
 }

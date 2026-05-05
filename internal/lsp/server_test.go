@@ -52,6 +52,7 @@ func TestServerPublishesDiagnostics(t *testing.T) {
 	for _, want := range []string{
 		`"textDocumentSync":1`,
 		`"completionProvider"`,
+		`"hoverProvider":true`,
 		`"diagnostics":[]`,
 		`not allowed in task`,
 	} {

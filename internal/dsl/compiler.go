@@ -219,6 +219,8 @@ func pluginFieldType(field buildplugin.FieldSchema) planschema.Type {
 		return planschema.ListType{Elem: planschema.TypeString}
 	case buildplugin.FieldObject:
 		return planschema.MapType{Elem: planschema.TypeAny}
+	case buildplugin.FieldBool:
+		return planschema.TypeBool
 	default:
 		return planschema.TypeAny
 	}

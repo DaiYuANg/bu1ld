@@ -18,25 +18,33 @@ import (
 type completionIndex struct {
 	topLevelItems          *list.List[protocol.CompletionItem]
 	topLevelTrie           *prefix.Trie[protocol.CompletionItem]
+	topLevelHovers         *mapping.Map[string, hoverEntry]
 	ruleSchemasByNamespace *mapping.MultiMap[string, buildplugin.RuleSchema]
 	fieldItemsByKind       *mapping.Map[string, []protocol.CompletionItem]
 	fieldTriesByKind       *mapping.Map[string, *prefix.Trie[protocol.CompletionItem]]
+	fieldHoversByKind      *mapping.Map[string, *mapping.Map[string, hoverEntry]]
 }
 
 func newCompletionIndex(parser *dsl.Parser) *completionIndex {
 	index := &completionIndex{
 		topLevelItems:          list.NewList[protocol.CompletionItem](),
 		topLevelTrie:           prefix.NewTrie[protocol.CompletionItem](),
+		topLevelHovers:         mapping.NewMap[string, hoverEntry](),
 		ruleSchemasByNamespace: mapping.NewMultiMap[string, buildplugin.RuleSchema](),
 		fieldItemsByKind:       mapping.NewMap[string, []protocol.CompletionItem](),
 		fieldTriesByKind:       mapping.NewMap[string, *prefix.Trie[protocol.CompletionItem]](),
+		fieldHoversByKind:      mapping.NewMap[string, *mapping.Map[string, hoverEntry]](),
 	}
 
 	index.addTopLevelItems(coreTopLevelCompletionItems())
+	index.addTopLevelHovers(coreTopLevelHoverEntries())
 	for _, kind := range []string{"workspace", "plugin", "toolchain", "task"} {
-		index.registerFieldItems(kind, completionItemsForFields(coreFields(kind)))
+		fields := coreFields(kind)
+		index.registerFieldItems(kind, completionItemsForFields(fields))
+		index.registerFieldHovers(kind, hoverEntriesForFields(kind, fields))
 	}
 	index.registerFieldItems("run:task", actionCompletionItems())
+	index.registerFieldHovers("run:task", actionHoverEntries())
 
 	schemas, err := parser.Schemas()
 	if err != nil {
@@ -53,6 +61,11 @@ func newCompletionIndex(parser *dsl.Parser) *completionIndex {
 				Detail:     schema.ID + " rule",
 				InsertText: label + " name {\n}",
 			}})
+			index.addTopLevelHover(label, hoverEntry{
+				Signature: label + " name { ... }",
+				Detail:    schema.ID + " rule",
+				Docs:      "Expands a plugin rule into one or more build tasks.",
+			})
 		}
 	}
 
@@ -89,6 +102,7 @@ func (s *Server) fieldCompletions(kind string, prefix string) []protocol.Complet
 			return nil
 		}
 		s.index.registerFieldItems(kind, completionItemsForFields(schema.Fields))
+		s.index.registerFieldHovers(kind, hoverEntriesForFields(kind, schema.Fields))
 		items, _ = s.index.fieldItemsByKind.Get(kind)
 	}
 	trie, _ := s.index.fieldTriesByKind.Get(kind)
@@ -136,6 +150,16 @@ func (i *completionIndex) addTopLevelItems(items []protocol.CompletionItem) {
 	}
 }
 
+func (i *completionIndex) addTopLevelHovers(entries map[string]hoverEntry) {
+	for label, entry := range entries {
+		i.addTopLevelHover(label, entry)
+	}
+}
+
+func (i *completionIndex) addTopLevelHover(label string, entry hoverEntry) {
+	i.topLevelHovers.Set(label, entry)
+}
+
 func (i *completionIndex) registerFieldItems(kind string, items []protocol.CompletionItem) {
 	sorted := sortedCompletions(items)
 	trie := prefix.NewTrie[protocol.CompletionItem]()
@@ -144,6 +168,14 @@ func (i *completionIndex) registerFieldItems(kind string, items []protocol.Compl
 	}
 	i.fieldItemsByKind.Set(kind, sorted)
 	i.fieldTriesByKind.Set(kind, trie)
+}
+
+func (i *completionIndex) registerFieldHovers(kind string, entries map[string]hoverEntry) {
+	items := mapping.NewMap[string, hoverEntry]()
+	for label, entry := range entries {
+		items.Set(label, entry)
+	}
+	i.fieldHoversByKind.Set(kind, items)
 }
 
 func (i *completionIndex) ruleSchema(kind string) (buildplugin.RuleSchema, bool) {
@@ -168,37 +200,6 @@ func filteredCompletionItems(items []protocol.CompletionItem, trie *prefix.Trie[
 		return sortedCompletions(append([]protocol.CompletionItem(nil), items...))
 	}
 	return sortedCompletions(trie.ValuesWithPrefix(prefix))
-}
-
-func coreFields(kind string) []buildplugin.FieldSchema {
-	switch kind {
-	case "workspace":
-		return []buildplugin.FieldSchema{
-			{Name: "name", Type: buildplugin.FieldString},
-			{Name: "default", Type: buildplugin.FieldString},
-		}
-	case "plugin":
-		return []buildplugin.FieldSchema{
-			{Name: "source", Type: buildplugin.FieldString},
-			{Name: "id", Type: buildplugin.FieldString},
-			{Name: "version", Type: buildplugin.FieldString},
-			{Name: "path", Type: buildplugin.FieldString},
-		}
-	case "toolchain":
-		return []buildplugin.FieldSchema{
-			{Name: "version", Type: buildplugin.FieldString},
-			{Name: "settings", Type: buildplugin.FieldObject},
-		}
-	case "task":
-		return []buildplugin.FieldSchema{
-			{Name: "deps", Type: buildplugin.FieldList},
-			{Name: "inputs", Type: buildplugin.FieldList},
-			{Name: "outputs", Type: buildplugin.FieldList},
-			{Name: "command", Type: buildplugin.FieldList},
-		}
-	default:
-		return nil
-	}
 }
 
 func blockContext(text string, pos protocol.Position) (bool, string) {

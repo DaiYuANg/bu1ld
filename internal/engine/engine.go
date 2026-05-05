@@ -26,6 +26,15 @@ type CommandRunner interface {
 	Run(ctx context.Context, workDir string, command []string, output io.Writer) error
 }
 
+type ActionRunner interface {
+	Run(ctx context.Context, workDir string, action build.Action, output io.Writer) error
+}
+
+type ActionHandler interface {
+	Kind() string
+	Run(ctx context.Context, workDir string, params map[string]any, output io.Writer) error
+}
+
 type ExecRunner struct{}
 
 func NewExecRunner() CommandRunner {
@@ -49,11 +58,45 @@ func (r *ExecRunner) Run(ctx context.Context, workDir string, command []string, 
 	return nil
 }
 
+type DispatchActionRunner struct {
+	handlers *mapping.Map[string, ActionHandler]
+}
+
+func NewActionRunner(handlers ...ActionHandler) ActionRunner {
+	runner := &DispatchActionRunner{handlers: mapping.NewMap[string, ActionHandler]()}
+	for _, handler := range handlers {
+		if handler == nil || handler.Kind() == "" {
+			continue
+		}
+		runner.handlers.Set(handler.Kind(), handler)
+	}
+	return runner
+}
+
+func (r *DispatchActionRunner) Run(ctx context.Context, workDir string, action build.Action, output io.Writer) error {
+	if action.Kind == "" {
+		return nil
+	}
+	handler, ok := r.handlers.Get(action.Kind)
+	if !ok {
+		return oops.In("bu1ld.engine").
+			With("action", action.Kind).
+			Errorf("action handler %q is not registered", action.Kind)
+	}
+	if err := handler.Run(ctx, workDir, action.Params, output); err != nil {
+		return oops.In("bu1ld.engine").
+			With("action", action.Kind).
+			Wrapf(err, "run action")
+	}
+	return nil
+}
+
 type Engine struct {
 	cfg         config.Config
 	snapshotter *snapshot.Snapshotter
 	store       *cache.Store
 	runner      CommandRunner
+	actions     ActionRunner
 	output      io.Writer
 	bus         eventx.BusRuntime
 }
@@ -63,14 +106,19 @@ func New(
 	snapshotter *snapshot.Snapshotter,
 	store *cache.Store,
 	runner CommandRunner,
+	actions ActionRunner,
 	bus eventx.BusRuntime,
 	output io.Writer,
 ) *Engine {
+	if actions == nil {
+		actions = NewActionRunner()
+	}
 	return &Engine{
 		cfg:         cfg,
 		snapshotter: snapshotter,
 		store:       store,
 		runner:      runner,
+		actions:     actions,
 		bus:         bus,
 		output:      output,
 	}
@@ -120,45 +168,55 @@ func (e *Engine) Run(ctx context.Context, project build.Project, targets []strin
 			}
 		}
 
-		startedAt := time.Now()
-		if err := e.publish(ctx, events.TaskStarted{Task: task.Name}); err != nil {
-			return err
-		}
-
-		if task.Command.Len() == 0 {
-			if err := e.publish(ctx, events.TaskNoop{Task: task.Name}); err != nil {
-				return err
-			}
-		} else if err := e.runner.Run(ctx, e.cfg.WorkDir, build.Values(task.Command), e.output); err != nil {
-			duration := time.Since(startedAt)
-			taskErr := oops.In("bu1ld.engine").
-				With("task", task.Name).
-				With("action_key", key).
-				With("duration", duration.String()).
-				Wrapf(err, "run task")
-			if publishErr := e.publish(ctx, events.TaskFailed{Task: task.Name, Duration: duration, Err: err}); publishErr != nil {
-				return errors.Join(taskErr, publishErr)
-			}
-			return taskErr
-		}
-
-		if !e.cfg.NoCache {
-			if err := e.store.Save(task, key); err != nil {
-				return oops.In("bu1ld.engine").
-					With("task", task.Name).
-					With("action_key", key).
-					Wrapf(err, "save cache record")
-			}
-		}
-
-		duration := time.Since(startedAt)
-		if err := e.publish(ctx, events.TaskCompleted{Task: task.Name, Duration: duration}); err != nil {
+		if err := e.executeTask(ctx, task, key); err != nil {
 			return err
 		}
 		actionKeys.Set(task.Name, key)
 	}
 
 	return nil
+}
+
+func (e *Engine) executeTask(ctx context.Context, task build.Task, key string) error {
+	startedAt := time.Now()
+	if err := e.publish(ctx, events.TaskStarted{Task: task.Name}); err != nil {
+		return err
+	}
+
+	if err := e.runTaskBody(ctx, task); err != nil {
+		duration := time.Since(startedAt)
+		taskErr := oops.In("bu1ld.engine").
+			With("task", task.Name).
+			With("action_key", key).
+			With("duration", duration.String()).
+			Wrapf(err, "run task")
+		if publishErr := e.publish(ctx, events.TaskFailed{Task: task.Name, Duration: duration, Err: err}); publishErr != nil {
+			return errors.Join(taskErr, publishErr)
+		}
+		return taskErr
+	}
+
+	if !e.cfg.NoCache {
+		if err := e.store.Save(task, key); err != nil {
+			return oops.In("bu1ld.engine").
+				With("task", task.Name).
+				With("action_key", key).
+				Wrapf(err, "save cache record")
+		}
+	}
+
+	duration := time.Since(startedAt)
+	return e.publish(ctx, events.TaskCompleted{Task: task.Name, Duration: duration})
+}
+
+func (e *Engine) runTaskBody(ctx context.Context, task build.Task) error {
+	if task.Command.Len() > 0 {
+		return e.runner.Run(ctx, e.cfg.WorkDir, build.Values(task.Command), e.output)
+	}
+	if task.Action.Kind != "" {
+		return e.actions.Run(ctx, e.cfg.WorkDir, task.Action, e.output)
+	}
+	return e.publish(ctx, events.TaskNoop{Task: task.Name})
 }
 
 func (e *Engine) actionKey(task build.Task, actionKeys *mapping.Map[string, string]) (string, error) {
@@ -179,6 +237,7 @@ func (e *Engine) actionKey(task build.Task, actionKeys *mapping.Map[string, stri
 		Version       int               `json:"version"`
 		TaskName      string            `json:"taskName"`
 		Command       []string          `json:"command"`
+		Action        build.Action      `json:"action"`
 		InputPatterns []string          `json:"inputPatterns"`
 		Inputs        []snapshot.File   `json:"inputs"`
 		Outputs       []string          `json:"outputs"`
@@ -188,6 +247,7 @@ func (e *Engine) actionKey(task build.Task, actionKeys *mapping.Map[string, stri
 		Version:       1,
 		TaskName:      task.Name,
 		Command:       build.Values(task.Command),
+		Action:        task.Action,
 		InputPatterns: build.Values(task.Inputs),
 		Inputs:        files,
 		Outputs:       build.Values(task.Outputs),

@@ -16,7 +16,7 @@ import (
 	"github.com/spf13/afero"
 )
 
-const configCacheVersion = 2
+const configCacheVersion = 3
 
 type configCacheRecord struct {
 	Version   int                 `json:"version"`
@@ -59,11 +59,17 @@ type configCacheProject struct {
 }
 
 type configCacheTask struct {
-	Name    string   `json:"name"`
-	Deps    []string `json:"deps,omitempty"`
-	Inputs  []string `json:"inputs,omitempty"`
-	Outputs []string `json:"outputs,omitempty"`
-	Command []string `json:"command,omitempty"`
+	Name    string            `json:"name"`
+	Deps    []string          `json:"deps,omitempty"`
+	Inputs  []string          `json:"inputs,omitempty"`
+	Outputs []string          `json:"outputs,omitempty"`
+	Command []string          `json:"command,omitempty"`
+	Action  configCacheAction `json:"action,omitempty"`
+}
+
+type configCacheAction struct {
+	Kind   string         `json:"kind,omitempty"`
+	Params map[string]any `json:"params,omitempty"`
 }
 
 func (l *Loader) loadConfigCache() (build.Project, bool) {
@@ -297,6 +303,10 @@ func configCacheProjectFromBuild(project build.Project) configCacheProject {
 				Inputs:  slices.Clone(build.Values(task.Inputs)),
 				Outputs: slices.Clone(build.Values(task.Outputs)),
 				Command: slices.Clone(build.Values(task.Command)),
+				Action: configCacheAction{
+					Kind:   task.Action.Kind,
+					Params: task.Action.Params,
+				},
 			})
 			return true
 		})
@@ -312,6 +322,10 @@ func projectFromConfigCache(cached configCacheProject) build.Project {
 		task.Inputs = list.NewList[string](item.Inputs...)
 		task.Outputs = list.NewList[string](item.Outputs...)
 		task.Command = list.NewList[string](item.Command...)
+		task.Action = build.Action{
+			Kind:   item.Action.Kind,
+			Params: item.Action.Params,
+		}
 		tasks.Add(task)
 	}
 	return build.Project{Tasks: tasks}

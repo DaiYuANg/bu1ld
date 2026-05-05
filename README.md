@@ -10,6 +10,7 @@ The first version includes:
 - A small `build.bu1ld` DSL
 - A basic DSL language server with parse diagnostics, semantic diagnostics, and schema completions
 - A plugin registry with builtin, local, and global plugin sources
+- Builtin `go`, `docker`, and `archive` plugins
 - Task graph planning with dependency ordering and cycle detection
 - A configuration cache for unchanged build scripts and plugin binaries
 - Input fingerprints and a local action cache
@@ -84,6 +85,38 @@ go.binary build {
   out = $("dist/" + "bu1ld")
 }
 ```
+
+Builtin Docker and archive rules use native Go implementations instead of
+shelling out to `docker`, `zip`, or `tar` commands:
+
+```text
+docker.image app_image {
+  context = "."
+  dockerfile = "Dockerfile"
+  tags = ["example/app:dev"]
+  build_args = { VERSION = "dev" }
+  load = true
+}
+
+archive.zip package_zip {
+  deps = [build]
+  srcs = ["dist/**"]
+  out = "dist/package.zip"
+}
+
+archive.tar package_tgz {
+  deps = [build]
+  srcs = ["dist/**"]
+  out = "dist/package.tar.gz"
+  gzip = true
+}
+```
+
+`docker.image` builds through the Docker Go SDK and Docker daemon API. The
+first implementation supports local image builds, optional single-platform
+selection, build args, target stage selection, and pushing tags after build.
+Multi-platform buildx exports are intentionally left for a later Docker
+BuildKit iteration.
 
 Block names are typed symbols instead of string labels. Expressions are parsed
 directly by `plano`, while imports are resolved relative to the file that

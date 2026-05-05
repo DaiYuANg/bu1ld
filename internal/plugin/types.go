@@ -30,11 +30,13 @@ type RuleSchema = pluginapi.RuleSchema
 type Invocation = pluginapi.Invocation
 type Plugin = pluginapi.Plugin
 type TaskSpec = pluginapi.TaskSpec
+type TaskAction = pluginapi.TaskAction
 
 const (
 	FieldString = pluginapi.FieldString
 	FieldList   = pluginapi.FieldList
 	FieldObject = pluginapi.FieldObject
+	FieldBool   = pluginapi.FieldBool
 )
 
 var ValidateInvocation = pluginapi.ValidateInvocation
@@ -45,5 +47,9 @@ func TaskSpecToBuild(spec TaskSpec) build.Task {
 	task.Inputs = list.NewList[string](spec.Inputs...)
 	task.Outputs = list.NewList[string](spec.Outputs...)
 	task.Command = list.NewList[string](spec.Command...)
+	task.Action = build.Action{
+		Kind:   spec.Action.Kind,
+		Params: spec.Action.Params,
+	}
 	return task
 }

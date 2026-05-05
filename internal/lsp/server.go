@@ -104,6 +104,7 @@ func (s *Server) handle(ctx context.Context, reply jsonrpc2.Replier, request jso
 				CompletionProvider: &protocol.CompletionOptions{
 					TriggerCharacters: []string{".", " ", "="},
 				},
+				HoverProvider: true,
 			},
 		}, nil)
 	case "initialized":
@@ -163,6 +164,13 @@ func (s *Server) handle(ctx context.Context, reply jsonrpc2.Replier, request jso
 		}
 		text, _ := s.docs.Get(string(params.TextDocument.URI))
 		return reply(ctx, s.completions(text, params.Position), nil)
+	case "textDocument/hover":
+		var params protocol.HoverParams
+		if err := decodeParams(request, &params); err != nil {
+			return err
+		}
+		text, _ := s.docs.Get(string(params.TextDocument.URI))
+		return reply(ctx, s.hover(text, params.Position), nil)
 	default:
 		if err := jsonrpc2.MethodNotFoundHandler(ctx, reply, request); err != nil {
 			return oops.In("bu1ld.lsp").

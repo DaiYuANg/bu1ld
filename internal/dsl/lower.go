@@ -254,6 +254,9 @@ func invocationFieldValue(fset *token.FileSet, field planocomp.HIRField) (any, e
 	case planschema.MapType:
 		return anyMapValue(fset, field.Pos, field.Value)
 	default:
+		if _, ok := field.Value.(bool); ok {
+			return field.Value, nil
+		}
 		return stringValue(fset, field.Pos, field.Value)
 	}
 }

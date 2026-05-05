@@ -21,6 +21,7 @@ const (
 	FieldString FieldType = "string"
 	FieldList   FieldType = "list"
 	FieldObject FieldType = "object"
+	FieldBool   FieldType = "bool"
 )
 
 type FieldSchema struct {
@@ -85,6 +86,30 @@ func (i Invocation) OptionalList(name string, fallback []string) ([]string, erro
 	}
 }
 
+func (i Invocation) OptionalBool(name string, fallback bool) (bool, error) {
+	value, ok := i.Fields[name]
+	if !ok {
+		return fallback, nil
+	}
+	enabled, ok := value.(bool)
+	if !ok {
+		return false, fmt.Errorf("%s.%s field %q must be bool", i.Namespace, i.Rule, name)
+	}
+	return enabled, nil
+}
+
+func (i Invocation) OptionalObject(name string, fallback map[string]any) (map[string]any, error) {
+	value, ok := i.Fields[name]
+	if !ok {
+		return fallback, nil
+	}
+	object, ok := value.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("%s.%s field %q must be object", i.Namespace, i.Rule, name)
+	}
+	return object, nil
+}
+
 func ValidateInvocation(schema RuleSchema, invocation Invocation) error {
 	known := set.NewSet[string]()
 	for _, field := range schema.Fields {
@@ -126,6 +151,10 @@ func validateFieldType(invocation Invocation, field FieldSchema, value any) erro
 		if _, ok := value.(map[string]any); ok {
 			return nil
 		}
+	case FieldBool:
+		if _, ok := value.(bool); ok {
+			return nil
+		}
 	default:
 		return fmt.Errorf("unknown schema type %q for %s.%s field %q", field.Type, invocation.Namespace, invocation.Rule, field.Name)
 	}
@@ -138,4 +167,10 @@ type TaskSpec struct {
 	Inputs  []string
 	Outputs []string
 	Command []string
+	Action  TaskAction
+}
+
+type TaskAction struct {
+	Kind   string
+	Params map[string]any
 }
