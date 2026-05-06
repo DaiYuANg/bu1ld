@@ -22,6 +22,8 @@ type CommandKind string
 const (
 	CommandBuild             CommandKind = "build"
 	CommandTest              CommandKind = "test"
+	CommandInit              CommandKind = "init"
+	CommandDoctor            CommandKind = "doctor"
 	CommandGraph             CommandKind = "graph"
 	CommandTasks             CommandKind = "tasks"
 	CommandClean             CommandKind = "clean"
@@ -37,8 +39,9 @@ const (
 )
 
 type CommandRequest struct {
-	Kind    CommandKind
-	Targets []string
+	Kind       CommandKind
+	Targets    []string
+	ForceWrite bool
 }
 
 type App struct {
@@ -70,6 +73,10 @@ func New(
 
 func (a *App) Run(ctx context.Context) error {
 	switch a.request.Kind {
+	case CommandInit:
+		return a.initProject()
+	case CommandDoctor:
+		return a.doctor(ctx)
 	case CommandBuild, CommandTest:
 		project, err := a.loader.Load()
 		if err != nil {

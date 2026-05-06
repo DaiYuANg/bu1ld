@@ -9,7 +9,7 @@ require (
 	github.com/arcgolabs/collectionx/mapping v0.7.0
 	github.com/arcgolabs/collectionx/prefix v0.7.0
 	github.com/arcgolabs/collectionx/set v0.7.0
-	github.com/arcgolabs/plano v0.5.0
+	github.com/arcgolabs/plano v0.7.0
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/fxamacker/cbor/v2 v2.9.2
 	github.com/hashicorp/go-plugin v1.8.0

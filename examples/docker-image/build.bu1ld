@@ -1,0 +1,12 @@
+workspace {
+  name = "docker-image"
+  default = app_image
+}
+
+docker.image app_image {
+  context = "."
+  dockerfile = "Dockerfile"
+  tags = ["bu1ld/example:dev"]
+  build_args = { MESSAGE = "hello from bu1ld" }
+  load = true
+}

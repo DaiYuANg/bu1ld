@@ -26,8 +26,8 @@ github.com/arcgolabs/observabilityx v0.4.0 h1:7ihfQev5KSV8xcO+6DcbMcUYSDVsYhnENH
 github.com/arcgolabs/observabilityx v0.4.0/go.mod h1:yZeU3QmYUwhd051UnoD4cFu89sdLjPYGU15QKX+TVac=
 github.com/arcgolabs/pkg/option v0.0.3 h1:SS7WDMUAr7XW2/sOZkaqDrIUrygJK8u1gdPs9A4K5+A=
 github.com/arcgolabs/pkg/option v0.0.3/go.mod h1:91/Ov3tYLKEZ+ytBT30ay4l6JNTRjzk/HRRfDTElhyA=
-github.com/arcgolabs/plano v0.5.0 h1:YS7EJ0yPjZWLC9q5qHsGiealXOupDvG2GvQ7g5t5wA4=
-github.com/arcgolabs/plano v0.5.0/go.mod h1:jujemkQXc44lcKp0CLBDZC+rZT13CId6A8lTP16rAcI=
+github.com/arcgolabs/plano v0.7.0 h1:07z7vnGtkejvmHzq2xWHWCXFU9GyKC5hkOpa3eqgvRg=
+github.com/arcgolabs/plano v0.7.0/go.mod h1:jujemkQXc44lcKp0CLBDZC+rZT13CId6A8lTP16rAcI=
 github.com/arcgolabs/plano/examples/builddsl v0.0.0-20260429150020-93c29b878803 h1:G0kgqMfeAk/izsF9jCxYPSJuuB+2eb33HoZUayn0G+4=
 github.com/arcgolabs/plano/examples/builddsl v0.0.0-20260429150020-93c29b878803/go.mod h1:64aQNU6N0OZE4aXODt/tKFbaD5Kg9QyOKrCop2TMXgY=
 github.com/benbjohnson/clock v1.1.0 h1:Q92kusRqC1XV2MjkWETPvjJVqKetz1OzxZB7mHJLju8=

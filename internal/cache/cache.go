@@ -2,8 +2,6 @@ package cache
 
 import (
 	"cmp"
-	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -15,7 +13,6 @@ import (
 	"bu1ld/internal/snapshot"
 
 	"github.com/arcgolabs/collectionx/list"
-	"github.com/fxamacker/cbor/v2"
 	"github.com/samber/oops"
 	"github.com/spf13/afero"
 )
@@ -54,11 +51,18 @@ func NewStore(cfg config.Config, fs afero.Fs) *Store {
 
 func (s *Store) Load(actionKey string) (Record, bool, error) {
 	path := s.recordPath(actionKey)
-	var record Record
-	if err := cachefile.Read(s.fs, path, &record); err != nil {
+	if _, err := s.fs.Stat(path); err != nil {
 		if isNotExist(err) {
 			return Record{}, false, nil
 		}
+		return Record{}, false, oops.In("bu1ld.cache").
+			With("action_key", actionKey).
+			With("path", path).
+			Wrapf(err, "stat action cache record")
+	}
+
+	var record Record
+	if err := cachefile.Read(s.fs, path, &record); err != nil {
 		return Record{}, false, oops.In("bu1ld.cache").
 			With("action_key", actionKey).
 			With("path", path).
@@ -292,45 +296,4 @@ func (s *Store) absolute(path string) string {
 		return path
 	}
 	return filepath.Join(s.cfg.WorkDir, filepath.FromSlash(path))
-}
-
-func copyFile(fs afero.Fs, src string, dst string, mode os.FileMode) (err error) {
-	in, err := fs.Open(src)
-	if err != nil {
-		return fmt.Errorf("open %s: %w", src, err)
-	}
-	defer func() {
-		if closeErr := in.Close(); err == nil && closeErr != nil {
-			err = fmt.Errorf("close %s: %w", src, closeErr)
-		}
-	}()
-
-	out, err := fs.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
-	if err != nil {
-		return fmt.Errorf("open %s: %w", dst, err)
-	}
-	defer func() {
-		if closeErr := out.Close(); err == nil && closeErr != nil {
-			err = fmt.Errorf("close %s: %w", dst, closeErr)
-		}
-	}()
-
-	if _, err := io.Copy(out, in); err != nil {
-		return fmt.Errorf("copy %s -> %s: %w", src, dst, err)
-	}
-	return nil
-}
-
-var outputFilesDigestEncMode = mustOutputFilesDigestEncMode()
-
-func mustOutputFilesDigestEncMode() cbor.EncMode {
-	mode, err := cbor.CanonicalEncOptions().EncMode()
-	if err != nil {
-		panic(err)
-	}
-	return mode
-}
-
-func isNotExist(err error) bool {
-	return err != nil && os.IsNotExist(err)
 }

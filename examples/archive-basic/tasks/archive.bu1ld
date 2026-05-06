@@ -1,0 +1,10 @@
+archive.zip package_zip {
+  srcs = ["src/**"]
+  out = "dist/source.zip"
+}
+
+archive.tar package_tgz {
+  srcs = ["src/**"]
+  out = "dist/source.tar.gz"
+  gzip = true
+}

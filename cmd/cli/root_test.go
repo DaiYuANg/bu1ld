@@ -103,6 +103,67 @@ task build {
 	}
 }
 
+func TestDoctorCommandReportsHealthyProject(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	writeBuildFile(t, projectDir, `
+task build {
+  command = []
+}
+`)
+
+	var out bytes.Buffer
+	cmd := NewRootCommand(&out)
+	cmd.SetArgs([]string{"--project-dir", projectDir, "doctor"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	got := out.String()
+	for _, want := range []string{
+		"build file:",
+		"tasks: 1",
+		"task graph: ok",
+		"plugins:",
+		"doctor: ok",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("output = %q, want substring %q", got, want)
+		}
+	}
+}
+
+func TestDoctorCommandReportsGraphIssue(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	writeBuildFile(t, projectDir, `
+task build {
+  deps = [test]
+  command = []
+}
+
+task test {
+  deps = [build]
+  command = []
+}
+`)
+
+	var out bytes.Buffer
+	cmd := NewRootCommand(&out)
+	cmd.SetArgs([]string{"--project-dir", projectDir, "doctor"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("Execute() error = nil, want graph issue")
+	}
+	if got, want := err.Error(), "cycle detected"; !strings.Contains(got, want) {
+		t.Fatalf("Execute() error = %q, want substring %q", got, want)
+	}
+}
+
 func TestPluginsListCommand(t *testing.T) {
 	t.Parallel()
 

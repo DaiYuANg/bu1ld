@@ -58,8 +58,10 @@ func NewRootCommand(out io.Writer) *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.noCache, "no-cache", false, "disable build cache reads and writes")
 
 	cmd.AddCommand(
+		newInitCommand(&opts),
 		newBuildCommand(&opts),
 		newTestCommand(&opts),
+		newDoctorCommand(&opts),
 		newTasksCommand(&opts),
 		newGraphCommand(&opts),
 		newCleanCommand(&opts),

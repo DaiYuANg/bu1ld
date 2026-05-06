@@ -4,7 +4,7 @@
 
 The first version includes:
 
-- Cobra command layout: `build`, `test`, `graph`, `clean`
+- Cobra command layout: `init`, `build`, `test`, `doctor`, `graph`, `clean`
 - Task discovery via `tasks` and targeted graph planning via `graph [task...]`
 - Multi-process `cmd/cli`, `cmd/daemon`, `cmd/server`, and `cmd/lsp` executables
 - A small `build.bu1ld` DSL
@@ -145,6 +145,24 @@ task archive {
 }
 ```
 
+Recent `plano` syntax is available in `.bu1ld` files, including membership
+checks, conditional expressions, and filtered loops:
+
+```text
+task package_if_needed {
+  let formats = ["zip", "tar"]
+  outputs = "zip" in formats ? ["dist/package.zip"] : []
+}
+
+task selected_test {
+  let packages = ["./...", "./cmd/...", "./internal/..."]
+  for pkg in packages where pkg != "./..." {
+    command = ["go", "test", pkg]
+    break
+  }
+}
+```
+
 `shell(...)` actions are parsed as POSIX shell through `mvdan.cc/sh/v3` before
 execution. Use `exec(...)` when the task should avoid shell parsing and pass an
 argv list directly to the process runner.
@@ -196,6 +214,19 @@ Installed plugins can include a manifest at
 ## Usage
 
 ```bash
+mkdir hello-bu1ld
+cd hello-bu1ld
+go run ../bu1ld/cmd/cli init
+go run ../bu1ld/cmd/cli doctor
+go run ../bu1ld/cmd/cli tasks
+go run ../bu1ld/cmd/cli build
+```
+
+Inside this repository:
+
+```bash
+go run ./cmd/cli init --project-dir /tmp/hello-bu1ld
+go run ./cmd/cli doctor
 go run ./cmd/cli graph
 go run ./cmd/cli graph build
 go run ./cmd/cli tasks
@@ -209,6 +240,10 @@ go run ./cmd/daemon status
 go run ./cmd/server status
 go run ./cmd/lsp stdio
 ```
+
+Runnable examples live under `examples/archive-basic` and
+`examples/docker-image`. The archive example is covered by CLI end-to-end tests;
+the Docker example requires a local Docker daemon.
 
 `plugins list` prints builtin, declared, and manifest-discovered plugins with
 source, namespace, resolved path, rules, and status. `plugins doctor` also

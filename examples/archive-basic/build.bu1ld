@@ -1,0 +1,6 @@
+workspace {
+  name = "archive-basic"
+  default = package_zip
+}
+
+import "tasks/*.bu1ld"
