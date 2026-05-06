@@ -7,6 +7,7 @@ import (
 )
 
 func newTestCommand(opts *options) *cobra.Command {
+	var allPackages bool
 	cmd := &cobra.Command{
 		Use:   "test [task...]",
 		Short: "Run test tasks",
@@ -16,10 +17,12 @@ func newTestCommand(opts *options) *cobra.Command {
 				targets = []string{"test"}
 			}
 			return runCommand(cmd, opts, app.CommandRequest{
-				Kind:    app.CommandTest,
-				Targets: targets,
+				Kind:        app.CommandTest,
+				Targets:     targets,
+				AllPackages: allPackages,
 			})
 		},
 	}
+	cmd.Flags().BoolVar(&allPackages, "all", false, "run local test targets in all workspace packages")
 	return cmd
 }

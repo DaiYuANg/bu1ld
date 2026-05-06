@@ -3,11 +3,13 @@ package main
 import (
 	"archive/zip"
 	"bytes"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/samber/oops"
+	"github.com/spf13/afero"
 )
 
 func TestArchiveExampleEndToEnd(t *testing.T) {
@@ -118,54 +120,58 @@ func copyExample(t *testing.T, name string) string {
 	return target
 }
 
-func copyDir(source string, target string) error {
-	return filepath.WalkDir(source, func(path string, entry os.DirEntry, walkErr error) error {
+func copyDir(source, target string) error {
+	if err := filepath.WalkDir(source, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
-			return walkErr
+			return oops.In("bu1ld.test").Wrapf(walkErr, "walk example")
 		}
 		rel, err := filepath.Rel(source, path)
 		if err != nil {
-			return err
+			return oops.In("bu1ld.test").Wrapf(err, "resolve example path")
 		}
 		if rel == "." {
 			return nil
 		}
 		out := filepath.Join(target, rel)
 		if entry.IsDir() {
-			return os.MkdirAll(out, 0o755)
+			if err := os.MkdirAll(out, 0o750); err != nil {
+				return oops.In("bu1ld.test").With("path", out).Wrapf(err, "create example directory")
+			}
+			return nil
 		}
 		return copyFile(path, out)
-	})
+	}); err != nil {
+		return oops.In("bu1ld.test").Wrapf(err, "copy example directory")
+	}
+	return nil
 }
 
-func copyFile(source string, target string) error {
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		return err
+func copyFile(source, target string) error {
+	if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
+		return oops.In("bu1ld.test").With("path", filepath.Dir(target)).Wrapf(err, "create target directory")
 	}
-	in, err := os.Open(source)
+	data, err := afero.ReadFile(afero.NewOsFs(), source)
 	if err != nil {
-		return err
+		return oops.In("bu1ld.test").With("path", source).Wrapf(err, "read source file")
 	}
-	defer in.Close()
-
-	out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
+	if err := afero.WriteFile(afero.NewOsFs(), target, data, 0o600); err != nil {
+		return oops.In("bu1ld.test").With("path", target).Wrapf(err, "write target file")
 	}
-	defer out.Close()
-
-	_, err = io.Copy(out, in)
-	return err
+	return nil
 }
 
-func assertZipContains(t *testing.T, path string, name string) {
+func assertZipContains(t *testing.T, path, name string) {
 	t.Helper()
 
 	reader, err := zip.OpenReader(path)
 	if err != nil {
 		t.Fatalf("open zip %q: %v", path, err)
 	}
-	defer reader.Close()
+	defer func() {
+		if err := reader.Close(); err != nil {
+			t.Fatalf("close zip %q: %v", path, err)
+		}
+	}()
 
 	for _, file := range reader.File {
 		if file.Name == name {

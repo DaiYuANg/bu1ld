@@ -15,6 +15,7 @@ import (
 	buildplugin "bu1ld/internal/plugin"
 	"bu1ld/internal/plugins/archive"
 	"bu1ld/internal/plugins/docker"
+	gitplugin "bu1ld/internal/plugins/git"
 	"bu1ld/internal/plugins/golang"
 	"bu1ld/internal/snapshot"
 
@@ -139,6 +140,7 @@ func newActionRunner() engine.ActionRunner {
 		docker.NewImageHandler(),
 		archive.NewZipHandler(),
 		archive.NewTarHandler(),
+		gitplugin.NewInfoHandler(),
 	)
 }
 
@@ -154,7 +156,13 @@ func newEngine(
 }
 
 func newPluginRegistry(loader *dsl.Loader) (*buildplugin.Registry, error) {
-	registry, err := buildplugin.NewRegistry(loader.LoadOptions(), golang.New(), docker.New(), archive.New())
+	registry, err := buildplugin.NewRegistry(
+		loader.LoadOptions(),
+		golang.New(),
+		docker.New(),
+		archive.New(),
+		gitplugin.New(),
+	)
 	if err != nil {
 		return nil, oops.In("bu1ld.app").Wrapf(err, "create plugin registry")
 	}

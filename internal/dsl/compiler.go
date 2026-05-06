@@ -33,6 +33,7 @@ func newCompiler(
 
 	if err := compiler.RegisterForms(planschema.FormSpecs(
 		workspaceFormSpec(),
+		packageFormSpec(),
 		pluginFormSpec(),
 		toolchainFormSpec(),
 		taskFormSpec(),
@@ -88,8 +89,22 @@ func workspaceFormSpec() planschema.FormSpec {
 		Fields: planschema.Fields(
 			planschema.FieldSpec{Name: "name", Type: planschema.TypeString},
 			planschema.FieldSpec{Name: "default", Type: planschema.RefType{Kind: "task"}},
+			planschema.FieldSpec{Name: "packages", Type: planschema.ListType{Elem: planschema.TypePath}},
 		),
 		Docs: "Workspace metadata and default target.",
+	}
+}
+
+func packageFormSpec() planschema.FormSpec {
+	return planschema.FormSpec{
+		Name:      "package",
+		LabelKind: planschema.LabelNone,
+		BodyMode:  planschema.BodyFieldOnly,
+		Fields: planschema.Fields(
+			planschema.FieldSpec{Name: "name", Type: planschema.TypeString},
+			planschema.FieldSpec{Name: "deps", Type: planschema.ListType{Elem: planschema.TypeString}},
+		),
+		Docs: "Package metadata for monorepo workspaces.",
 	}
 }
 

@@ -107,7 +107,9 @@ func (a *App) pluginEntries(ctx context.Context) ([]pluginEntry, error) {
 		entries.Add(entry)
 	}
 
-	for _, entry := range a.installedPluginEntries() {
+	installed := a.installedPluginEntries()
+	for i := range installed {
+		entry := installed[i]
 		key := pluginEntryKey(entry)
 		if seen.Contains(key) {
 			continue
@@ -154,7 +156,8 @@ func (a *App) installedPluginEntries() []pluginEntry {
 			})
 			continue
 		}
-		for _, manifest := range manifests {
+		for i := range manifests {
+			manifest := manifests[i]
 			entries.Add(pluginEntryFromManifest(scope.source, manifest))
 		}
 	}
@@ -236,7 +239,8 @@ func (a *App) writePluginsLock(ctx context.Context) error {
 		return err
 	}
 	locked := list.NewList[buildplugin.LockedPlugin]()
-	for _, entry := range entries {
+	for i := range entries {
+		entry := entries[i]
 		if entry.Err != nil {
 			return oops.In("bu1ld.plugins").
 				With("plugin", entry.ID).
@@ -299,7 +303,8 @@ func applyLockDiagnostics(entries []pluginEntry, lock buildplugin.LockFile) []pl
 		matched.Add(lockDiagnosticKey(locked.Source, locked.Namespace, locked.ID))
 		values[index] = withLockDiagnostic(entry, locked)
 	}
-	for _, locked := range lock.Plugins {
+	for i := range lock.Plugins {
+		locked := lock.Plugins[i]
 		if matched.Contains(lockDiagnosticKey(locked.Source, locked.Namespace, locked.ID)) {
 			continue
 		}
@@ -354,7 +359,7 @@ func isProcessPluginSource(source buildplugin.Source) bool {
 	return source == buildplugin.SourceLocal || source == buildplugin.SourceGlobal
 }
 
-func lockDiagnosticKey(source buildplugin.Source, namespace string, id string) string {
+func lockDiagnosticKey(source buildplugin.Source, namespace, id string) string {
 	return strings.Join([]string{string(source), namespace, id}, "\x00")
 }
 
@@ -363,7 +368,8 @@ func writePluginTable(output io.Writer, entries []pluginEntry) error {
 	if _, err := fmt.Fprintln(writer, "SOURCE\tNAMESPACE\tID\tVERSION\tPATH\tRULES\tSTATUS"); err != nil {
 		return oops.In("bu1ld.app").Wrapf(err, "write plugin report")
 	}
-	for _, entry := range entries {
+	for i := range entries {
+		entry := entries[i]
 		status := entry.Status
 		if entry.Err != nil {
 			status += ": " + entry.Err.Error()
@@ -390,7 +396,8 @@ func writePluginTable(output io.Writer, entries []pluginEntry) error {
 
 func (a *App) writePluginReport(entries []pluginEntry, failOnIssue bool) error {
 	hasIssue := false
-	for _, entry := range entries {
+	for i := range entries {
+		entry := entries[i]
 		if entry.Err != nil {
 			hasIssue = true
 			break

@@ -11,28 +11,28 @@ import (
 
 	"github.com/arcgolabs/collectionx/list"
 	"github.com/arcgolabs/collectionx/mapping"
-	"github.com/arcgolabs/collectionx/prefix"
+	prefixx "github.com/arcgolabs/collectionx/prefix"
 	"go.lsp.dev/protocol"
 )
 
 type completionIndex struct {
 	topLevelItems          *list.List[protocol.CompletionItem]
-	topLevelTrie           *prefix.Trie[protocol.CompletionItem]
+	topLevelTrie           *prefixx.Trie[protocol.CompletionItem]
 	topLevelHovers         *mapping.Map[string, hoverEntry]
 	ruleSchemasByNamespace *mapping.MultiMap[string, buildplugin.RuleSchema]
 	fieldItemsByKind       *mapping.Map[string, []protocol.CompletionItem]
-	fieldTriesByKind       *mapping.Map[string, *prefix.Trie[protocol.CompletionItem]]
+	fieldTriesByKind       *mapping.Map[string, *prefixx.Trie[protocol.CompletionItem]]
 	fieldHoversByKind      *mapping.Map[string, *mapping.Map[string, hoverEntry]]
 }
 
 func newCompletionIndex(parser *dsl.Parser) *completionIndex {
 	index := &completionIndex{
 		topLevelItems:          list.NewList[protocol.CompletionItem](),
-		topLevelTrie:           prefix.NewTrie[protocol.CompletionItem](),
+		topLevelTrie:           prefixx.NewTrie[protocol.CompletionItem](),
 		topLevelHovers:         mapping.NewMap[string, hoverEntry](),
 		ruleSchemasByNamespace: mapping.NewMultiMap[string, buildplugin.RuleSchema](),
 		fieldItemsByKind:       mapping.NewMap[string, []protocol.CompletionItem](),
-		fieldTriesByKind:       mapping.NewMap[string, *prefix.Trie[protocol.CompletionItem]](),
+		fieldTriesByKind:       mapping.NewMap[string, *prefixx.Trie[protocol.CompletionItem]](),
 		fieldHoversByKind:      mapping.NewMap[string, *mapping.Map[string, hoverEntry]](),
 	}
 
@@ -74,21 +74,21 @@ func newCompletionIndex(parser *dsl.Parser) *completionIndex {
 }
 
 func (s *Server) completions(text string, pos protocol.Position) protocol.CompletionList {
-	prefix := completionPrefix(text, pos)
+	labelPrefix := completionPrefix(text, pos)
 	if inside, kind := blockContext(text, pos); inside {
-		return protocol.CompletionList{Items: s.fieldCompletions(kind, prefix)}
+		return protocol.CompletionList{Items: s.fieldCompletions(kind, labelPrefix)}
 	}
-	return protocol.CompletionList{Items: s.topLevelCompletions(prefix)}
+	return protocol.CompletionList{Items: s.topLevelCompletions(labelPrefix)}
 }
 
-func (s *Server) topLevelCompletions(prefix string) []protocol.CompletionItem {
+func (s *Server) topLevelCompletions(labelPrefix string) []protocol.CompletionItem {
 	if s.index == nil {
 		return nil
 	}
-	return filteredCompletionItems(s.index.topLevelItems.Values(), s.index.topLevelTrie, prefix)
+	return filteredCompletionItems(s.index.topLevelItems.Values(), s.index.topLevelTrie, labelPrefix)
 }
 
-func (s *Server) fieldCompletions(kind string, prefix string) []protocol.CompletionItem {
+func (s *Server) fieldCompletions(kind, labelPrefix string) []protocol.CompletionItem {
 	if inside, parent := runContext(kind); inside && parent != "task" {
 		return nil
 	}
@@ -106,7 +106,7 @@ func (s *Server) fieldCompletions(kind string, prefix string) []protocol.Complet
 		items, _ = s.index.fieldItemsByKind.Get(kind)
 	}
 	trie, _ := s.index.fieldTriesByKind.Get(kind)
-	return filteredCompletionItems(items, trie, prefix)
+	return filteredCompletionItems(items, trie, labelPrefix)
 }
 
 func coreTopLevelCompletionItems() []protocol.CompletionItem {
@@ -144,7 +144,8 @@ func actionCompletionItems() []protocol.CompletionItem {
 }
 
 func (i *completionIndex) addTopLevelItems(items []protocol.CompletionItem) {
-	for _, item := range items {
+	for index := range items {
+		item := items[index]
 		i.topLevelItems.Add(item)
 		i.topLevelTrie.Put(item.Label, item)
 	}
@@ -162,8 +163,9 @@ func (i *completionIndex) addTopLevelHover(label string, entry hoverEntry) {
 
 func (i *completionIndex) registerFieldItems(kind string, items []protocol.CompletionItem) {
 	sorted := sortedCompletions(items)
-	trie := prefix.NewTrie[protocol.CompletionItem]()
-	for _, item := range sorted {
+	trie := prefixx.NewTrie[protocol.CompletionItem]()
+	for i := range sorted {
+		item := sorted[i]
 		trie.Put(item.Label, item)
 	}
 	i.fieldItemsByKind.Set(kind, sorted)
@@ -195,11 +197,15 @@ func (i *completionIndex) ruleSchema(kind string) (buildplugin.RuleSchema, bool)
 	return buildplugin.RuleSchema{}, false
 }
 
-func filteredCompletionItems(items []protocol.CompletionItem, trie *prefix.Trie[protocol.CompletionItem], prefix string) []protocol.CompletionItem {
-	if prefix == "" || trie == nil {
+func filteredCompletionItems(
+	items []protocol.CompletionItem,
+	trie *prefixx.Trie[protocol.CompletionItem],
+	labelPrefix string,
+) []protocol.CompletionItem {
+	if labelPrefix == "" || trie == nil {
 		return sortedCompletions(append([]protocol.CompletionItem(nil), items...))
 	}
-	return sortedCompletions(trie.ValuesWithPrefix(prefix))
+	return sortedCompletions(trie.ValuesWithPrefix(labelPrefix))
 }
 
 func blockContext(text string, pos protocol.Position) (bool, string) {

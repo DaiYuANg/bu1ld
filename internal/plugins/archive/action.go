@@ -1,3 +1,4 @@
+// Package archive provides built-in archive actions.
 package archive
 
 import (
@@ -5,6 +6,7 @@ import (
 	"archive/zip"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/samber/oops"
+	"github.com/spf13/afero"
 )
 
 type Handler struct {
@@ -83,7 +86,7 @@ func expandSourceFiles(workDir string, srcs []string) ([]string, error) {
 	return files, nil
 }
 
-func matchSource(workDir string, src string) ([]string, error) {
+func matchSource(workDir, src string) ([]string, error) {
 	if hasGlob(src) {
 		matches, err := doublestar.Glob(os.DirFS(workDir), filepath.ToSlash(src), doublestar.WithFilesOnly(), doublestar.WithNoFollow())
 		if err != nil {
@@ -115,7 +118,10 @@ func matchSource(workDir string, src string) ([]string, error) {
 		}
 		rel, relErr := filepath.Rel(workDir, filePath)
 		if relErr != nil {
-			return relErr
+			return oops.In("bu1ld.archive").
+				With("src", src).
+				With("path", filePath).
+				Wrapf(relErr, "relativize archive source")
 		}
 		files = append(files, rel)
 		return nil
@@ -128,15 +134,19 @@ func matchSource(workDir string, src string) ([]string, error) {
 	return files, nil
 }
 
-func writeZip(workDir string, out string, files []string) error {
+func writeZip(workDir, out string, files []string) (err error) {
 	target, err := createOutput(workDir, out)
 	if err != nil {
 		return err
 	}
-	defer target.Close()
+	defer func() {
+		err = closeArchive(err, target.Close(), "close zip output")
+	}()
 
 	writer := zip.NewWriter(target)
-	defer writer.Close()
+	defer func() {
+		err = closeArchive(err, writer.Close(), "close zip writer")
+	}()
 	for _, file := range files {
 		if err := addZipFile(workDir, writer, file); err != nil {
 			return err
@@ -164,22 +174,28 @@ func addZipFile(workDir string, writer *zip.Writer, file string) error {
 	return copyFileTo(entry, source, file)
 }
 
-func writeTar(workDir string, out string, gzipEnabled bool, files []string) error {
+func writeTar(workDir, out string, gzipEnabled bool, files []string) (err error) {
 	target, err := createOutput(workDir, out)
 	if err != nil {
 		return err
 	}
-	defer target.Close()
+	defer func() {
+		err = closeArchive(err, target.Close(), "close tar output")
+	}()
 
 	var writer io.Writer = target
 	var gzipWriter *gzip.Writer
 	if gzipEnabled {
 		gzipWriter = gzip.NewWriter(target)
-		defer gzipWriter.Close()
+		defer func() {
+			err = closeArchive(err, gzipWriter.Close(), "close gzip writer")
+		}()
 		writer = gzipWriter
 	}
 	tarWriter := tar.NewWriter(writer)
-	defer tarWriter.Close()
+	defer func() {
+		err = closeArchive(err, tarWriter.Close(), "close tar writer")
+	}()
 	for _, file := range files {
 		if err := addTarFile(workDir, tarWriter, file); err != nil {
 			return err
@@ -205,28 +221,42 @@ func addTarFile(workDir string, writer *tar.Writer, file string) error {
 	return copyFileTo(writer, source, file)
 }
 
-func createOutput(workDir string, out string) (*os.File, error) {
+func createOutput(workDir, out string) (afero.File, error) {
 	path := filepath.Join(workDir, out)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	fs := afero.NewOsFs()
+	if err := fs.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return nil, oops.In("bu1ld.archive").With("out", out).Wrapf(err, "create archive output directory")
 	}
-	file, err := os.Create(path)
+	file, err := fs.Create(path)
 	if err != nil {
 		return nil, oops.In("bu1ld.archive").With("out", out).Wrapf(err, "create archive output")
 	}
 	return file, nil
 }
 
-func copyFileTo(writer io.Writer, source string, label string) error {
-	file, err := os.Open(source)
+func copyFileTo(writer io.Writer, source, label string) (err error) {
+	file, err := afero.NewOsFs().Open(source)
 	if err != nil {
 		return oops.In("bu1ld.archive").With("file", label).Wrapf(err, "open archive source")
 	}
-	defer file.Close()
+	defer func() {
+		err = closeArchive(err, file.Close(), "close archive source")
+	}()
 	if _, err := io.Copy(writer, file); err != nil {
 		return oops.In("bu1ld.archive").With("file", label).Wrapf(err, "write archive source")
 	}
 	return nil
+}
+
+func closeArchive(err, closeErr error, message string) error {
+	if closeErr == nil {
+		return err
+	}
+	wrapped := oops.In("bu1ld.archive").Wrapf(closeErr, "%s", message)
+	if err != nil {
+		return errors.Join(err, wrapped)
+	}
+	return wrapped
 }
 
 func hasGlob(pattern string) bool {
@@ -234,7 +264,10 @@ func hasGlob(pattern string) bool {
 }
 
 func stringParam(params map[string]any, key string) string {
-	value, _ := params[key].(string)
+	value, ok := params[key].(string)
+	if !ok {
+		return ""
+	}
 	return value
 }
 
@@ -254,6 +287,9 @@ func stringSliceParam(params map[string]any, key string) []string {
 }
 
 func boolParam(params map[string]any, key string) bool {
-	value, _ := params[key].(bool)
+	value, ok := params[key].(bool)
+	if !ok {
+		return false
+	}
 	return value
 }

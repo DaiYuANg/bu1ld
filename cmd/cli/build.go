@@ -7,6 +7,7 @@ import (
 )
 
 func newBuildCommand(opts *options) *cobra.Command {
+	var allPackages bool
 	cmd := &cobra.Command{
 		Use:   "build [task...]",
 		Short: "Build one or more tasks",
@@ -16,10 +17,12 @@ func newBuildCommand(opts *options) *cobra.Command {
 				targets = []string{"build"}
 			}
 			return runCommand(cmd, opts, app.CommandRequest{
-				Kind:    app.CommandBuild,
-				Targets: targets,
+				Kind:        app.CommandBuild,
+				Targets:     targets,
+				AllPackages: allPackages,
 			})
 		},
 	}
+	cmd.Flags().BoolVar(&allPackages, "all", false, "run local task targets in all workspace packages")
 	return cmd
 }

@@ -39,7 +39,7 @@ func (i *completionIndex) topLevelHover(label string) (hoverEntry, bool) {
 	return i.topLevelHovers.Get(label)
 }
 
-func (i *completionIndex) fieldHover(kind string, label string) (hoverEntry, bool) {
+func (i *completionIndex) fieldHover(kind, label string) (hoverEntry, bool) {
 	if inside, parent := runContext(kind); inside && parent != "task" {
 		return hoverEntry{}, false
 	}

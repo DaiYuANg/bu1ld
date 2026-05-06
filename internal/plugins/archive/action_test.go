@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+
+	"github.com/spf13/afero"
 )
 
 func TestZipHandlerWritesArchive(t *testing.T) {
@@ -27,13 +29,17 @@ func TestZipHandlerWritesArchive(t *testing.T) {
 		t.Fatalf("Run() error = %v", err)
 	}
 
-	reader, err := zip.OpenReader(filepath.Join(workDir, "out/app.zip"))
+	reader, err := zip.OpenReader(filepath.Join(workDir, "out", "app.zip"))
 	if err != nil {
 		t.Fatalf("open zip: %v", err)
 	}
-	defer reader.Close()
+	defer func() {
+		if closeErr := reader.Close(); closeErr != nil {
+			t.Fatalf("close zip: %v", closeErr)
+		}
+	}()
 
-	names := []string{}
+	names := make([]string, 0, len(reader.File))
 	for _, file := range reader.File {
 		names = append(names, file.Name)
 	}
@@ -58,17 +64,25 @@ func TestTarHandlerWritesGzipArchive(t *testing.T) {
 		t.Fatalf("Run() error = %v", err)
 	}
 
-	file, err := os.Open(filepath.Join(workDir, "out/app.tar.gz"))
+	file, err := afero.NewOsFs().Open(filepath.Join(workDir, "out", "app.tar.gz"))
 	if err != nil {
 		t.Fatalf("open tar.gz: %v", err)
 	}
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			t.Fatalf("close tar.gz: %v", closeErr)
+		}
+	}()
 
 	gzipReader, err := gzip.NewReader(file)
 	if err != nil {
 		t.Fatalf("open gzip: %v", err)
 	}
-	defer gzipReader.Close()
+	defer func() {
+		if closeErr := gzipReader.Close(); closeErr != nil {
+			t.Fatalf("close gzip: %v", closeErr)
+		}
+	}()
 
 	tarReader := tar.NewReader(gzipReader)
 	header, err := tarReader.Next()
@@ -80,14 +94,14 @@ func TestTarHandlerWritesGzipArchive(t *testing.T) {
 	}
 }
 
-func writeTestFile(t *testing.T, root string, path string, contents string) {
+func writeTestFile(t *testing.T, root, path, contents string) {
 	t.Helper()
 
 	target := filepath.Join(root, path)
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(target, []byte(contents), 0o644); err != nil {
+	if err := os.WriteFile(target, []byte(contents), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 }

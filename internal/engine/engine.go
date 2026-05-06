@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os/exec"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -33,29 +33,6 @@ type ActionRunner interface {
 type ActionHandler interface {
 	Kind() string
 	Run(ctx context.Context, workDir string, params map[string]any, output io.Writer) error
-}
-
-type ExecRunner struct{}
-
-func NewExecRunner() CommandRunner {
-	return &ExecRunner{}
-}
-
-func (r *ExecRunner) Run(ctx context.Context, workDir string, command []string, output io.Writer) error {
-	if len(command) == 0 {
-		return nil
-	}
-	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
-	cmd.Dir = workDir
-	cmd.Stdout = output
-	cmd.Stderr = output
-	if err := cmd.Run(); err != nil {
-		return oops.In("bu1ld.engine").
-			With("work_dir", workDir).
-			With("command", command).
-			Wrapf(err, "run command %q", command[0])
-	}
-	return nil
 }
 
 type DispatchActionRunner struct {
@@ -210,17 +187,31 @@ func (e *Engine) executeTask(ctx context.Context, task build.Task, key string) e
 }
 
 func (e *Engine) runTaskBody(ctx context.Context, task build.Task) error {
+	workDir := e.taskWorkDir(task)
 	if task.Command.Len() > 0 {
-		return e.runner.Run(ctx, e.cfg.WorkDir, build.Values(task.Command), e.output)
+		if err := e.runner.Run(ctx, workDir, build.Values(task.Command), e.output); err != nil {
+			return oops.In("bu1ld.engine").
+				With("task", task.Name).
+				With("work_dir", workDir).
+				Wrapf(err, "run task command")
+		}
+		return nil
 	}
 	if task.Action.Kind != "" {
-		return e.actions.Run(ctx, e.cfg.WorkDir, task.Action, e.output)
+		if err := e.actions.Run(ctx, workDir, task.Action, e.output); err != nil {
+			return oops.In("bu1ld.engine").
+				With("task", task.Name).
+				With("work_dir", workDir).
+				With("action", task.Action.Kind).
+				Wrapf(err, "run task action")
+		}
+		return nil
 	}
 	return e.publish(ctx, events.TaskNoop{Task: task.Name})
 }
 
 func (e *Engine) actionKey(task build.Task, actionKeys *mapping.Map[string, string]) (string, error) {
-	files, err := e.snapshotter.Inputs(e.cfg.WorkDir, build.Values(task.Inputs))
+	files, err := e.snapshotter.Inputs(e.taskWorkDir(task), build.Values(task.Inputs))
 	if err != nil {
 		return "", fmt.Errorf("snapshot task inputs for %q: %w", task.Name, err)
 	}
@@ -236,6 +227,9 @@ func (e *Engine) actionKey(task build.Task, actionKeys *mapping.Map[string, stri
 	payload := struct {
 		Version       int               `json:"version"`
 		TaskName      string            `json:"taskName"`
+		LocalName     string            `json:"localName"`
+		Package       string            `json:"package"`
+		WorkDir       string            `json:"workDir"`
 		Command       []string          `json:"command"`
 		Action        build.Action      `json:"action"`
 		InputPatterns []string          `json:"inputPatterns"`
@@ -246,6 +240,9 @@ func (e *Engine) actionKey(task build.Task, actionKeys *mapping.Map[string, stri
 	}{
 		Version:       1,
 		TaskName:      task.Name,
+		LocalName:     task.LocalName,
+		Package:       task.Package,
+		WorkDir:       task.WorkDir,
 		Command:       build.Values(task.Command),
 		Action:        task.Action,
 		InputPatterns: build.Values(task.Inputs),
@@ -260,6 +257,13 @@ func (e *Engine) actionKey(task build.Task, actionKeys *mapping.Map[string, stri
 		return "", fmt.Errorf("marshal action key payload for %q: %w", task.Name, err)
 	}
 	return snapshot.HashBytes(data), nil
+}
+
+func (e *Engine) taskWorkDir(task build.Task) string {
+	if task.WorkDir == "" {
+		return e.cfg.WorkDir
+	}
+	return filepath.Join(e.cfg.WorkDir, filepath.FromSlash(task.WorkDir))
 }
 
 func (e *Engine) publish(ctx context.Context, event eventx.Event) error {

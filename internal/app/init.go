@@ -34,7 +34,7 @@ func (a *App) initProject() error {
 	return writef(a.output, "initialized bu1ld project in %s\n", a.loader.LoadOptions().ProjectDir)
 }
 
-func starterFiles(buildFilePath string, projectDir string) *list.List[initFile] {
+func starterFiles(buildFilePath, projectDir string) *list.List[initFile] {
 	return list.NewList[initFile](
 		initFile{
 			Path: filepath.Clean(buildFilePath),

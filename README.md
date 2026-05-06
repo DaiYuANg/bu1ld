@@ -11,6 +11,7 @@ The first version includes:
 - A basic DSL language server with parse diagnostics, semantic diagnostics, and schema completions
 - A plugin registry with builtin, local, and global plugin sources
 - Builtin `go`, `docker`, and `archive` plugins
+- Monorepo workspace package discovery and package-scoped task ids
 - Task graph planning with dependency ordering and cycle detection
 - A configuration cache for unchanged build scripts and plugin binaries
 - Input fingerprints and a local action cache
@@ -68,12 +69,46 @@ plugin go {
   id = "builtin.go"
 }
 
+git.info version {
+  out = "dist/git-info.json"
+  include_dirty = true
+}
+
 toolchain go {
   version = env("GO_VERSION", "1.26.2")
 }
 
 import "tasks/go.bu1ld"
 ```
+
+Monorepo workspaces can discover package build files from the root build file:
+
+```text
+workspace {
+  name = "mono"
+  packages = ["apps/*", "libs/*"]
+}
+```
+
+Each package can declare metadata and local tasks in its own `build.bu1ld`:
+
+```text
+package {
+  name = "apps/api"
+  deps = ["libs/core"]
+}
+
+task build {
+  inputs = ["src/**"]
+  outputs = ["dist/**"]
+  command = ["go", "build", "./..."]
+}
+```
+
+Package tasks are exposed as globally unique ids such as `apps/api:build`.
+Package dependencies automatically add same-name task dependencies, so
+`apps/api:build` depends on `libs/core:build` when both packages define
+`build`.
 
 ```text
 # tasks/go.bu1ld
@@ -189,6 +224,9 @@ plugin java {
 ```
 
 Builtin plugins are native Go implementations linked into the bu1ld binary.
+The current builtins are `go`, `docker`, `archive`, and `git`. The `git.info`
+rule uses go-git to write repository metadata such as HEAD, branch, commit,
+dirty state, and remotes into a JSON output.
 Local plugins are external process plugins resolved under the project
 `.bu1ld/plugins` directory by default. Global plugins are resolved under the
 user home `.bu1ld/plugins` directory by default. A `path = "./..."` value can be
@@ -227,6 +265,10 @@ Inside this repository:
 ```bash
 go run ./cmd/cli init --project-dir /tmp/hello-bu1ld
 go run ./cmd/cli doctor
+go run ./cmd/cli packages
+go run ./cmd/cli packages graph
+go run ./cmd/cli affected --base main
+go run ./cmd/cli build --all :build
 go run ./cmd/cli graph
 go run ./cmd/cli graph build
 go run ./cmd/cli tasks

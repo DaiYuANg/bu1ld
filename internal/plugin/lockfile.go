@@ -82,7 +82,7 @@ func WriteLockFile(path string, lock LockFile) error {
 	return nil
 }
 
-func (l LockFile) Find(source Source, namespace string, id string) (LockedPlugin, bool) {
+func (l LockFile) Find(source Source, namespace, id string) (LockedPlugin, bool) {
 	for _, plugin := range l.Plugins {
 		if plugin.Source == source && plugin.Namespace == namespace && plugin.ID == id {
 			return plugin, true

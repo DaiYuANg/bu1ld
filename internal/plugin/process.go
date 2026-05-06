@@ -23,7 +23,7 @@ func NewProcessLoader(options LoadOptions) *ProcessLoader {
 	return &ProcessLoader{options: options}
 }
 
-func (l *ProcessLoader) Load(ctx context.Context, declaration Declaration) (Plugin, error) {
+func (l *ProcessLoader) Load(_ context.Context, declaration Declaration) (Plugin, error) {
 	path, err := l.resolvePath(declaration)
 	if err != nil {
 		return nil, err
@@ -32,7 +32,7 @@ func (l *ProcessLoader) Load(ctx context.Context, declaration Declaration) (Plug
 	client := hplugin.NewClient(&hplugin.ClientConfig{
 		HandshakeConfig:  pluginapi.Handshake,
 		Plugins:          hplugin.PluginSet{pluginapi.ProcessPluginName: pluginapi.ClientPlugin()},
-		Cmd:              exec.CommandContext(ctx, path),
+		Cmd:              processCommand(path),
 		AllowedProtocols: []hplugin.Protocol{hplugin.ProtocolNetRPC},
 	})
 	rpcClient, err := client.Client()
@@ -64,6 +64,13 @@ func (l *ProcessLoader) Load(ctx context.Context, declaration Declaration) (Plug
 	}
 	l.clients = append(l.clients, client)
 	return item, nil
+}
+
+func processCommand(path string) *exec.Cmd {
+	return &exec.Cmd{
+		Path: path,
+		Args: []string{path},
+	}
 }
 
 func (l *ProcessLoader) Close() {

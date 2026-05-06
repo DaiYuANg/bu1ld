@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/spf13/afero"
 )
 
 func TestRegistryExpandsBuiltinAlias(t *testing.T) {
@@ -81,7 +83,7 @@ func TestProcessLoaderResolvesLocalAndGlobalPaths(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve local dev path: %v", err)
 	}
-	if got, want := localDev, filepath.Join("/workspace", "./tools/rust-plugin"); got != want {
+	if got, want := localDev, filepath.Join(string(filepath.Separator), "workspace", "tools", "rust-plugin"); got != want {
 		t.Fatalf("local dev path = %q, want %q", got, want)
 	}
 
@@ -94,7 +96,15 @@ func TestProcessLoaderResolvesLocalAndGlobalPaths(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve local installed path: %v", err)
 	}
-	localWant := filepath.Join("/workspace/.bu1ld/plugins", "org.bu1ld.rust", "0.1.0", "org.bu1ld.rust")
+	localWant := filepath.Join(
+		string(filepath.Separator),
+		"workspace",
+		".bu1ld",
+		"plugins",
+		"org.bu1ld.rust",
+		"0.1.0",
+		"org.bu1ld.rust",
+	)
 	if localInstalled != localWant {
 		t.Fatalf("local installed path = %q, want %q", localInstalled, localWant)
 	}
@@ -108,7 +118,16 @@ func TestProcessLoaderResolvesLocalAndGlobalPaths(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve global path: %v", err)
 	}
-	want := filepath.Join("/home/user/.bu1ld/plugins", "org.bu1ld.java", "0.1.0", "org.bu1ld.java")
+	want := filepath.Join(
+		string(filepath.Separator),
+		"home",
+		"user",
+		".bu1ld",
+		"plugins",
+		"org.bu1ld.java",
+		"0.1.0",
+		"org.bu1ld.java",
+	)
 	if global != want {
 		t.Fatalf("global path = %q, want %q", global, want)
 	}
@@ -125,7 +144,7 @@ func TestProcessLoaderDiscoversInstalledPluginPath(t *testing.T) {
 	if err := os.WriteFile(discovered, []byte("#!/bin/sh\n"), 0o600); err != nil {
 		t.Fatalf("write plugin: %v", err)
 	}
-	if err := os.Chmod(discovered, 0o500); err != nil {
+	if err := afero.NewOsFs().Chmod(discovered, 0o500); err != nil {
 		t.Fatalf("chmod plugin: %v", err)
 	}
 

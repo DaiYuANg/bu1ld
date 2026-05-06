@@ -132,7 +132,8 @@ func (r *Registry) Expand(ctx context.Context, invocation Invocation) ([]build.T
 			Wrapf(err, "expand plugin rule")
 	}
 	tasks := list.NewListWithCapacity[build.Task](len(specs))
-	for _, spec := range specs {
+	for i := range specs {
+		spec := specs[i]
 		tasks.Add(TaskSpecToBuild(spec))
 	}
 	for _, task := range tasks.Values() {

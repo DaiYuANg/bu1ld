@@ -26,6 +26,9 @@ const (
 	CommandDoctor            CommandKind = "doctor"
 	CommandGraph             CommandKind = "graph"
 	CommandTasks             CommandKind = "tasks"
+	CommandPackages          CommandKind = "packages"
+	CommandPackagesGraph     CommandKind = "packages.graph"
+	CommandAffected          CommandKind = "affected"
 	CommandClean             CommandKind = "clean"
 	CommandPluginsList       CommandKind = "plugins.list"
 	CommandPluginsDoctor     CommandKind = "plugins.doctor"
@@ -39,16 +42,18 @@ const (
 )
 
 type CommandRequest struct {
-	Kind       CommandKind
-	Targets    []string
-	ForceWrite bool
+	Kind        CommandKind
+	Targets     []string
+	AllPackages bool
+	BaseRef     string
+	ForceWrite  bool
 }
 
 type App struct {
 	request  CommandRequest
 	loader   *dsl.Loader
 	registry *buildplugin.Registry
-	engine   *engine.Engine
+	builder  *engine.Engine
 	store    *cache.Store
 	output   io.Writer
 }
@@ -57,7 +62,7 @@ func New(
 	request CommandRequest,
 	loader *dsl.Loader,
 	registry *buildplugin.Registry,
-	engine *engine.Engine,
+	builder *engine.Engine,
 	store *cache.Store,
 	output io.Writer,
 ) (*App, error) {
@@ -65,84 +70,20 @@ func New(
 		request:  request,
 		loader:   loader,
 		registry: registry,
-		engine:   engine,
+		builder:  builder,
 		store:    store,
 		output:   output,
 	}, nil
 }
 
 func (a *App) Run(ctx context.Context) error {
-	switch a.request.Kind {
-	case CommandInit:
-		return a.initProject()
-	case CommandDoctor:
-		return a.doctor(ctx)
-	case CommandBuild, CommandTest:
-		project, err := a.loader.Load()
-		if err != nil {
-			return oops.In("bu1ld.app").
-				With("command", a.request.Kind).
-				Wrapf(err, "load project")
-		}
-		if err := a.engine.Run(ctx, project, a.request.Targets); err != nil {
-			return oops.In("bu1ld.app").
-				With("command", a.request.Kind).
-				With("targets", a.request.Targets).
-				Wrapf(err, "run build graph")
-		}
-		return nil
-	case CommandGraph:
-		project, err := a.loadProject()
-		if err != nil {
-			return err
-		}
-		return a.printGraph(project)
-	case CommandTasks:
-		project, err := a.loadProject()
-		if err != nil {
-			return err
-		}
-		return a.printTasks(project)
-	case CommandClean:
-		if err := a.store.Clean(); err != nil {
-			return oops.In("bu1ld.app").
-				With("command", a.request.Kind).
-				Wrapf(err, "clean cache")
-		}
-		return writeLine(a.output, "cache cleaned")
-	case CommandPluginsList:
-		return a.printPlugins(ctx, false)
-	case CommandPluginsDoctor:
-		return a.printPluginsDoctor(ctx)
-	case CommandPluginsLock:
-		return a.writePluginsLock(ctx)
-	case CommandDaemonStatus:
-		return writeLine(a.output, "daemon status: unavailable (not implemented)")
-	case CommandDaemonStart, CommandDaemonStop:
-		return oops.In("bu1ld.daemon").
-			With("command", a.request.Kind).
-			New("daemon runtime is reserved for the next build engine iteration")
-	case CommandServerStatus:
-		return writeLine(a.output, "server status: unavailable (not implemented)")
-	case CommandServerCoordinator, CommandServerWorker:
-		return oops.In("bu1ld.server").
-			With("command", a.request.Kind).
-			New("distributed build server is reserved for a future implementation")
-	default:
+	handler, ok := a.handlers()[a.request.Kind]
+	if !ok {
 		return oops.In("bu1ld.app").
 			With("command", a.request.Kind).
 			Errorf("unknown command kind %q", a.request.Kind)
 	}
-}
-
-func (a *App) loadProject() (build.Project, error) {
-	project, err := a.loader.Load()
-	if err != nil {
-		return build.Project{}, oops.In("bu1ld.app").
-			With("command", a.request.Kind).
-			Wrapf(err, "load project")
-	}
-	return project, nil
+	return handler(ctx)
 }
 
 func (a *App) printGraph(project build.Project) error {
@@ -191,6 +132,65 @@ func (a *App) graphTasks(project build.Project) ([]build.Task, error) {
 func (a *App) printTasks(project build.Project) error {
 	for _, name := range project.TaskNames() {
 		if err := writeLine(a.output, name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *App) expandTargets(project build.Project) []string {
+	if !a.request.AllPackages {
+		return normalizeRootTargets(a.request.Targets)
+	}
+	localTargets := normalizeLocalTargets(a.request.Targets)
+	targets := list.NewList[string]()
+	for _, pkgName := range project.PackageNames() {
+		for _, local := range localTargets {
+			targets.Add(build.QualifyTaskName(pkgName, local))
+		}
+	}
+	return targets.Values()
+}
+
+func normalizeRootTargets(targets []string) []string {
+	values := list.NewList[string]()
+	for _, target := range targets {
+		values.Add(strings.TrimPrefix(target, ":"))
+	}
+	return values.Values()
+}
+
+func normalizeLocalTargets(targets []string) []string {
+	if len(targets) == 0 {
+		targets = []string{":build"}
+	}
+	values := list.NewList[string]()
+	for _, target := range targets {
+		values.Add(strings.TrimPrefix(target, ":"))
+	}
+	return values.Values()
+}
+
+func (a *App) printPackages(project build.Project) error {
+	for _, name := range project.PackageNames() {
+		if err := writeLine(a.output, name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *App) printPackageGraph(project build.Project) error {
+	if project.Packages == nil {
+		return nil
+	}
+	for _, pkg := range project.Packages.Values() {
+		deps := build.Values(pkg.Deps)
+		line := pkg.Name
+		if len(deps) > 0 {
+			line += " -> " + strings.Join(deps, ", ")
+		}
+		if err := writeLine(a.output, line); err != nil {
 			return err
 		}
 	}

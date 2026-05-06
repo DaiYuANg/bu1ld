@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 
 	buildplugin "bu1ld/internal/plugin"
+
+	"github.com/samber/oops"
 )
 
 const ImageActionKind = "docker.image"
@@ -69,7 +71,7 @@ func expandImage(invocation buildplugin.Invocation) (buildplugin.TaskSpec, error
 		return buildplugin.TaskSpec{}, fmt.Errorf("read docker.image tags field: %w", err)
 	}
 	if len(tags) == 0 {
-		return buildplugin.TaskSpec{}, fmt.Errorf("docker.image requires at least one tag")
+		return buildplugin.TaskSpec{}, oops.In("bu1ld.docker").New("docker.image requires at least one tag")
 	}
 	deps, err := invocation.OptionalList("deps", nil)
 	if err != nil {
@@ -97,7 +99,7 @@ func expandImage(invocation buildplugin.Invocation) (buildplugin.TaskSpec, error
 	}, nil
 }
 
-func dockerInputs(invocation buildplugin.Invocation, contextDir string, dockerfile string) ([]string, error) {
+func dockerInputs(invocation buildplugin.Invocation, contextDir, dockerfile string) ([]string, error) {
 	inputs, err := invocation.OptionalList("inputs", nil)
 	if err != nil {
 		return nil, fmt.Errorf("read docker.image inputs field: %w", err)
@@ -147,7 +149,7 @@ func imageAction(
 		return buildplugin.TaskAction{}, fmt.Errorf("read docker.image load field: %w", err)
 	}
 	if push && load {
-		return buildplugin.TaskAction{}, fmt.Errorf("docker.image cannot set push and load together")
+		return buildplugin.TaskAction{}, oops.In("bu1ld.docker").New("docker.image cannot set push and load together")
 	}
 
 	return buildplugin.TaskAction{

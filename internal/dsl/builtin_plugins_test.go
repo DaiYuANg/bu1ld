@@ -1,6 +1,7 @@
 package dsl
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -31,7 +32,11 @@ docker.image app {
 	if got, want := task.Action.Params["load"], true; got != want {
 		t.Fatalf("load = %v, want %v", got, want)
 	}
-	if got := strings.Join(task.Action.Params["tags"].([]string), ","); got != "example/app:dev" {
+	tags, ok := task.Action.Params["tags"].([]string)
+	if !ok {
+		t.Fatalf("tags type = %T, want []string", task.Action.Params["tags"])
+	}
+	if got := strings.Join(tags, ","); got != "example/app:dev" {
 		t.Fatalf("tags = %q, want example/app:dev", got)
 	}
 }
@@ -72,5 +77,30 @@ archive.tar bundle {
 	}
 	if got, want := tarTask.Action.Params["gzip"], true; got != want {
 		t.Fatalf("gzip = %v, want %v", got, want)
+	}
+}
+
+func TestParserParsesGitInfoRule(t *testing.T) {
+	t.Parallel()
+
+	project, err := NewParser().Parse(strings.NewReader(`
+git.info version {
+  out = "dist/git-info.json"
+  include_dirty = true
+}
+`))
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+
+	task, ok := project.FindTask("version")
+	if !ok {
+		t.Fatalf("version task not found")
+	}
+	if got, want := task.Action.Kind, "git.info"; got != want {
+		t.Fatalf("action kind = %q, want %q", got, want)
+	}
+	if got, want := task.Outputs.Values(), []string{"dist/git-info.json"}; !slices.Equal(got, want) {
+		t.Fatalf("outputs = %v, want %v", got, want)
 	}
 }

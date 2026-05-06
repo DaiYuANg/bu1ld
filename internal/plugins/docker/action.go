@@ -1,7 +1,9 @@
+// Package docker provides built-in Docker actions.
 package docker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -32,7 +34,7 @@ func (h *ImageHandler) Kind() string {
 	return ImageActionKind
 }
 
-func (h *ImageHandler) Run(ctx context.Context, workDir string, params map[string]any, output io.Writer) error {
+func (h *ImageHandler) Run(ctx context.Context, workDir string, params map[string]any, output io.Writer) (err error) {
 	spec, err := imageSpecFromParams(params)
 	if err != nil {
 		return err
@@ -41,7 +43,9 @@ func (h *ImageHandler) Run(ctx context.Context, workDir string, params map[strin
 	if err != nil {
 		return oops.In("bu1ld.docker").Wrapf(err, "create docker client")
 	}
-	defer cli.Close()
+	defer func() {
+		err = closeDocker(err, cli.Close(), "close docker client")
+	}()
 
 	contextPath := absolutePath(workDir, spec.Context)
 	buildContext, err := dockerarchive.TarWithOptions(contextPath, &dockerarchive.TarOptions{})
@@ -50,7 +54,9 @@ func (h *ImageHandler) Run(ctx context.Context, workDir string, params map[strin
 			With("context", contextPath).
 			Wrapf(err, "archive docker build context")
 	}
-	defer buildContext.Close()
+	defer func() {
+		err = closeDocker(err, buildContext.Close(), "close docker build context")
+	}()
 
 	response, err := cli.ImageBuild(ctx, buildContext, spec.buildOptions(workDir))
 	if err != nil {
@@ -60,7 +66,9 @@ func (h *ImageHandler) Run(ctx context.Context, workDir string, params map[strin
 			With("tags", spec.Tags).
 			Wrapf(err, "build docker image")
 	}
-	defer response.Body.Close()
+	defer func() {
+		err = closeDocker(err, response.Body.Close(), "close docker build response")
+	}()
 	if _, err := io.Copy(output, response.Body); err != nil {
 		return oops.In("bu1ld.docker").Wrapf(err, "stream docker build output")
 	}
@@ -75,20 +83,33 @@ func (h *ImageHandler) Run(ctx context.Context, workDir string, params map[strin
 	return nil
 }
 
-func (h *ImageHandler) push(ctx context.Context, cli *client.Client, tag string, output io.Writer) error {
+func (h *ImageHandler) push(ctx context.Context, cli *client.Client, tag string, output io.Writer) (err error) {
 	response, err := cli.ImagePush(ctx, tag, dockerimage.PushOptions{})
 	if err != nil {
 		return oops.In("bu1ld.docker").
 			With("tag", tag).
 			Wrapf(err, "push docker image")
 	}
-	defer response.Close()
+	defer func() {
+		err = closeDocker(err, response.Close(), "close docker push response")
+	}()
 	if _, err := io.Copy(output, response); err != nil {
 		return oops.In("bu1ld.docker").
 			With("tag", tag).
 			Wrapf(err, "stream docker push output")
 	}
 	return nil
+}
+
+func closeDocker(err, closeErr error, message string) error {
+	if closeErr == nil {
+		return err
+	}
+	wrapped := oops.In("bu1ld.docker").Wrapf(closeErr, "%s", message)
+	if err != nil {
+		return errors.Join(err, wrapped)
+	}
+	return wrapped
 }
 
 type imageSpec struct {
@@ -157,7 +178,7 @@ func (s imageSpec) buildOptions(workDir string) dockerbuild.ImageBuildOptions {
 	return options
 }
 
-func dockerfileInContext(workDir string, contextDir string, dockerfile string) string {
+func dockerfileInContext(workDir, contextDir, dockerfile string) string {
 	contextPath := absolutePath(workDir, contextDir)
 	dockerfilePath := absolutePath(workDir, dockerfile)
 	rel, err := filepath.Rel(contextPath, dockerfilePath)
@@ -168,7 +189,10 @@ func dockerfileInContext(workDir string, contextDir string, dockerfile string) s
 }
 
 func stringParam(params map[string]any, key string) string {
-	value, _ := params[key].(string)
+	value, ok := params[key].(string)
+	if !ok {
+		return ""
+	}
 	return value
 }
 
@@ -200,7 +224,10 @@ func stringMapParam(params map[string]any, key string) map[string]string {
 }
 
 func boolParam(params map[string]any, key string) bool {
-	value, _ := params[key].(bool)
+	value, ok := params[key].(bool)
+	if !ok {
+		return false
+	}
 	return value
 }
 
@@ -210,7 +237,7 @@ func sortedKeys(values map[string]string) []string {
 	return keys
 }
 
-func absolutePath(workDir string, path string) string {
+func absolutePath(workDir, path string) string {
 	if filepath.IsAbs(path) {
 		return path
 	}

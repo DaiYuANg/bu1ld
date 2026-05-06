@@ -2,7 +2,6 @@ package dsl
 
 import (
 	"cmp"
-	"os"
 	"path/filepath"
 	"slices"
 
@@ -16,16 +15,17 @@ import (
 	"github.com/spf13/afero"
 )
 
-const configCacheVersion = 3
+const configCacheVersion = 4
 
 type configCacheRecord struct {
-	Version   int                 `json:"version"`
-	BuildFile string              `json:"buildFile"`
-	Files     []configCacheFile   `json:"files"`
-	Imports   []configCacheImport `json:"imports,omitempty"`
-	Envs      []configCacheEnv    `json:"envs,omitempty"`
-	Plugins   []configCachePlugin `json:"plugins,omitempty"`
-	Project   configCacheProject  `json:"project"`
+	Version   int                  `json:"version"`
+	BuildFile string               `json:"buildFile"`
+	Files     []configCacheFile    `json:"files"`
+	Imports   []configCacheImport  `json:"imports,omitempty"`
+	Packages  []configCachePackage `json:"packages,omitempty"`
+	Envs      []configCacheEnv     `json:"envs,omitempty"`
+	Plugins   []configCachePlugin  `json:"plugins,omitempty"`
+	Project   configCacheProject   `json:"project"`
 }
 
 type configCacheFile struct {
@@ -37,6 +37,11 @@ type configCacheImport struct {
 	Importer string   `json:"importer"`
 	Path     string   `json:"path"`
 	Matches  []string `json:"matches"`
+}
+
+type configCachePackage struct {
+	Pattern string   `json:"pattern"`
+	Matches []string `json:"matches"`
 }
 
 type configCacheEnv struct {
@@ -55,7 +60,14 @@ type configCachePlugin struct {
 }
 
 type configCacheProject struct {
-	Tasks []configCacheTask `json:"tasks"`
+	Packages []configCacheProjectPackage `json:"packages,omitempty"`
+	Tasks    []configCacheTask           `json:"tasks"`
+}
+
+type configCacheProjectPackage struct {
+	Name string   `json:"name"`
+	Dir  string   `json:"dir"`
+	Deps []string `json:"deps,omitempty"`
 }
 
 type configCacheTask struct {
@@ -64,7 +76,10 @@ type configCacheTask struct {
 	Inputs  []string          `json:"inputs,omitempty"`
 	Outputs []string          `json:"outputs,omitempty"`
 	Command []string          `json:"command,omitempty"`
-	Action  configCacheAction `json:"action,omitempty"`
+	Action  configCacheAction `json:"action,omitzero"`
+	Local   string            `json:"local,omitempty"`
+	Package string            `json:"package,omitempty"`
+	WorkDir string            `json:"workDir,omitempty"`
 }
 
 type configCacheAction struct {
@@ -83,8 +98,15 @@ func (l *Loader) loadConfigCache() (build.Project, bool) {
 	return projectFromConfigCache(record.Project), true
 }
 
-func (l *Loader) saveConfigCache(project build.Project, file *File, filePaths []string, imports []importDependency, envs []envDependency) error {
-	record, err := l.newConfigCacheRecord(project, file, filePaths, imports, envs)
+func (l *Loader) saveConfigCache(
+	project build.Project,
+	files []*File,
+	filePaths []string,
+	imports []importDependency,
+	packages []packageDiscovery,
+	envs []envDependency,
+) error {
+	record, err := l.newConfigCacheRecord(project, files, filePaths, imports, packages, envs)
 	if err != nil {
 		return err
 	}
@@ -96,24 +118,32 @@ func (l *Loader) saveConfigCache(project build.Project, file *File, filePaths []
 	return nil
 }
 
-func (l *Loader) newConfigCacheRecord(project build.Project, file *File, filePaths []string, imports []importDependency, envs []envDependency) (configCacheRecord, error) {
+func (l *Loader) newConfigCacheRecord(
+	project build.Project,
+	files []*File,
+	filePaths []string,
+	imports []importDependency,
+	packages []packageDiscovery,
+	envs []envDependency,
+) (configCacheRecord, error) {
 	buildFile, err := cleanAbsPath(l.cfg.BuildFilePath())
 	if err != nil {
 		return configCacheRecord{}, err
 	}
-	files, err := configCacheFiles(l.fs, filePaths)
+	cacheFiles, err := configCacheFiles(l.fs, filePaths)
 	if err != nil {
 		return configCacheRecord{}, err
 	}
-	plugins, err := l.configCachePlugins(file)
+	plugins, err := l.configCachePlugins(files)
 	if err != nil {
 		return configCacheRecord{}, err
 	}
 	return configCacheRecord{
 		Version:   configCacheVersion,
 		BuildFile: buildFile,
-		Files:     files,
+		Files:     cacheFiles,
 		Imports:   configCacheImports(imports),
+		Packages:  configCachePackages(packages),
 		Envs:      configCacheEnvs(envs),
 		Plugins:   plugins,
 		Project:   configCacheProjectFromBuild(project),
@@ -128,27 +158,11 @@ func (l *Loader) configCacheRecordValid(record configCacheRecord) bool {
 	if err != nil || record.BuildFile != buildFile {
 		return false
 	}
-	for _, file := range record.Files {
-		if !configCacheFileValid(l.fs, file) {
-			return false
-		}
-	}
-	for _, item := range record.Imports {
-		if !configCacheImportValid(l.fs, item) {
-			return false
-		}
-	}
-	for _, item := range record.Envs {
-		if !configCacheEnvValid(item) {
-			return false
-		}
-	}
-	for _, plugin := range record.Plugins {
-		if !l.configCachePluginValid(plugin) {
-			return false
-		}
-	}
-	return true
+	return l.configCacheFilesValid(record.Files) &&
+		l.configCacheImportsValid(record.Imports) &&
+		l.configCachePackagesValid(record.Packages) &&
+		configCacheEnvsValid(record.Envs) &&
+		l.configCachePluginsValid(record.Plugins)
 }
 
 func (l *Loader) configCachePath() string {
@@ -194,6 +208,23 @@ func configCacheImports(imports []importDependency) []configCacheImport {
 	return values
 }
 
+func configCachePackages(packages []packageDiscovery) []configCachePackage {
+	items := list.NewList[configCachePackage]()
+	for _, item := range packages {
+		matches := slices.Clone(item.Matches)
+		slices.Sort(matches)
+		items.Add(configCachePackage{
+			Pattern: item.Pattern,
+			Matches: matches,
+		})
+	}
+	values := items.Values()
+	slices.SortFunc(values, func(left, right configCachePackage) int {
+		return cmp.Compare(left.Pattern, right.Pattern)
+	})
+	return values
+}
+
 func configCacheEnvs(envs []envDependency) []configCacheEnv {
 	items := list.NewList[configCacheEnv]()
 	for _, item := range envs {
@@ -204,143 +235,4 @@ func configCacheEnvs(envs []envDependency) []configCacheEnv {
 		return cmp.Compare(left.Name, right.Name)
 	})
 	return values
-}
-
-func (l *Loader) configCachePlugins(file *File) ([]configCachePlugin, error) {
-	declarations, err := PluginDeclarations(file)
-	if err != nil {
-		return nil, err
-	}
-
-	loader := buildplugin.NewProcessLoader(l.LoadOptions())
-	items := list.NewList[configCachePlugin]()
-	for _, item := range declarations {
-		declaration := buildplugin.NormalizeDeclaration(item.Declaration)
-		if declaration.Source != buildplugin.SourceLocal && declaration.Source != buildplugin.SourceGlobal {
-			continue
-		}
-		path, err := loader.ResolvePath(declaration)
-		if err != nil {
-			return nil, oops.In("bu1ld.dsl").
-				With("plugin", declaration.Namespace).
-				With("source", declaration.Source).
-				Wrapf(err, "resolve plugin path")
-		}
-		checksum, err := buildplugin.ChecksumFile(path)
-		if err != nil {
-			return nil, oops.In("bu1ld.dsl").
-				With("plugin", declaration.Namespace).
-				With("path", path).
-				Wrapf(err, "checksum plugin binary")
-		}
-		items.Add(configCachePlugin{
-			Source:       declaration.Source,
-			Namespace:    declaration.Namespace,
-			ID:           declaration.ID,
-			Version:      declaration.Version,
-			DeclaredPath: declaration.Path,
-			Path:         filepath.Clean(path),
-			Checksum:     checksum,
-		})
-	}
-	values := items.Values()
-	slices.SortFunc(values, func(left, right configCachePlugin) int {
-		return cmp.Compare(configCachePluginKey(left), configCachePluginKey(right))
-	})
-	return values, nil
-}
-
-func configCacheFileValid(fs afero.Fs, file configCacheFile) bool {
-	if file.Path == "" || file.Checksum == "" {
-		return false
-	}
-	checksum, err := snapshot.DigestFile(fs, file.Path)
-	return err == nil && checksum == file.Checksum
-}
-
-func configCacheImportValid(fs afero.Fs, item configCacheImport) bool {
-	if item.Importer == "" || item.Path == "" {
-		return false
-	}
-	matches, err := resolveImportPaths(fs, item.Importer, item.Path)
-	if err != nil {
-		return false
-	}
-	return slices.Equal(matches, item.Matches)
-}
-
-func configCacheEnvValid(item configCacheEnv) bool {
-	return item.Name != "" && os.Getenv(item.Name) == item.Value
-}
-
-func (l *Loader) configCachePluginValid(item configCachePlugin) bool {
-	if item.Path == "" || item.Checksum == "" {
-		return false
-	}
-	loader := buildplugin.NewProcessLoader(l.LoadOptions())
-	declaration := buildplugin.Declaration{
-		Source:    item.Source,
-		Namespace: item.Namespace,
-		ID:        item.ID,
-		Version:   item.Version,
-		Path:      item.DeclaredPath,
-	}
-	path, err := loader.ResolvePath(declaration)
-	if err != nil || filepath.Clean(path) != filepath.Clean(item.Path) {
-		return false
-	}
-	checksum, err := buildplugin.ChecksumFile(path)
-	return err == nil && checksum == item.Checksum
-}
-
-func configCacheProjectFromBuild(project build.Project) configCacheProject {
-	tasks := list.NewList[configCacheTask]()
-	if project.Tasks != nil {
-		project.Tasks.Range(func(_ int, task build.Task) bool {
-			tasks.Add(configCacheTask{
-				Name:    task.Name,
-				Deps:    slices.Clone(build.Values(task.Deps)),
-				Inputs:  slices.Clone(build.Values(task.Inputs)),
-				Outputs: slices.Clone(build.Values(task.Outputs)),
-				Command: slices.Clone(build.Values(task.Command)),
-				Action: configCacheAction{
-					Kind:   task.Action.Kind,
-					Params: task.Action.Params,
-				},
-			})
-			return true
-		})
-	}
-	return configCacheProject{Tasks: tasks.Values()}
-}
-
-func projectFromConfigCache(cached configCacheProject) build.Project {
-	tasks := list.NewList[build.Task]()
-	for _, item := range cached.Tasks {
-		task := build.NewTask(item.Name)
-		task.Deps = list.NewList[string](item.Deps...)
-		task.Inputs = list.NewList[string](item.Inputs...)
-		task.Outputs = list.NewList[string](item.Outputs...)
-		task.Command = list.NewList[string](item.Command...)
-		task.Action = build.Action{
-			Kind:   item.Action.Kind,
-			Params: item.Action.Params,
-		}
-		tasks.Add(task)
-	}
-	return build.Project{Tasks: tasks}
-}
-
-func cleanAbsPath(path string) (string, error) {
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return "", oops.In("bu1ld.dsl").
-			With("path", path).
-			Wrapf(err, "resolve absolute path")
-	}
-	return filepath.Clean(absPath), nil
-}
-
-func configCachePluginKey(item configCachePlugin) string {
-	return string(item.Source) + "\x00" + item.Namespace + "\x00" + item.ID + "\x00" + item.Version + "\x00" + item.Path
 }

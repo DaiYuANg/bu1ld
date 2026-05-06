@@ -41,7 +41,8 @@ func (e *DiagnosticsError) Error() string {
 		return "plano diagnostics"
 	}
 	lines := make([]string, 0, len(e.Diagnostics))
-	for _, item := range e.Diagnostics {
+	for i := range e.Diagnostics {
+		item := e.Diagnostics[i]
 		lines = append(lines, item.Format(e.FileSet))
 	}
 	return strings.Join(lines, "\n")
@@ -59,7 +60,8 @@ func diagnosticsError(fset *token.FileSet, diagnostics planodiag.Diagnostics) er
 
 func firstPassDiagnosticsError(fset *token.FileSet, diagnostics planodiag.Diagnostics) error {
 	filtered := make(planodiag.Diagnostics, 0, len(diagnostics))
-	for _, item := range diagnostics {
+	for i := range diagnostics {
+		item := diagnostics[i]
 		if shouldIgnoreFirstPassDiagnostic(item) {
 			continue
 		}

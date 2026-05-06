@@ -19,12 +19,12 @@ func (a *App) doctor(ctx context.Context) error {
 		return err
 	}
 
-	project, err := a.loadProject()
+	project, err := a.loadProject(ctx)
 	if err != nil {
 		return err
 	}
-	if err := validateProjectGraph(project); err != nil {
-		return oops.In("bu1ld.doctor").Wrapf(err, "check task graph")
+	if graphErr := validateProjectGraph(project); graphErr != nil {
+		return oops.In("bu1ld.doctor").Wrapf(graphErr, "check task graph")
 	}
 
 	entries, err := a.pluginEntries(ctx)
@@ -33,13 +33,7 @@ func (a *App) doctor(ctx context.Context) error {
 	}
 	issues := pluginIssues(entries)
 
-	if err := writef(a.output, "tasks: %d\n", len(project.TaskNames())); err != nil {
-		return err
-	}
-	if err := writeLine(a.output, "task graph: ok"); err != nil {
-		return err
-	}
-	if err := writef(a.output, "plugins: %d checked\n", len(entries)); err != nil {
+	if err := a.writeDoctorSummary(project, entries); err != nil {
 		return err
 	}
 	if issues.Len() > 0 {
@@ -54,18 +48,32 @@ func (a *App) doctor(ctx context.Context) error {
 	return writeLine(a.output, "doctor: ok")
 }
 
+func (a *App) writeDoctorSummary(project build.Project, entries []pluginEntry) error {
+	if err := writef(a.output, "tasks: %d\n", len(project.TaskNames())); err != nil {
+		return err
+	}
+	if err := writeLine(a.output, "task graph: ok"); err != nil {
+		return err
+	}
+	return writef(a.output, "plugins: %d checked\n", len(entries))
+}
+
 func validateProjectGraph(project build.Project) error {
 	targets := project.TaskNames()
 	if len(targets) == 0 {
 		return nil
 	}
 	_, err := graph.Plan(project, targets)
-	return err
+	if err != nil {
+		return oops.In("bu1ld.doctor").Wrapf(err, "plan task graph")
+	}
+	return nil
 }
 
 func pluginIssues(entries []pluginEntry) *list.List[pluginEntry] {
 	issues := list.NewList[pluginEntry]()
-	for _, entry := range entries {
+	for i := range entries {
+		entry := entries[i]
 		if entry.Err != nil {
 			issues.Add(entry)
 		}
@@ -74,7 +82,8 @@ func pluginIssues(entries []pluginEntry) *list.List[pluginEntry] {
 }
 
 func writePluginIssues(a *App, entries []pluginEntry) error {
-	for _, entry := range entries {
+	for i := range entries {
+		entry := entries[i]
 		if err := writef(
 			a.output,
 			"plugin issue: %s %s %s %s: %v\n",

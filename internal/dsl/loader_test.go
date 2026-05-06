@@ -3,6 +3,7 @@ package dsl
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"bu1ld/internal/cachefile"
@@ -54,6 +55,57 @@ task package {
 	task, _ := project.FindTask("package")
 	if got, want := task.Outputs.Values()[0], "dist/package"; got != want {
 		t.Fatalf("package output = %q, want %q", got, want)
+	}
+}
+
+func TestLoaderDiscoversWorkspacePackages(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	writeDSLFile(t, projectDir, "build.bu1ld", `
+workspace {
+  name = "mono"
+  packages = ["apps/*", "libs/*"]
+}
+`)
+	writeDSLFile(t, projectDir, "libs/core/build.bu1ld", `
+package {
+  name = "libs/core"
+}
+
+task build {
+  command = []
+}
+`)
+	writeDSLFile(t, projectDir, "apps/api/build.bu1ld", `
+package {
+  name = "apps/api"
+  deps = ["libs/core"]
+}
+
+task build {
+  command = []
+}
+`)
+
+	loader := NewLoader(config.Config{WorkDir: projectDir, BuildFile: "build.bu1ld"}, afero.NewOsFs(), NewParser())
+	project, err := loader.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if got, want := project.PackageNames(), []string{"apps/api", "libs/core"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("packages = %v, want %v", got, want)
+	}
+	task, ok := project.FindTask("apps/api:build")
+	if !ok {
+		t.Fatalf("apps/api:build task not found")
+	}
+	if got, want := task.WorkDir, "apps/api"; got != want {
+		t.Fatalf("apps/api:build workdir = %q, want %q", got, want)
+	}
+	if got, want := strings.Join(task.Deps.Values(), ","), "libs/core:build"; got != want {
+		t.Fatalf("apps/api:build deps = %q, want %q", got, want)
 	}
 }
 
@@ -238,7 +290,7 @@ task envtask {
 	}
 }
 
-func writeDSLFile(t *testing.T, root string, name string, content string) {
+func writeDSLFile(t *testing.T, root, name, content string) {
 	t.Helper()
 	path := filepath.Join(root, name)
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {

@@ -78,7 +78,7 @@ func (s *Store) Save(task build.Task, actionKey string) error {
 	}
 
 	for _, output := range build.Values(task.Outputs) {
-		entry, err := s.captureOutput(output)
+		entry, err := s.captureOutput(task, output)
 		if err != nil {
 			return oops.In("bu1ld.cache").
 				With("task", task.Name).
@@ -142,7 +142,7 @@ func (s *Store) OutputsPresent(task build.Task) bool {
 	}
 
 	for _, output := range outputs {
-		if _, err := s.fs.Stat(s.absolute(output)); err != nil {
+		if _, err := s.fs.Stat(s.taskAbsolute(task, output)); err != nil {
 			return false
 		}
 	}
@@ -158,8 +158,9 @@ func (s *Store) Clean() error {
 	return nil
 }
 
-func (s *Store) captureOutput(output string) (OutputRecord, error) {
-	path := s.absolute(output)
+func (s *Store) captureOutput(task build.Task, output string) (OutputRecord, error) {
+	rootRelativeOutput := s.taskRelative(task, output)
+	path := s.absolute(rootRelativeOutput)
 	info, err := s.fs.Stat(path)
 	if err != nil {
 		return OutputRecord{}, oops.In("bu1ld.cache").
@@ -180,7 +181,7 @@ func (s *Store) captureOutput(output string) (OutputRecord, error) {
 			return OutputRecord{}, ensureErr
 		}
 		return OutputRecord{
-			Path:   filepath.ToSlash(output),
+			Path:   filepath.ToSlash(rootRelativeOutput),
 			Kind:   "file",
 			Digest: digest,
 			Mode:   uint32(info.Mode().Perm()),
@@ -232,14 +233,14 @@ func (s *Store) captureOutput(output string) (OutputRecord, error) {
 	}
 
 	return OutputRecord{
-		Path:   filepath.ToSlash(output),
+		Path:   filepath.ToSlash(rootRelativeOutput),
 		Kind:   "dir",
 		Digest: snapshot.HashBytes(payload),
 		Files:  outputFiles,
 	}, nil
 }
 
-func (s *Store) ensureBlob(path string, digest string) error {
+func (s *Store) ensureBlob(path, digest string) error {
 	target := s.blobPath(digest)
 	if _, err := s.fs.Stat(target); err == nil {
 		return nil
@@ -259,7 +260,7 @@ func (s *Store) ensureBlob(path string, digest string) error {
 	return nil
 }
 
-func (s *Store) restoreFile(relativePath string, digest string, mode os.FileMode) error {
+func (s *Store) restoreFile(relativePath, digest string, mode os.FileMode) error {
 	target := s.absolute(relativePath)
 	if err := s.fs.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return oops.In("bu1ld.cache").

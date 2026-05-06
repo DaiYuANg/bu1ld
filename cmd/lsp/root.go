@@ -29,7 +29,7 @@ func Execute() error {
 	return nil
 }
 
-func NewRootCommand(in io.Reader, out io.Writer, errOut io.Writer) *cobra.Command {
+func NewRootCommand(in io.Reader, out, errOut io.Writer) *cobra.Command {
 	opts := options{
 		in:  in,
 		out: out,

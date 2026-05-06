@@ -17,7 +17,7 @@ type Config struct {
 	LogLevel  string
 }
 
-func New(workDir string, buildFile string, cacheDir string, noCache bool) (Config, error) {
+func New(workDir, buildFile, cacheDir string, noCache bool) (Config, error) {
 	if workDir == "" {
 		workDir = "."
 	}

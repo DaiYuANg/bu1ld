@@ -98,79 +98,23 @@ func (s *Server) Serve(ctx context.Context) error {
 func (s *Server) handle(ctx context.Context, reply jsonrpc2.Replier, request jsonrpc2.Request) error {
 	switch request.Method() {
 	case "initialize":
-		return reply(ctx, protocol.InitializeResult{
-			Capabilities: protocol.ServerCapabilities{
-				TextDocumentSync: protocol.TextDocumentSyncKindFull,
-				CompletionProvider: &protocol.CompletionOptions{
-					TriggerCharacters: []string{".", " ", "="},
-				},
-				HoverProvider: true,
-			},
-		}, nil)
+		return replyInitialize(ctx, reply)
 	case "initialized":
 		return reply(ctx, nil, nil)
 	case "shutdown":
 		return reply(ctx, nil, nil)
 	case "exit":
-		if err := reply(ctx, nil, nil); err != nil {
-			return oops.In("bu1ld.lsp").
-				With("method", request.Method()).
-				Wrapf(err, "reply to exit request")
-		}
-		return io.EOF
+		return replyExit(ctx, reply, request)
 	case "textDocument/didOpen":
-		var params protocol.DidOpenTextDocumentParams
-		if err := decodeParams(request, &params); err != nil {
-			return err
-		}
-		uri := string(params.TextDocument.URI)
-		s.docs.Set(uri, params.TextDocument.Text)
-		if err := s.publishDiagnostics(ctx, params.TextDocument.URI, params.TextDocument.Text); err != nil {
-			return err
-		}
-		return reply(ctx, nil, nil)
+		return s.didOpen(ctx, reply, request)
 	case "textDocument/didChange":
-		var params protocol.DidChangeTextDocumentParams
-		if err := decodeParams(request, &params); err != nil {
-			return err
-		}
-		uri := string(params.TextDocument.URI)
-		text, _ := s.docs.Get(uri)
-		if len(params.ContentChanges) > 0 {
-			text = params.ContentChanges[len(params.ContentChanges)-1].Text
-		}
-		s.docs.Set(uri, text)
-		if err := s.publishDiagnostics(ctx, params.TextDocument.URI, text); err != nil {
-			return err
-		}
-		return reply(ctx, nil, nil)
+		return s.didChange(ctx, reply, request)
 	case "textDocument/didClose":
-		var params protocol.DidCloseTextDocumentParams
-		if err := decodeParams(request, &params); err != nil {
-			return err
-		}
-		s.docs.Delete(string(params.TextDocument.URI))
-		if err := s.notify(ctx, "textDocument/publishDiagnostics", protocol.PublishDiagnosticsParams{
-			URI:         params.TextDocument.URI,
-			Diagnostics: []protocol.Diagnostic{},
-		}); err != nil {
-			return err
-		}
-		return reply(ctx, nil, nil)
+		return s.didClose(ctx, reply, request)
 	case "textDocument/completion":
-		var params protocol.CompletionParams
-		if err := decodeParams(request, &params); err != nil {
-			return err
-		}
-		text, _ := s.docs.Get(string(params.TextDocument.URI))
-		return reply(ctx, s.completions(text, params.Position), nil)
+		return s.completion(ctx, reply, request)
 	case "textDocument/hover":
-		var params protocol.HoverParams
-		if err := decodeParams(request, &params); err != nil {
-			return err
-		}
-		text, _ := s.docs.Get(string(params.TextDocument.URI))
-		return reply(ctx, s.hover(text, params.Position), nil)
+		return s.hoverRequest(ctx, reply, request)
 	default:
 		if err := jsonrpc2.MethodNotFoundHandler(ctx, reply, request); err != nil {
 			return oops.In("bu1ld.lsp").
@@ -181,8 +125,91 @@ func (s *Server) handle(ctx context.Context, reply jsonrpc2.Replier, request jso
 	}
 }
 
+func replyInitialize(ctx context.Context, reply jsonrpc2.Replier) error {
+	return reply(ctx, protocol.InitializeResult{
+		Capabilities: protocol.ServerCapabilities{
+			TextDocumentSync: protocol.TextDocumentSyncKindFull,
+			CompletionProvider: &protocol.CompletionOptions{
+				TriggerCharacters: []string{".", " ", "="},
+			},
+			HoverProvider: true,
+		},
+	}, nil)
+}
+
+func replyExit(ctx context.Context, reply jsonrpc2.Replier, request jsonrpc2.Request) error {
+	if err := reply(ctx, nil, nil); err != nil {
+		return oops.In("bu1ld.lsp").
+			With("method", request.Method()).
+			Wrapf(err, "reply to exit request")
+	}
+	return io.EOF
+}
+
+func (s *Server) didOpen(ctx context.Context, reply jsonrpc2.Replier, request jsonrpc2.Request) error {
+	var params protocol.DidOpenTextDocumentParams
+	if err := decodeParams(request, &params); err != nil {
+		return err
+	}
+	s.docs.Set(string(params.TextDocument.URI), params.TextDocument.Text)
+	if err := s.publishDiagnostics(ctx, params.TextDocument.URI, params.TextDocument.Text); err != nil {
+		return err
+	}
+	return reply(ctx, nil, nil)
+}
+
+func (s *Server) didChange(ctx context.Context, reply jsonrpc2.Replier, request jsonrpc2.Request) error {
+	var params protocol.DidChangeTextDocumentParams
+	if err := decodeParams(request, &params); err != nil {
+		return err
+	}
+	uri := string(params.TextDocument.URI)
+	text, _ := s.docs.Get(uri)
+	if len(params.ContentChanges) > 0 {
+		text = params.ContentChanges[len(params.ContentChanges)-1].Text
+	}
+	s.docs.Set(uri, text)
+	if err := s.publishDiagnostics(ctx, params.TextDocument.URI, text); err != nil {
+		return err
+	}
+	return reply(ctx, nil, nil)
+}
+
+func (s *Server) didClose(ctx context.Context, reply jsonrpc2.Replier, request jsonrpc2.Request) error {
+	var params protocol.DidCloseTextDocumentParams
+	if err := decodeParams(request, &params); err != nil {
+		return err
+	}
+	s.docs.Delete(string(params.TextDocument.URI))
+	if err := s.notify(ctx, "textDocument/publishDiagnostics", protocol.PublishDiagnosticsParams{
+		URI:         params.TextDocument.URI,
+		Diagnostics: []protocol.Diagnostic{},
+	}); err != nil {
+		return err
+	}
+	return reply(ctx, nil, nil)
+}
+
+func (s *Server) completion(ctx context.Context, reply jsonrpc2.Replier, request jsonrpc2.Request) error {
+	var params protocol.CompletionParams
+	if err := decodeParams(request, &params); err != nil {
+		return err
+	}
+	text, _ := s.docs.Get(string(params.TextDocument.URI))
+	return reply(ctx, s.completions(text, params.Position), nil)
+}
+
+func (s *Server) hoverRequest(ctx context.Context, reply jsonrpc2.Replier, request jsonrpc2.Request) error {
+	var params protocol.HoverParams
+	if err := decodeParams(request, &params); err != nil {
+		return err
+	}
+	text, _ := s.docs.Get(string(params.TextDocument.URI))
+	return reply(ctx, s.hover(text, params.Position), nil)
+}
+
 func (s *Server) publishDiagnostics(ctx context.Context, uri protocol.DocumentURI, text string) error {
-	_, err := s.parser.Parse(strings.NewReader(text))
+	_, err := s.parser.ParseContext(ctx, strings.NewReader(text))
 	diagnostics := []protocol.Diagnostic{}
 	if err != nil {
 		diagnostics = append(diagnostics, diagnosticFromError(err))

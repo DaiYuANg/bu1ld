@@ -59,7 +59,7 @@ func (i Invocation) RequiredString(name string) (string, error) {
 	return text, nil
 }
 
-func (i Invocation) OptionalString(name string, fallback string) (string, error) {
+func (i Invocation) OptionalString(name, fallback string) (string, error) {
 	value, ok := i.Fields[name]
 	if !ok {
 		return fallback, nil

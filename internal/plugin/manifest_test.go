@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/spf13/afero"
 )
 
 func TestResolveManifestPathUsesManifestBinary(t *testing.T) {
@@ -25,7 +27,7 @@ func TestResolveManifestPathUsesManifestBinary(t *testing.T) {
 	if err := os.WriteFile(binary, []byte("#!/bin/sh\n"), 0o600); err != nil {
 		t.Fatalf("write plugin binary: %v", err)
 	}
-	if err := os.Chmod(binary, 0o500); err != nil {
+	if err := afero.NewOsFs().Chmod(binary, 0o500); err != nil {
 		t.Fatalf("chmod plugin binary: %v", err)
 	}
 
@@ -71,7 +73,7 @@ func TestDiscoverManifests(t *testing.T) {
 	}
 }
 
-func writePluginManifest(t *testing.T, path string, content string) {
+func writePluginManifest(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write manifest: %v", err)

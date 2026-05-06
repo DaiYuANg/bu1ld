@@ -20,7 +20,9 @@ func PluginDeclarations(file *File) ([]PluginDeclaration, error) {
 		return nil, nil
 	}
 	declarations := list.NewList[PluginDeclaration]()
-	for _, form := range file.Result.HIR.Forms.Values() {
+	forms := file.Result.HIR.Forms.Values()
+	for i := range forms {
+		form := forms[i]
 		if form.Kind != "plugin" {
 			continue
 		}
@@ -62,14 +64,16 @@ func PluginDeclarations(file *File) ([]PluginDeclaration, error) {
 	return declarations.Values(), nil
 }
 
-func lowerProject(file *File, registry *buildplugin.Registry) (build.Project, error) {
+func lowerProject(ctx context.Context, file *File, registry *buildplugin.Registry) (build.Project, error) {
 	tasks := list.NewList[build.Task]()
 	seen := set.NewSet[string]()
 	if file == nil || file.Result.HIR == nil {
-		return build.Project{Tasks: tasks}, nil
+		return build.Project{Tasks: tasks, Packages: list.NewList[build.Package]()}, nil
 	}
-	for _, form := range file.Result.HIR.Forms.Values() {
-		items, err := lowerTopLevelForm(file.Result.FileSet, form, registry)
+	forms := file.Result.HIR.Forms.Values()
+	for i := range forms {
+		form := forms[i]
+		items, err := lowerTopLevelForm(ctx, file.Result.FileSet, form, registry)
 		if err != nil {
 			return build.Project{}, err
 		}
@@ -81,12 +85,12 @@ func lowerProject(file *File, registry *buildplugin.Registry) (build.Project, er
 			tasks.Add(task)
 		}
 	}
-	return build.Project{Tasks: tasks}, nil
+	return build.Project{Tasks: tasks, Packages: list.NewList[build.Package]()}, nil
 }
 
-func lowerTopLevelForm(fset *token.FileSet, form planocomp.HIRForm, registry *buildplugin.Registry) ([]build.Task, error) {
+func lowerTopLevelForm(ctx context.Context, fset *token.FileSet, form planocomp.HIRForm, registry *buildplugin.Registry) ([]build.Task, error) {
 	switch form.Kind {
-	case "workspace", "plugin", "toolchain":
+	case "workspace", "package", "plugin", "toolchain":
 		return nil, nil
 	case "task":
 		task, err := lowerTask(fset, form)
@@ -99,7 +103,7 @@ func lowerTopLevelForm(fset *token.FileSet, form planocomp.HIRForm, registry *bu
 		if !ok {
 			return nil, dslErrorAt(fset, form.Pos, "unknown form %q", form.Kind)
 		}
-		return lowerPluginRuleForm(fset, form, registry, namespace, rule)
+		return lowerPluginRuleForm(ctx, fset, form, registry, namespace, rule)
 	}
 }
 
@@ -209,6 +213,7 @@ func lowerActionCall(fset *token.FileSet, call planocomp.HIRCall) ([]string, err
 }
 
 func lowerPluginRuleForm(
+	ctx context.Context,
 	fset *token.FileSet,
 	form planocomp.HIRForm,
 	registry *buildplugin.Registry,
@@ -223,7 +228,7 @@ func lowerPluginRuleForm(
 	if err != nil {
 		return nil, err
 	}
-	tasks, err := registry.Expand(context.Background(), buildplugin.Invocation{
+	tasks, err := registry.Expand(ctx, buildplugin.Invocation{
 		Namespace: namespace,
 		Rule:      rule,
 		Target:    target,

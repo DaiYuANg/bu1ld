@@ -2,7 +2,7 @@ package greeting
 
 import "strings"
 
-func Message(name string, from string) string {
+func Message(name, from string) string {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		name = "World"

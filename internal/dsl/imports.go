@@ -23,6 +23,11 @@ type importDependency struct {
 	Matches  []string
 }
 
+type packageDiscovery struct {
+	Pattern string
+	Matches []string
+}
+
 type loadCollector struct {
 	files   *set.OrderedSet[string]
 	imports *list.List[importDependency]
@@ -42,7 +47,7 @@ func (c *loadCollector) addFile(path string) {
 	c.files.Add(path)
 }
 
-func (c *loadCollector) addImport(importer string, path string, matches []string) {
+func (c *loadCollector) addImport(importer, path string, matches []string) {
 	if c == nil {
 		return
 	}
@@ -139,7 +144,7 @@ func scanImports(
 	return nil
 }
 
-func resolveImportPaths(fs afero.Fs, importerPath string, importPath string) ([]string, error) {
+func resolveImportPaths(fs afero.Fs, importerPath, importPath string) ([]string, error) {
 	if importPath == "" {
 		return nil, oops.In("bu1ld.dsl").
 			With("file", importerPath).
@@ -172,4 +177,79 @@ func resolveImportPaths(fs afero.Fs, importerPath string, importPath string) ([]
 		return matches, nil
 	}
 	return []string{pattern}, nil
+}
+
+func discoverPackageBuildFiles(fs afero.Fs, workDir string, patterns []string) ([]string, []packageDiscovery, error) {
+	files := set.NewOrderedSet[string]()
+	discoveries := list.NewList[packageDiscovery]()
+	for _, pattern := range patterns {
+		matches, err := resolvePackageBuildFiles(fs, workDir, pattern)
+		if err != nil {
+			return nil, nil, err
+		}
+		discoveries.Add(packageDiscovery{
+			Pattern: pattern,
+			Matches: slices.Clone(matches),
+		})
+		files.Add(matches...)
+	}
+	return files.Values(), discoveries.Values(), nil
+}
+
+func resolvePackageBuildFiles(fs afero.Fs, workDir, pattern string) ([]string, error) {
+	if pattern == "" {
+		return nil, oops.In("bu1ld.dsl").New("workspace package pattern is required")
+	}
+	candidate := pattern
+	if !filepath.IsAbs(candidate) {
+		candidate = filepath.Join(workDir, candidate)
+	}
+	candidate = filepath.Clean(candidate)
+
+	var matches []string
+	var err error
+	if strings.ContainsAny(candidate, "*?[") {
+		matches, err = fsx.Glob(fs, candidate, doublestar.WithNoFollow())
+		if err != nil {
+			return nil, oops.In("bu1ld.dsl").
+				With("package_pattern", pattern).
+				Wrapf(err, "resolve workspace package glob")
+		}
+	} else {
+		matches = []string{candidate}
+	}
+
+	files := list.NewList[string]()
+	for _, match := range matches {
+		path, ok := packageBuildFile(fs, match)
+		if ok {
+			files.Add(path)
+		}
+	}
+	values := files.Values()
+	slices.Sort(values)
+	if len(values) == 0 {
+		return nil, oops.In("bu1ld.dsl").
+			With("package_pattern", pattern).
+			Errorf("workspace package pattern %q matched no build files", pattern)
+	}
+	return values, nil
+}
+
+func packageBuildFile(fs afero.Fs, path string) (string, bool) {
+	info, err := fs.Stat(path)
+	if err != nil {
+		return "", false
+	}
+	if !info.IsDir() {
+		if filepath.Base(path) == "build.bu1ld" {
+			return filepath.Clean(path), true
+		}
+		return "", false
+	}
+	buildFile := filepath.Join(path, "build.bu1ld")
+	if _, err := fs.Stat(buildFile); err != nil {
+		return "", false
+	}
+	return filepath.Clean(buildFile), true
 }

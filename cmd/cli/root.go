@@ -63,6 +63,8 @@ func NewRootCommand(out io.Writer) *cobra.Command {
 		newTestCommand(&opts),
 		newDoctorCommand(&opts),
 		newTasksCommand(&opts),
+		newPackagesCommand(&opts),
+		newAffectedCommand(&opts),
 		newGraphCommand(&opts),
 		newCleanCommand(&opts),
 		newPluginsCommand(&opts),

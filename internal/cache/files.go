@@ -4,12 +4,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+
+	"bu1ld/internal/build"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/spf13/afero"
 )
 
-func copyFile(fs afero.Fs, src string, dst string, mode os.FileMode) (err error) {
+func copyFile(fs afero.Fs, src, dst string, mode os.FileMode) (err error) {
 	in, err := fs.Open(src)
 	if err != nil {
 		return fmt.Errorf("open %s: %w", src, err)
@@ -48,4 +51,15 @@ func mustOutputFilesDigestEncMode() cbor.EncMode {
 
 func isNotExist(err error) bool {
 	return err != nil && os.IsNotExist(err)
+}
+
+func (s *Store) taskAbsolute(task build.Task, path string) string {
+	return s.absolute(s.taskRelative(task, path))
+}
+
+func (s *Store) taskRelative(task build.Task, path string) string {
+	if filepath.IsAbs(path) || task.WorkDir == "" {
+		return path
+	}
+	return filepath.ToSlash(filepath.Join(filepath.FromSlash(task.WorkDir), filepath.FromSlash(path)))
 }

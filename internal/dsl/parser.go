@@ -9,6 +9,7 @@ import (
 	buildplugin "bu1ld/internal/plugin"
 	"bu1ld/internal/plugins/archive"
 	"bu1ld/internal/plugins/docker"
+	gitplugin "bu1ld/internal/plugins/git"
 	"bu1ld/internal/plugins/golang"
 
 	planocomp "github.com/arcgolabs/plano/compiler"
@@ -19,7 +20,13 @@ type Parser struct {
 }
 
 func NewParser() *Parser {
-	registry, err := buildplugin.NewRegistry(buildplugin.LoadOptions{}, golang.New(), docker.New(), archive.New())
+	registry, err := buildplugin.NewRegistry(
+		buildplugin.LoadOptions{},
+		golang.New(),
+		docker.New(),
+		archive.New(),
+		gitplugin.New(),
+	)
 	if err != nil {
 		panic(err)
 	}
@@ -39,22 +46,30 @@ func (p *Parser) Schemas() ([]buildplugin.Metadata, error) {
 }
 
 func (p *Parser) Parse(reader io.Reader) (build.Project, error) {
-	return p.ParseWithOptions(reader, buildplugin.LoadOptions{})
+	return p.ParseContext(context.Background(), reader)
+}
+
+func (p *Parser) ParseContext(ctx context.Context, reader io.Reader) (build.Project, error) {
+	return p.ParseWithOptionsContext(ctx, reader, buildplugin.LoadOptions{})
 }
 
 func (p *Parser) ParseWithOptions(reader io.Reader, options buildplugin.LoadOptions) (build.Project, error) {
+	return p.ParseWithOptionsContext(context.Background(), reader, options)
+}
+
+func (p *Parser) ParseWithOptionsContext(ctx context.Context, reader io.Reader, options buildplugin.LoadOptions) (build.Project, error) {
 	data, err := io.ReadAll(reader)
 	if err != nil {
 		return build.Project{}, fmt.Errorf("read DSL source: %w", err)
 	}
 
-	file, registry, _, err := p.compileSourceDetailed("dsl", data, options)
+	file, registry, _, err := p.compileSourceDetailed(ctx, "dsl", data, options)
 	if err != nil {
 		return build.Project{}, err
 	}
 	defer registry.Close()
 
-	project, err := lowerProject(file, registry)
+	project, err := lowerProject(ctx, file, registry)
 	if err != nil {
 		return build.Project{}, err
 	}
@@ -62,7 +77,7 @@ func (p *Parser) ParseWithOptions(reader io.Reader, options buildplugin.LoadOpti
 }
 
 func (p *Parser) ParseFile(source string) (*File, error) {
-	file, registry, _, err := p.compileSourceDetailed("dsl", []byte(source), buildplugin.LoadOptions{})
+	file, registry, _, err := p.compileSourceDetailed(context.Background(), "dsl", []byte(source), buildplugin.LoadOptions{})
 	if registry != nil {
 		registry.Close()
 	}
@@ -70,26 +85,29 @@ func (p *Parser) ParseFile(source string) (*File, error) {
 }
 
 func (p *Parser) compileSourceDetailed(
+	ctx context.Context,
 	filename string,
 	src []byte,
 	options buildplugin.LoadOptions,
 ) (*File, *buildplugin.Registry, []envDependency, error) {
-	return p.compileDetailed(filename, options, nil, func(compiler *planocomp.Compiler) planocomp.Result {
-		return compiler.CompileSourceDetailed(context.Background(), filename, src)
+	return p.compileDetailed(ctx, filename, options, nil, func(compiler *planocomp.Compiler) planocomp.Result {
+		return compiler.CompileSourceDetailed(ctx, filename, src)
 	})
 }
 
 func (p *Parser) compilePathDetailed(
+	ctx context.Context,
 	path string,
 	options buildplugin.LoadOptions,
 	readFile func(string) ([]byte, error),
 ) (*File, *buildplugin.Registry, []envDependency, error) {
-	return p.compileDetailed(path, options, readFile, func(compiler *planocomp.Compiler) planocomp.Result {
-		return compiler.CompileFileDetailed(context.Background(), path)
+	return p.compileDetailed(ctx, path, options, readFile, func(compiler *planocomp.Compiler) planocomp.Result {
+		return compiler.CompileFileDetailed(ctx, path)
 	})
 }
 
 func (p *Parser) compileDetailed(
+	ctx context.Context,
 	path string,
 	options buildplugin.LoadOptions,
 	readFile func(string) ([]byte, error),
@@ -116,7 +134,7 @@ func (p *Parser) compileDetailed(
 		return nil, nil, nil, err
 	}
 	for _, item := range declarations {
-		if declareErr := registry.Declare(context.Background(), item.Declaration); declareErr != nil {
+		if declareErr := registry.Declare(ctx, item.Declaration); declareErr != nil {
 			registry.Close()
 			return nil, nil, nil, dslErrorAt(firstResult.FileSet, item.Pos, "declare plugin %q: %v", item.Declaration.Namespace, declareErr)
 		}

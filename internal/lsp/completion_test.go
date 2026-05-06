@@ -46,12 +46,13 @@ func TestCompletionFiltersFieldsInsideBlock(t *testing.T) {
 
 func completionLabels(items []protocol.CompletionItem) []string {
 	labels := make([]string, 0, len(items))
-	for _, item := range items {
+	for i := range items {
+		item := items[i]
 		labels = append(labels, item.Label)
 	}
 	return labels
 }
 
-func equalStrings(left []string, right []string) bool {
+func equalStrings(left, right []string) bool {
 	return slices.Equal(left, right)
 }

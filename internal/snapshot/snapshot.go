@@ -64,7 +64,7 @@ func (s *Snapshotter) Inputs(root string, patterns []string) ([]File, error) {
 	return snapshots.Values(), nil
 }
 
-func (s *Snapshotter) File(root string, relativePath string) (File, error) {
+func (s *Snapshotter) File(root, relativePath string) (File, error) {
 	absolutePath := filepath.Join(root, filepath.FromSlash(relativePath))
 	info, err := s.fs.Stat(absolutePath)
 	if err != nil {
@@ -87,7 +87,7 @@ func (s *Snapshotter) File(root string, relativePath string) (File, error) {
 	}, nil
 }
 
-func (s *Snapshotter) match(root string, pattern string) ([]string, error) {
+func (s *Snapshotter) match(root, pattern string) ([]string, error) {
 	if hasGlob(pattern) {
 		absolutePattern := filepath.Join(root, filepath.FromSlash(pattern))
 		matches, err := fsx.Glob(s.fs, absolutePattern, doublestar.WithFilesOnly(), doublestar.WithNoFollow())
