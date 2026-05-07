@@ -96,7 +96,8 @@ func coreModule(cfg config.Config, output io.Writer) dix.Module {
 			dix.Provider2[engineIO, eventx.BusRuntime, io.Writer](newEngineIO),
 			dix.ProviderErr2[*buildplugin.Registry, *dsl.Loader, config.Config](newPluginRegistry),
 			dix.Provider6[*engine.Engine, config.Config, *snapshot.Snapshotter, *cache.Store, engine.CommandRunner, engine.ActionRunner, engineIO](newEngine),
-			dix.ProviderErr6[*App, CommandRequest, *dsl.Loader, *buildplugin.Registry, *engine.Engine, *cache.Store, io.Writer](New),
+			dix.Provider6[appServices, config.Config, *dsl.Loader, *buildplugin.Registry, *engine.Engine, *cache.Store, io.Writer](newAppServices),
+			dix.ProviderErr2[*App, CommandRequest, appServices](New),
 		),
 		dix.WithModuleHooks(
 			dix.OnStop[eventx.BusRuntime](func(_ context.Context, bus eventx.BusRuntime) error {

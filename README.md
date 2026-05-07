@@ -9,7 +9,7 @@ The first version includes:
 - Multi-process `cmd/cli`, `cmd/daemon`, `cmd/server`, and `cmd/lsp` executables
 - A small `build.bu1ld` DSL
 - A basic DSL language server with parse diagnostics, semantic diagnostics, and schema completions
-- A plugin registry with builtin, local, and global plugin sources
+- A plugin registry with embedded, local, HTTP(S), and Git metadata sources
 - Builtin `docker`, `archive`, and `git` plugins
 - First-party external Go and Java process plugins
 - Monorepo workspace package discovery and package-scoped task ids
@@ -62,11 +62,32 @@ The first version includes:
 │       └── src/
 ├── integration/
 │   └── vscode/
+├── docs/
+│   ├── README.md
+│   ├── architecture.md
+│   ├── plugin-system.md
+│   ├── plugin-registry.md
+│   ├── go-plugin.md
+│   ├── java-plugin.md
+│   ├── remote-cache.md
+│   └── releases.md
 ├── build.bu1ld
 ├── go.mod
 ├── go.work
 └── README.md
 ```
+
+## Design Docs
+
+Detailed design notes live under [`docs/`](docs/):
+
+- [Architecture](docs/architecture.md)
+- [Plugin System](docs/plugin-system.md)
+- [Plugin Registry](docs/plugin-registry.md)
+- [Go Plugin](docs/go-plugin.md)
+- [Java Plugin](docs/java-plugin.md)
+- [Remote Cache](docs/remote-cache.md)
+- [Releases](docs/releases.md)
 
 ## DSL
 
@@ -212,7 +233,7 @@ task selected_test {
 execution. Use `exec(...)` when the task should avoid shell parsing and pass an
 argv list directly to the process runner.
 
-Plugins can come from three sources:
+Process plugins can be resolved from local, global, or direct development paths:
 
 ```text
 plugin rust {
@@ -257,57 +278,23 @@ name = "binary"
 `bu1ld plugins search`, `bu1ld plugins info`, `bu1ld plugins install`, and
 `bu1ld plugins update` operate on the plugin distribution registry. The CLI
 embeds the first-party registry entries for `org.bu1ld.go` and
-`org.bu1ld.java`, while `BU1LD_PLUGIN_REGISTRY` can point at another
-`plugins.toml` file or directory:
+`org.bu1ld.java`, and projects can override the registry metadata source with
+local, HTTP(S), or Git-backed metadata. See
+[`docs/plugin-registry.md`](docs/plugin-registry.md) for the registry source
+model and TOML schema.
 
 ```bash
 bu1ld plugins search java
 bu1ld plugins info org.bu1ld.go
 bu1ld plugins install org.bu1ld.go@0.1.0
 BU1LD_PLUGIN_REGISTRY=./registry bu1ld plugins search
+BU1LD_PLUGIN_REGISTRY='git+https://example.com/platform/bu1ld-plugins.git?ref=main&path=registry' bu1ld plugins search
 ```
 
-Registry plugin entries are TOML files referenced by an index:
-
-```toml
-version = 1
-
-[[plugins]]
-id = "org.example.rust"
-file = "plugins/org.example.rust.toml"
-```
-
-Each plugin entry declares versions and optional OS/arch assets. Assets can be
-`zip`, `tar`, `tar.gz`, or a local `dir` source for development registry tests.
-
-The first-party Go plugin is external. Build it with:
-
-```bash
-go build -C plugins/go -o ../../.bu1ld/plugins/org.bu1ld.go/0.1.0/bu1ld-go-plugin ./cmd/bu1ld-go-plugin
-```
-
-On Windows, use `bu1ld-go-plugin.exe` for both the output file and manifest
-binary.
-
-Then install a manifest beside the binary:
-
-```toml
-id = "org.bu1ld.go"
-namespace = "go"
-version = "0.1.0"
-binary = "bu1ld-go-plugin"
-
-[[rules]]
-name = "binary"
-
-[[rules]]
-name = "test"
-
-[[rules]]
-name = "generate"
-```
-
-Projects can opt into it with:
+The first-party Go plugin is external and provides `go.binary`, `go.test`,
+`go.generate`, and `go.release`. It can inject `GOCACHEPROG` from bu1ld remote
+cache settings and can run GoReleaser directly or through a pinned module
+fallback. See [`docs/go-plugin.md`](docs/go-plugin.md) for the full rule model.
 
 ```text
 plugin go {
@@ -337,99 +324,12 @@ go.release snapshot {
 }
 ```
 
-The Go plugin executes `go.generate`, `go.binary`, and `go.test` through
-`plugin.exec`, so it can inject Go toolchain environment settings.
-`go.generate` runs `go generate`, creates `out` before execution, defaults that
-output directory to `build/generated/go`, declares `build/generated/go/**` as
-its output, and exposes the absolute directory as `BU1LD_GO_GENERATE_OUT` plus
-the relative directory as `BU1LD_GO_GENERATE_REL_OUT` for `//go:generate`
-directives. When `BU1LD_REMOTE_CACHE__URL` is configured, the plugin derives
-`GOCACHEPROG` automatically:
-
-```dotenv
-BU1LD_REMOTE_CACHE__URL=http://192.168.1.10:19876
-BU1LD_REMOTE_CACHE__PULL=true
-BU1LD_REMOTE_CACHE__PUSH=true
-```
-
-That starts `bu1ld-go-cacheprog --remote-cache-url <url>` as Go's
-`GOCACHEPROG`. The adapter speaks Go's stdin/stdout cacheprog protocol locally
-and stores action/output records in the bu1ld coordinator over HTTP. Set
-`BU1LD_GO__CACHEPROG` or an individual rule's `cacheprog = "..."` field to
-override the generated command.
-
-`go.release` embeds GoReleaser orchestration in the plugin. It prefers a local
-`goreleaser` binary when one is on `PATH`; otherwise it runs the pinned module
-fallback `go run github.com/goreleaser/goreleaser/v2@v2.15.4 ...`. The default
-mode is a local snapshot release:
-
-```text
-go.release snapshot {
-  mode = "snapshot"
-  config = ".goreleaser.yaml"
-}
-```
-
-Set `mode = "release"` for tagged release arguments, or use `args = [...]` for
-full control over the GoReleaser command line.
-
-The first-party Java plugin is written in Java, built with Gradle, uses Jackson
-for protocol JSON, SLF4J and Logback for logging, Avaje Inject for dependency
-injection, Commons Lang and Commons IO for small utilities, Guava for immutable
-collections and classpath handling, and the FreeFair Lombok Gradle plugin for
-Lombok wiring. Its Gradle build uses `gradle/plugin.versions.toml` for version
-catalog and the checked-in Gradle wrapper only to build the plugin itself. Java
-project builds are native bu1ld plugin actions: `compileJava` calls the
-`JavaCompiler` API directly and `jar` writes the archive through Java's jar APIs.
-Packaging uses the
-`org.beryx.jlink` plugin for `jpackageImage`; this path only builds an app-image
-artifact (no MSI/DMG/DEB/RPM installers):
-`skipInstaller = true`.
-The plugin is now packaged as a JPMS module (`org.bu1ld.plugins.java`) and
-`jlink` uses a trimmed runtime image with `--strip-debug`, `--compress 2`,
-`--no-header-files`, `--no-man-pages`, and `--strip-native-commands`. Build it with:
-
-```bash
-./plugins/java/gradlew -p plugins/java installBu1ldPlugin
-```
-The Gradle wrapper jar is checked in under
-`plugins/java/gradle/wrapper/gradle-wrapper.jar`, so this does not require a
-locally installed Gradle.
-
-This produces plugin artifacts under
-`.bu1ld/plugins/org.bu1ld.java/0.1.0/`. A local install can copy that folder to
-`.bu1ld/plugins/org.bu1ld.java/0.1.0/`.
-
-Inside this repository, the full Java plugin smoke path is:
-
-```bash
-go run ./cmd/cli build --no-cache java_plugin_verify
-```
-
-That task runs the Java plugin Gradle checks, builds and installs the jpackage
-app image, then builds `examples/java-plugin-smoke` through the external Java
-plugin. The example uses Gradle-style defaults such as `src/main/java`,
-`build/classes/java/main`, and `build/libs/<name>.jar`.
-
-The Java RPC server starts from the jpackage launcher generated for
-`org.bu1ld.plugins.java.Bu1ldJavaPlugin`. The CLI resolves `plugin.toml`, starts
-the configured binary as an external process, and exchanges line-delimited JSON
-messages over stdin/stdout. The Java main method creates an Avaje `BeanScope`,
-gets `Server`, and calls `serve(System.in, System.out)`; the server dispatches
-`metadata`, `configure`, `expand`, and `execute` requests until stdin closes.
-Plugin logs are written through Logback to stderr and to
-`.bu1ld/logs/java-plugin.log` by default. Set `BU1LD_PLUGIN_LOG_DIR` to move the
-file logs and `BU1LD_PLUGIN_LOG_LEVEL` to adjust `org.bu1ld.plugins.java`
-verbosity. The Java launcher installs `jul-to-slf4j`, so JUL-based framework
-logs flow into the same Logback pipeline while stdout remains reserved for
-JSON-RPC.
-
-Plugins can register tasks during project configuration. The Java plugin opts
-into this with `auto_configure`, so a project only needs a plugin declaration
-and an optional `java { ... }` block to get `compileJava`, `classes`, `jar`, and
-`build` tasks.
-
-Projects can opt into it with:
+The first-party Java plugin is written in Java, built with the checked-in Gradle
+wrapper, packaged as a JPMS jpackage app image, and owns Java compilation
+directly through the `JavaCompiler` API. It supports automatic task
+registration for `compileJava`, `classes`, `jar`, and `build`. See
+[`docs/java-plugin.md`](docs/java-plugin.md) for packaging, RPC startup,
+logging, and rule details.
 
 ```text
 plugin java {
@@ -450,9 +350,8 @@ java.compile generated {
 ```
 
 Additional first-party plugins can live under `plugins/<name>`. They do not
-need to be Go modules; they only need to serve the line-delimited
-`pkg/pluginapi` JSON-RPC protocol (`metadata`, optional `configure`, `expand`,
-and optional `execute`) and ship a `plugin.toml` manifest.
+need to be Go modules; they only need to serve the process protocol and ship a
+`plugin.toml` manifest. See [`docs/plugin-system.md`](docs/plugin-system.md).
 
 ## Usage
 
@@ -505,8 +404,10 @@ the process protocol metadata request.
 version, resolved path, and binary checksum. When `bu1ld.lock` exists,
 `plugins doctor` verifies locked plugin paths and checksums.
 
-`plugins search` and `plugins info` read the embedded first-party distribution
-registry unless `BU1LD_PLUGIN_REGISTRY` is set. `plugins install` installs a
+`plugins search` and `plugins info` read the configured distribution registry,
+defaulting to the embedded first-party metadata. External registries can be Git,
+local, or HTTP(S) metadata sources; the selected plugin version still controls
+the concrete asset URL used for installation. `plugins install` installs a
 matching registry asset into `.bu1ld/plugins/<id>/<version>` by default, and
 `plugins install --global` targets `~/.bu1ld/plugins/<id>/<version>`.
 `plugins update` selects the latest matching version and replaces the installed
@@ -519,7 +420,9 @@ and external plugin binaries are unchanged. Pass `--no-cache` to bypass both
 the configuration cache and build action cache.
 
 Remote action caching uses the same action records and output blobs as the
-local cache, exposed through a small HTTP CAS served by the coordinator:
+local cache. The coordinator also exposes Go build-cache resources for
+`bu1ld-go-cacheprog`. See [`docs/remote-cache.md`](docs/remote-cache.md) for the
+HTTP API, dotenv-based LAN configuration, and Go cacheprog behavior.
 
 ```bash
 go run ./cmd/server coordinator --listen 127.0.0.1:19876
@@ -527,61 +430,15 @@ go run ./cmd/cli build --remote-cache-url http://127.0.0.1:19876 --remote-cache-
 go run ./cmd/cli build --remote-cache-url http://127.0.0.1:19876
 ```
 
-Remote pulls are enabled when `--remote-cache-url` is set. Remote pushes are
-opt-in through `--remote-cache-push`, so regular builds do not publish outputs
-unless requested.
-
-The coordinator also exposes Go build-cache resources for `bu1ld-go-cacheprog`:
-
-```text
-GET/HEAD/PUT /v1/go/cache/actions/{actionID}
-GET/HEAD/PUT /v1/go/cache/outputs/{outputID}
-```
-
-`actionID` and `outputID` are the 64-character hex forms of Go's cacheprog
-`ActionID` and `OutputID`; output bodies are stored in the same content-addressed
-blob store used by bu1ld action cache.
-
-For LAN setups, `BU1LD_` environment variables can hold the same settings.
-`configx` loads dotenv values before normal environment variables, and
-`bu1ld.toml` can choose an environment-specific dotenv file:
-
-```toml
-env = "lan"
-```
-
-With `env = "lan"`, bu1ld loads `.env.lan.local`, `.env.lan`, `.env.local`,
-and `.env` from `--project-dir`:
-
-```dotenv
-BU1LD_SERVER__COORDINATOR__LISTEN_ADDR=0.0.0.0:19876
-BU1LD_REMOTE_CACHE__URL=http://192.168.1.10:19876
-BU1LD_REMOTE_CACHE__PULL=true
-BU1LD_REMOTE_CACHE__PUSH=false
-```
-
 Optional config files are loaded through `configx` from `bu1ld.yaml`, `bu1ld.toml`, `bu1ld.json`, or their `.bu1ld.*` variants.
 
 ## Releases
 
-GoReleaser builds the first-party Go executables:
-
-- `bu1ld`
-- `bu1ld-server`
-- `bu1ld-daemon`
-- `bu1ld-lsp`
-- `bu1ld-go-cacheprog`
-- `bu1ld-go-plugin`
-
-The Go plugin is packaged as its own archive and Linux package with
-`plugins/go/plugin.toml` included beside the plugin binary. It also has an
-independent GoReleaser config at `plugins/go/.goreleaser.yaml` for standalone
-plugin releases:
-
-```bash
-cd plugins/go
-goreleaser release --snapshot --clean --skip=publish
-```
+GoReleaser builds the first-party Go executables, including
+`bu1ld-go-cacheprog` and `bu1ld-go-plugin`. The Go plugin also has an
+independent GoReleaser config for standalone plugin releases. The Java plugin
+is packaged with Gradle/jpackage. See [`docs/releases.md`](docs/releases.md)
+for the release model.
 
 Local snapshot release:
 
@@ -595,11 +452,6 @@ Tagged releases are handled by `.github/workflows/release.yml`:
 git tag v0.1.0
 git push origin v0.1.0
 ```
-
-The release workflow runs Go tests, Go plugin tests, the Java plugin Gradle
-check, then publishes GoReleaser archives, checksums, and Linux `deb`/`rpm`
-packages. Java plugin packaging remains Gradle/jpackage-based through
-`plugins/java/gradlew -p plugins/java installBu1ldPlugin`.
 
 ## Editor Integrations
 

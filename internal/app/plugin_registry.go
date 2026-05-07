@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"text/tabwriter"
@@ -133,8 +133,12 @@ func (a *App) installRegistryPlugin(ctx context.Context, force bool, verb string
 }
 
 func (a *App) loadPluginRegistry(ctx context.Context) (*pluginregistry.Index, error) {
-	source := strings.TrimSpace(os.Getenv("BU1LD_PLUGIN_REGISTRY"))
-	index, err := pluginregistry.Load(ctx, pluginregistry.LoadOptions{Source: source})
+	source := strings.TrimSpace(a.cfg.PluginRegistrySource)
+	index, err := pluginregistry.Load(ctx, pluginregistry.LoadOptions{
+		Source:   source,
+		BaseDir:  a.cfg.WorkDir,
+		CacheDir: filepath.Join(a.cfg.StateDir(), "registries"),
+	})
 	if err != nil {
 		return nil, oops.In("bu1ld.plugin_registry").
 			With("source", emptyDash(source)).

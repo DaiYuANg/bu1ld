@@ -21,6 +21,7 @@ type Config struct {
 	RemoteCachePull             bool
 	RemoteCachePush             bool
 	ServerCoordinatorListenAddr string
+	PluginRegistrySource        string
 }
 
 func New(
@@ -68,6 +69,7 @@ func New(
 			"remote_cache_pull":              remoteCachePull,
 			"remote_cache_push":              remoteCachePush,
 			"server.coordinator.listen_addr": "127.0.0.1:19876",
+			"plugin_registry":                "",
 		}),
 		configx.WithDotenv(dotenvFiles(absWorkDir, envName).Values()...),
 		configx.WithFiles(configFiles...),
@@ -92,6 +94,7 @@ func New(
 		RemoteCachePull:             configBool(loaded, "remote_cache.pull", "remote_cache_pull"),
 		RemoteCachePush:             configBool(loaded, "remote_cache.push", "remote_cache_push"),
 		ServerCoordinatorListenAddr: loaded.GetString("server.coordinator.listen_addr"),
+		PluginRegistrySource:        configString(loaded, "plugin_registry.source", "plugin_registry", "plugin_registry_source"),
 	}, nil
 }
 

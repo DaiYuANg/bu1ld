@@ -62,6 +62,45 @@ BU1LD_REMOTE_CACHE__URL=http://10.0.0.5:19876
 	}
 }
 
+func TestNewLoadsPluginRegistrySourceFromEnvironment(t *testing.T) {
+	restoreEnv(t, "BU1LD_PLUGIN_REGISTRY")
+
+	workDir := t.TempDir()
+	source := "git+https://example.com/platform/bu1ld-plugins.git?ref=main&path=registry"
+	t.Setenv("BU1LD_PLUGIN_REGISTRY", source)
+
+	cfg, err := New(workDir, "", "", false, "", true, false)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	if got := cfg.PluginRegistrySource; got != source {
+		t.Fatalf("PluginRegistrySource = %q, want %q", got, source)
+	}
+}
+
+func TestNewLoadsPluginRegistrySourceFromConfig(t *testing.T) {
+	restoreEnv(t, "BU1LD_PLUGIN_REGISTRY")
+
+	workDir := t.TempDir()
+	source := "git+ssh://git@example.com/platform/bu1ld-plugins.git?ref=v1&path=registry"
+	if err := os.WriteFile(filepath.Join(workDir, "bu1ld.toml"), []byte(`
+[plugin_registry]
+source = "`+source+`"
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile(bu1ld.toml) error = %v", err)
+	}
+
+	cfg, err := New(workDir, "", "", false, "", true, false)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	if got := cfg.PluginRegistrySource; got != source {
+		t.Fatalf("PluginRegistrySource = %q, want %q", got, source)
+	}
+}
+
 func restoreEnv(t *testing.T, keys ...string) {
 	t.Helper()
 

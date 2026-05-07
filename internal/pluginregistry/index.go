@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -25,8 +26,10 @@ const (
 var embeddedCatalog embed.FS
 
 type LoadOptions struct {
-	Source string
-	Client *http.Client
+	Source   string
+	BaseDir  string
+	CacheDir string
+	Client   *http.Client
 }
 
 type Index struct {
@@ -70,13 +73,21 @@ type PluginAsset struct {
 }
 
 func Load(ctx context.Context, options LoadOptions) (*Index, error) {
-	if strings.TrimSpace(options.Source) == "" {
+	source, err := ParseSource(options.Source)
+	if err != nil {
+		return nil, err
+	}
+	if source.Kind == SourceEmbedded {
 		return LoadEmbedded()
 	}
 	if options.Client == nil {
 		options.Client = http.DefaultClient
 	}
-	return loadExternal(ctx, options)
+	root, err := materializeSource(ctx, source, options)
+	if err != nil {
+		return nil, err
+	}
+	return loadExternal(ctx, options, root)
 }
 
 func LoadEmbedded() (*Index, error) {
@@ -208,8 +219,7 @@ func Select(index *Index, ref string) (Plugin, PluginVersion, error) {
 	return plugin, item, nil
 }
 
-func loadExternal(ctx context.Context, options LoadOptions) (*Index, error) {
-	source := strings.TrimSpace(options.Source)
+func loadExternal(ctx context.Context, options LoadOptions, source string) (*Index, error) {
 	data, indexBase, err := readRegistryFile(ctx, options.Client, source)
 	if err != nil {
 		return nil, err
@@ -397,6 +407,21 @@ func registryPath(source string) (string, error) {
 		return filepath.Join(source, defaultIndexFile), nil
 	}
 	return source, nil
+}
+
+func registryURL(source string) (string, error) {
+	parsed, err := url.Parse(source)
+	if err != nil {
+		return "", oops.In("bu1ld.plugin_registry").
+			With("url", source).
+			Wrapf(err, "parse plugin registry url")
+	}
+	if strings.HasSuffix(parsed.Path, "/") {
+		parsed.Path = path.Join(parsed.Path, defaultIndexFile)
+	} else if path.Ext(parsed.Path) == "" {
+		parsed.Path = path.Join(parsed.Path, defaultIndexFile)
+	}
+	return parsed.String(), nil
 }
 
 func resolveRegistryRef(base, ref string) (string, error) {

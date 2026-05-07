@@ -8,6 +8,7 @@ import (
 
 	"bu1ld/internal/build"
 	"bu1ld/internal/cache"
+	"bu1ld/internal/config"
 	"bu1ld/internal/dsl"
 	"bu1ld/internal/engine"
 	"bu1ld/internal/graph"
@@ -59,6 +60,7 @@ type CommandRequest struct {
 
 type App struct {
 	request  CommandRequest
+	cfg      config.Config
 	loader   *dsl.Loader
 	registry *buildplugin.Registry
 	builder  *engine.Engine
@@ -66,21 +68,45 @@ type App struct {
 	output   io.Writer
 }
 
-func New(
-	request CommandRequest,
+type appServices struct {
+	cfg      config.Config
+	loader   *dsl.Loader
+	registry *buildplugin.Registry
+	builder  *engine.Engine
+	store    *cache.Store
+	output   io.Writer
+}
+
+func newAppServices(
+	cfg config.Config,
 	loader *dsl.Loader,
 	registry *buildplugin.Registry,
 	builder *engine.Engine,
 	store *cache.Store,
 	output io.Writer,
-) (*App, error) {
-	return &App{
-		request:  request,
+) appServices {
+	return appServices{
+		cfg:      cfg,
 		loader:   loader,
 		registry: registry,
 		builder:  builder,
 		store:    store,
 		output:   output,
+	}
+}
+
+func New(
+	request CommandRequest,
+	services appServices,
+) (*App, error) {
+	return &App{
+		request:  request,
+		cfg:      services.cfg,
+		loader:   services.loader,
+		registry: services.registry,
+		builder:  services.builder,
+		store:    services.store,
+		output:   services.output,
 	}, nil
 }
 
