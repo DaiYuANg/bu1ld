@@ -9,9 +9,12 @@ require (
 	github.com/arcgolabs/collectionx/mapping v0.7.0
 	github.com/arcgolabs/collectionx/prefix v0.7.0
 	github.com/arcgolabs/collectionx/set v0.7.0
+	github.com/arcgolabs/httpx v0.1.4
+	github.com/arcgolabs/httpx/adapter/std v0.1.4
 	github.com/arcgolabs/plano v0.7.0
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/fxamacker/cbor/v2 v2.9.2
+	github.com/go-chi/chi/v5 v5.2.5
 	github.com/go-git/go-git/v5 v5.18.0
 	github.com/klauspost/compress v1.18.6
 	github.com/moby/go-archive v0.2.0
@@ -26,12 +29,16 @@ require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/ProtonMail/go-crypto v1.1.6 // indirect
 	github.com/arcgolabs/collectionx/graph v0.7.0 // indirect
+	github.com/arcgolabs/httpx/adapter/echo v0.1.4 // indirect
+	github.com/arcgolabs/httpx/adapter/fiber v0.1.4 // indirect
+	github.com/arcgolabs/httpx/adapter/gin v0.1.4 // indirect
 	github.com/arcgolabs/plano/examples/builddsl v0.0.0-20260429150020-93c29b878803 // indirect
 	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/cyphar/filepath-securejoin v0.4.1 // indirect
+	github.com/danielgtaylor/huma/v2 v2.37.3 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/go-connections v0.7.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect

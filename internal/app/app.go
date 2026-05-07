@@ -47,6 +47,7 @@ type CommandRequest struct {
 	AllPackages bool
 	BaseRef     string
 	ForceWrite  bool
+	ListenAddr  string
 }
 
 type App struct {

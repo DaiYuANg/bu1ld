@@ -18,8 +18,9 @@ import (
 )
 
 type Store struct {
-	cfg config.Config
-	fs  afero.Fs
+	cfg    config.Config
+	fs     afero.Fs
+	remote *RemoteClient
 }
 
 type Record struct {
@@ -43,30 +44,27 @@ type OutputFile struct {
 }
 
 func NewStore(cfg config.Config, fs afero.Fs) *Store {
-	return &Store{
+	store := &Store{
 		cfg: cfg,
 		fs:  fs,
 	}
+	if cfg.RemoteCacheURL != "" {
+		store.remote = NewRemoteClient(cfg.RemoteCacheURL)
+	}
+	return store
 }
 
 func (s *Store) Load(actionKey string) (Record, bool, error) {
-	path := s.recordPath(actionKey)
-	if _, err := s.fs.Stat(path); err != nil {
-		if isNotExist(err) {
-			return Record{}, false, nil
-		}
-		return Record{}, false, oops.In("bu1ld.cache").
-			With("action_key", actionKey).
-			With("path", path).
-			Wrapf(err, "stat action cache record")
+	record, hit, err := s.loadLocal(actionKey)
+	if err != nil || hit {
+		return record, hit, err
 	}
-
-	var record Record
-	if err := cachefile.Read(s.fs, path, &record); err != nil {
-		return Record{}, false, oops.In("bu1ld.cache").
-			With("action_key", actionKey).
-			With("path", path).
-			Wrapf(err, "read action cache record")
+	if s.remote == nil || !s.cfg.RemoteCachePull {
+		return Record{}, false, nil
+	}
+	record, hit, err = s.loadRemote(actionKey)
+	if err != nil || !hit {
+		return Record{}, hit, err
 	}
 	return record, true, nil
 }
@@ -95,6 +93,131 @@ func (s *Store) Save(task build.Task, actionKey string) error {
 			With("action_key", actionKey).
 			With("path", path).
 			Wrapf(err, "write action cache record")
+	}
+	if s.remote != nil && s.cfg.RemoteCachePush {
+		if err := s.pushRemote(record); err != nil {
+			return oops.In("bu1ld.cache").
+				With("task", task.Name).
+				With("action_key", actionKey).
+				Wrapf(err, "push remote action cache record")
+		}
+	}
+	return nil
+}
+
+func (s *Store) loadLocal(actionKey string) (Record, bool, error) {
+	path := s.recordPath(actionKey)
+	if _, err := s.fs.Stat(path); err != nil {
+		if isNotExist(err) {
+			return Record{}, false, nil
+		}
+		return Record{}, false, oops.In("bu1ld.cache").
+			With("action_key", actionKey).
+			With("path", path).
+			Wrapf(err, "stat action cache record")
+	}
+
+	var record Record
+	if err := cachefile.Read(s.fs, path, &record); err != nil {
+		return Record{}, false, oops.In("bu1ld.cache").
+			With("action_key", actionKey).
+			With("path", path).
+			Wrapf(err, "read action cache record")
+	}
+	return record, true, nil
+}
+
+func (s *Store) loadRemote(actionKey string) (Record, bool, error) {
+	data, hit, err := s.remote.GetAction(actionKey)
+	if err != nil || !hit {
+		return Record{}, hit, err
+	}
+	var record Record
+	if err := cachefile.Unmarshal(data, &record); err != nil {
+		return Record{}, false, oops.In("bu1ld.cache").
+			With("action_key", actionKey).
+			Wrapf(err, "decode remote action cache record")
+	}
+	if record.ActionKey != "" && record.ActionKey != actionKey {
+		return Record{}, false, oops.In("bu1ld.cache").
+			With("action_key", actionKey).
+			With("record_action_key", record.ActionKey).
+			New("remote action cache record key mismatch")
+	}
+	if err := s.ensureRemoteBlobs(record); err != nil {
+		return Record{}, false, err
+	}
+	if err := s.writeRecordBytes(actionKey, data); err != nil {
+		return Record{}, false, err
+	}
+	return record, true, nil
+}
+
+func (s *Store) ensureRemoteBlobs(record Record) error {
+	for _, digest := range recordDigests(record) {
+		if _, err := s.fs.Stat(s.blobPath(digest)); err == nil {
+			continue
+		} else if !isNotExist(err) {
+			return oops.In("bu1ld.cache").
+				With("digest", digest).
+				Wrapf(err, "stat local cache blob")
+		}
+		data, hit, err := s.remote.GetBlob(digest)
+		if err != nil {
+			return oops.In("bu1ld.cache").
+				With("digest", digest).
+				Wrapf(err, "download remote cache blob")
+		}
+		if !hit {
+			return oops.In("bu1ld.cache").
+				With("digest", digest).
+				New("remote action cache blob is missing")
+		}
+		if snapshot.HashBytes(data) != digest {
+			return oops.In("bu1ld.cache").
+				With("digest", digest).
+				New("remote cache blob digest mismatch")
+		}
+		if err := s.writeBlobBytes(digest, data); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) pushRemote(record Record) error {
+	for _, digest := range recordDigests(record) {
+		exists, err := s.remote.HasBlob(digest)
+		if err != nil {
+			return oops.In("bu1ld.cache").
+				With("digest", digest).
+				Wrapf(err, "check remote cache blob")
+		}
+		if exists {
+			continue
+		}
+		data, err := afero.ReadFile(s.fs, s.blobPath(digest))
+		if err != nil {
+			return oops.In("bu1ld.cache").
+				With("digest", digest).
+				Wrapf(err, "read local cache blob")
+		}
+		if err := s.remote.PutBlob(digest, data); err != nil {
+			return oops.In("bu1ld.cache").
+				With("digest", digest).
+				Wrapf(err, "upload remote cache blob")
+		}
+	}
+	data, err := afero.ReadFile(s.fs, s.recordPath(record.ActionKey))
+	if err != nil {
+		return oops.In("bu1ld.cache").
+			With("action_key", record.ActionKey).
+			Wrapf(err, "read local action cache record")
+	}
+	if err := s.remote.PutAction(record.ActionKey, data); err != nil {
+		return oops.In("bu1ld.cache").
+			With("action_key", record.ActionKey).
+			Wrapf(err, "upload remote action cache record")
 	}
 	return nil
 }
@@ -156,6 +279,60 @@ func (s *Store) Clean() error {
 			Wrapf(err, "remove cache directory")
 	}
 	return nil
+}
+
+func (s *Store) writeRecordBytes(actionKey string, data []byte) error {
+	path := s.recordPath(actionKey)
+	if err := s.fs.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return oops.In("bu1ld.cache").
+			With("path", filepath.Dir(path)).
+			Wrapf(err, "create action cache directory")
+	}
+	if err := afero.WriteFile(s.fs, path, data, 0o644); err != nil {
+		return oops.In("bu1ld.cache").
+			With("action_key", actionKey).
+			With("path", path).
+			Wrapf(err, "write action cache record")
+	}
+	return nil
+}
+
+func (s *Store) writeBlobBytes(digest string, data []byte) error {
+	path := s.blobPath(digest)
+	if err := s.fs.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return oops.In("bu1ld.cache").
+			With("path", filepath.Dir(path)).
+			Wrapf(err, "create blob cache directory")
+	}
+	if err := afero.WriteFile(s.fs, path, data, 0o644); err != nil {
+		return oops.In("bu1ld.cache").
+			With("digest", digest).
+			With("path", path).
+			Wrapf(err, "write cache blob")
+	}
+	return nil
+}
+
+func recordDigests(record Record) []string {
+	seen := map[string]struct{}{}
+	for _, output := range record.Outputs {
+		if output.Kind == "file" && output.Digest != "" {
+			seen[output.Digest] = struct{}{}
+			continue
+		}
+		for _, file := range output.Files {
+			if file.Digest != "" {
+				seen[file.Digest] = struct{}{}
+			}
+		}
+	}
+
+	digests := make([]string, 0, len(seen))
+	for digest := range seen {
+		digests = append(digests, digest)
+	}
+	slices.Sort(digests)
+	return digests
 }
 
 func (s *Store) captureOutput(task build.Task, output string) (OutputRecord, error) {

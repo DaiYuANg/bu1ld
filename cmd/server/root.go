@@ -11,11 +11,14 @@ import (
 )
 
 type options struct {
-	projectDir string
-	buildFile  string
-	cacheDir   string
-	noCache    bool
-	out        io.Writer
+	projectDir      string
+	buildFile       string
+	cacheDir        string
+	noCache         bool
+	remoteCacheURL  string
+	remoteCachePull bool
+	remoteCachePush bool
+	out             io.Writer
 }
 
 func Execute() error {
@@ -33,10 +36,11 @@ func Execute() error {
 
 func NewRootCommand(out io.Writer) *cobra.Command {
 	opts := options{
-		projectDir: ".",
-		buildFile:  "build.bu1ld",
-		cacheDir:   ".bu1ld/cache",
-		out:        out,
+		projectDir:      ".",
+		buildFile:       "build.bu1ld",
+		cacheDir:        ".bu1ld/cache",
+		remoteCachePull: true,
+		out:             out,
 	}
 
 	cmd := &cobra.Command{
@@ -55,6 +59,9 @@ func NewRootCommand(out io.Writer) *cobra.Command {
 	cmd.PersistentFlags().StringVarP(&opts.buildFile, "file", "f", opts.buildFile, "build DSL file")
 	cmd.PersistentFlags().StringVar(&opts.cacheDir, "cache-dir", opts.cacheDir, "build cache directory")
 	cmd.PersistentFlags().BoolVar(&opts.noCache, "no-cache", false, "disable build cache reads and writes")
+	cmd.PersistentFlags().StringVar(&opts.remoteCacheURL, "remote-cache-url", opts.remoteCacheURL, "remote build cache base URL")
+	cmd.PersistentFlags().BoolVar(&opts.remoteCachePull, "remote-cache-pull", opts.remoteCachePull, "pull from remote build cache when configured")
+	cmd.PersistentFlags().BoolVar(&opts.remoteCachePush, "remote-cache-push", opts.remoteCachePush, "push local build outputs to remote build cache when configured")
 
 	cmd.AddCommand(
 		newStatusCommand(&opts),

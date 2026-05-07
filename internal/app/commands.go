@@ -33,7 +33,7 @@ func (a *App) handlers() map[CommandKind]commandHandler {
 		CommandServerStatus: func(context.Context) error {
 			return writeLine(a.output, "server status: unavailable (not implemented)")
 		},
-		CommandServerCoordinator: a.runServerReserved,
+		CommandServerCoordinator: a.runServerCoordinator,
 		CommandServerWorker:      a.runServerReserved,
 	}
 }

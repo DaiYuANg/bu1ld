@@ -9,12 +9,23 @@ import (
 )
 
 func runCommand(cmd *cobra.Command, opts *options, request app.CommandRequest) error {
-	cfg, err := config.New(opts.projectDir, opts.buildFile, opts.cacheDir, opts.noCache)
+	cfg, err := config.New(
+		opts.projectDir,
+		opts.buildFile,
+		opts.cacheDir,
+		opts.noCache,
+		opts.remoteCacheURL,
+		opts.remoteCachePull,
+		opts.remoteCachePush,
+	)
 	if err != nil {
 		return oops.In("bu1ld.server").
 			With("command", request.Kind).
 			With("project_dir", opts.projectDir).
 			Wrapf(err, "load command configuration")
+	}
+	if request.Kind == app.CommandServerCoordinator && request.ListenAddr == "" {
+		request.ListenAddr = cfg.ServerCoordinatorListenAddr
 	}
 	if err := app.RunCommand(cmd.Context(), cfg, opts.out, request); err != nil {
 		return oops.In("bu1ld.server").

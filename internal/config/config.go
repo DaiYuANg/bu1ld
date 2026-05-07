@@ -10,14 +10,27 @@ import (
 )
 
 type Config struct {
-	WorkDir   string
-	BuildFile string
-	CacheDir  string
-	NoCache   bool
-	LogLevel  string
+	WorkDir                     string
+	Env                         string
+	BuildFile                   string
+	CacheDir                    string
+	NoCache                     bool
+	LogLevel                    string
+	RemoteCacheURL              string
+	RemoteCachePull             bool
+	RemoteCachePush             bool
+	ServerCoordinatorListenAddr string
 }
 
-func New(workDir, buildFile, cacheDir string, noCache bool) (Config, error) {
+func New(
+	workDir string,
+	buildFile string,
+	cacheDir string,
+	noCache bool,
+	remoteCacheURL string,
+	remoteCachePull bool,
+	remoteCachePush bool,
+) (Config, error) {
 	if workDir == "" {
 		workDir = "."
 	}
@@ -35,17 +48,31 @@ func New(workDir, buildFile, cacheDir string, noCache bool) (Config, error) {
 			Wrapf(err, "resolve project directory")
 	}
 
+	configFiles := existingConfigFiles(absWorkDir).Values()
+	envName, err := selectedEnv(configFiles)
+	if err != nil {
+		return Config{}, oops.In("bu1ld.config").
+			With("work_dir", absWorkDir).
+			Wrapf(err, "resolve selected environment")
+	}
+
 	loaded, err := configx.LoadConfig(
 		configx.WithDefaults(map[string]any{
-			"build_file": buildFile,
-			"cache_dir":  cacheDir,
-			"no_cache":   noCache,
-			"log_level":  "info",
+			"env":                            envName,
+			"build_file":                     buildFile,
+			"cache_dir":                      cacheDir,
+			"no_cache":                       noCache,
+			"log_level":                      "info",
+			"remote_cache_url":               remoteCacheURL,
+			"remote_cache_pull":              remoteCachePull,
+			"remote_cache_push":              remoteCachePush,
+			"server.coordinator.listen_addr": "127.0.0.1:19876",
 		}),
-		configx.WithFiles(existingConfigFiles(absWorkDir).Values()...),
+		configx.WithDotenv(dotenvFiles(absWorkDir, envName).Values()...),
+		configx.WithFiles(configFiles...),
 		configx.WithEnvPrefix("BU1LD"),
 		configx.WithEnvSeparator("__"),
-		configx.WithPriority(configx.SourceFile, configx.SourceEnv),
+		configx.WithPriority(configx.SourceDotenv, configx.SourceFile, configx.SourceEnv),
 	)
 	if err != nil {
 		return Config{}, oops.In("bu1ld.config").
@@ -54,11 +81,16 @@ func New(workDir, buildFile, cacheDir string, noCache bool) (Config, error) {
 	}
 
 	return Config{
-		WorkDir:   absWorkDir,
-		BuildFile: loaded.GetString("build_file"),
-		CacheDir:  loaded.GetString("cache_dir"),
-		NoCache:   loaded.GetBool("no_cache"),
-		LogLevel:  loaded.GetString("log_level"),
+		WorkDir:                     absWorkDir,
+		Env:                         loaded.GetString("env"),
+		BuildFile:                   loaded.GetString("build_file"),
+		CacheDir:                    loaded.GetString("cache_dir"),
+		NoCache:                     loaded.GetBool("no_cache"),
+		LogLevel:                    loaded.GetString("log_level"),
+		RemoteCacheURL:              configString(loaded, "remote_cache.url", "remote_cache_url"),
+		RemoteCachePull:             configBool(loaded, "remote_cache.pull", "remote_cache_pull"),
+		RemoteCachePush:             configBool(loaded, "remote_cache.push", "remote_cache_push"),
+		ServerCoordinatorListenAddr: loaded.GetString("server.coordinator.listen_addr"),
 	}, nil
 }
 
@@ -112,4 +144,51 @@ func existingConfigFiles(workDir string) *list.List[string] {
 		return true
 	})
 	return files
+}
+
+func selectedEnv(configFiles []string) (string, error) {
+	loaded, err := configx.LoadConfig(
+		configx.WithDefaults(map[string]any{"env": ""}),
+		configx.WithFiles(configFiles...),
+		configx.WithEnvPrefix("BU1LD"),
+		configx.WithEnvSeparator("__"),
+		configx.WithPriority(configx.SourceFile, configx.SourceEnv),
+	)
+	if err != nil {
+		return "", err
+	}
+	return loaded.GetString("env"), nil
+}
+
+func dotenvFiles(workDir, envName string) *list.List[string] {
+	files := list.NewList[string]()
+	if envName != "" {
+		files.Add(
+			filepath.Join(workDir, ".env."+envName+".local"),
+			filepath.Join(workDir, ".env."+envName),
+		)
+	}
+	files.Add(
+		filepath.Join(workDir, ".env.local"),
+		filepath.Join(workDir, ".env"),
+	)
+	return files
+}
+
+func configString(loaded *configx.Config, paths ...string) string {
+	for _, path := range paths {
+		if loaded.Exists(path) {
+			return loaded.GetString(path)
+		}
+	}
+	return ""
+}
+
+func configBool(loaded *configx.Config, paths ...string) bool {
+	for _, path := range paths {
+		if loaded.Exists(path) {
+			return loaded.GetBool(path)
+		}
+	}
+	return false
 }

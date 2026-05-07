@@ -17,6 +17,7 @@ The first version includes:
 - A configuration cache for unchanged build scripts and plugin binaries
 - Input fingerprints and a local action cache
 - Cached output blobs for declared outputs
+- Optional remote action cache served by the coordinator over HTTP
 - A full `arcgolabs/dix` runtime per subcommand
 - `arcgolabs/collectionx`, `configx`, `eventx`, and `logx` integration
 
@@ -430,6 +431,37 @@ Project configuration is cached under `.bu1ld/cache/config/project.bin`.
 files, import glob expansions, environment variables read through `env(...)`,
 and external plugin binaries are unchanged. Pass `--no-cache` to bypass both
 the configuration cache and build action cache.
+
+Remote action caching uses the same action records and output blobs as the
+local cache, exposed through a small HTTP CAS served by the coordinator:
+
+```bash
+go run ./cmd/server coordinator --listen 127.0.0.1:19876
+go run ./cmd/cli build --remote-cache-url http://127.0.0.1:19876 --remote-cache-push
+go run ./cmd/cli build --remote-cache-url http://127.0.0.1:19876
+```
+
+Remote pulls are enabled when `--remote-cache-url` is set. Remote pushes are
+opt-in through `--remote-cache-push`, so regular builds do not publish outputs
+unless requested.
+
+For LAN setups, `BU1LD_` environment variables can hold the same settings.
+`configx` loads dotenv values before normal environment variables, and
+`bu1ld.toml` can choose an environment-specific dotenv file:
+
+```toml
+env = "lan"
+```
+
+With `env = "lan"`, bu1ld loads `.env.lan.local`, `.env.lan`, `.env.local`,
+and `.env` from `--project-dir`:
+
+```dotenv
+BU1LD_SERVER__COORDINATOR__LISTEN_ADDR=0.0.0.0:19876
+BU1LD_REMOTE_CACHE__URL=http://192.168.1.10:19876
+BU1LD_REMOTE_CACHE__PULL=true
+BU1LD_REMOTE_CACHE__PUSH=false
+```
 
 Optional config files are loaded through `configx` from `bu1ld.yaml`, `bu1ld.toml`, `bu1ld.json`, or their `.bu1ld.*` variants.
 

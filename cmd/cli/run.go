@@ -9,7 +9,15 @@ import (
 )
 
 func runCommand(cmd *cobra.Command, opts *options, request app.CommandRequest) error {
-	cfg, err := config.New(opts.projectDir, opts.buildFile, opts.cacheDir, opts.noCache)
+	cfg, err := config.New(
+		opts.projectDir,
+		opts.buildFile,
+		opts.cacheDir,
+		opts.noCache,
+		opts.remoteCacheURL,
+		opts.remoteCachePull,
+		opts.remoteCachePush,
+	)
 	if err != nil {
 		return oops.In("bu1ld").
 			With("command", request.Kind).
