@@ -53,9 +53,10 @@ manifest directory unless it is absolute.
 
 ## Protocol
 
-Process plugins use line-delimited JSON request/response messages on
-stdin/stdout. Stdout is reserved for protocol frames; logs should go to stderr
-or a file.
+Process plugins use JSON-RPC 2.0 request/response messages on stdin/stdout.
+bu1ld uses `go.lsp.dev/jsonrpc2` with `Content-Length` stream framing, matching
+the LSP-style framing supported by libraries such as Eclipse LSP4J JSON-RPC.
+Stdout is reserved for protocol frames; logs should go to stderr or a file.
 
 Supported methods:
 
@@ -66,7 +67,7 @@ Supported methods:
 - `execute`: optional. Runs a `plugin.exec` action emitted by the plugin.
 
 The public Go types live in `pkg/pluginapi`. Other languages only need to
-match the JSON shape.
+match the framing, JSON-RPC method names, and parameter/result JSON shape.
 
 ## Task Registration
 

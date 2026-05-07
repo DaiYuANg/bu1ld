@@ -4,11 +4,9 @@ module org.bu1ld.plugins.java {
     requires org.apache.commons.lang3;
     requires org.apache.commons.io;
     requires com.google.common;
+    requires com.google.gson;
     requires io.avaje.inject;
-    requires com.fasterxml.jackson.databind;
-    requires org.slf4j;
-    requires jul.to.slf4j;
-    requires ch.qos.logback.classic;
+    requires org.eclipse.lsp4j.jsonrpc;
     requires java.compiler;
     requires jdk.compiler;
 

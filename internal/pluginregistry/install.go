@@ -1,21 +1,22 @@
 package pluginregistry
 
 import (
-	"archive/tar"
-	"archive/zip"
-	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
 	buildplugin "bu1ld/internal/plugin"
 
+	securejoin "github.com/cyphar/filepath-securejoin"
+	"github.com/mholt/archives"
 	"github.com/samber/oops"
 )
 
@@ -145,18 +146,14 @@ func extractAsset(ctx context.Context, client *http.Client, asset PluginAsset, t
 
 	switch format {
 	case "zip":
-		return extractZip(path, target)
+		return extractArchive(ctx, path, file, target, archives.Zip{})
 	case "tar":
-		return extractTar(file, target)
+		return extractArchive(ctx, path, file, target, archives.Tar{})
 	case "tar.gz", "tgz":
-		reader, err := gzip.NewReader(file)
-		if err != nil {
-			return oops.In("bu1ld.plugin_registry").
-				With("url", asset.URL).
-				Wrapf(err, "open plugin tar.gz asset")
-		}
-		defer reader.Close()
-		return extractTar(reader, target)
+		return extractArchive(ctx, path, file, target, archives.CompressedArchive{
+			Compression: archives.Gz{},
+			Extraction:  archives.Tar{},
+		})
 	default:
 		return fmt.Errorf("unsupported plugin asset format %q", format)
 	}
@@ -227,26 +224,27 @@ func verifySHA256(reader io.Reader, expected string) error {
 	return nil
 }
 
-func extractZip(path, target string) error {
-	reader, err := zip.OpenReader(path)
-	if err != nil {
-		return oops.In("bu1ld.plugin_registry").
-			With("file", path).
-			Wrapf(err, "open plugin zip asset")
-	}
-	defer reader.Close()
-	for _, file := range reader.File {
-		destination, err := safeJoin(target, file.Name)
+func extractArchive(ctx context.Context, assetPath string, reader io.Reader, target string, extractor archives.Extractor) error {
+	return extractor.Extract(ctx, reader, func(_ context.Context, file archives.FileInfo) error {
+		name := path.Clean(file.NameInArchive)
+		if name == "." || name == "/" {
+			return nil
+		}
+		destination, err := safeJoin(target, name)
 		if err != nil {
 			return err
 		}
-		if file.FileInfo().IsDir() {
-			if err := os.MkdirAll(destination, dirMode(file.Mode())); err != nil {
+		mode := file.Mode()
+		if file.IsDir() {
+			if err := os.MkdirAll(destination, dirMode(mode)); err != nil {
 				return oops.In("bu1ld.plugin_registry").
 					With("path", destination).
 					Wrapf(err, "create plugin asset directory")
 			}
-			continue
+			return nil
+		}
+		if !mode.IsRegular() {
+			return nil
 		}
 		if err := os.MkdirAll(filepath.Dir(destination), 0o750); err != nil {
 			return oops.In("bu1ld.plugin_registry").
@@ -256,56 +254,22 @@ func extractZip(path, target string) error {
 		source, err := file.Open()
 		if err != nil {
 			return oops.In("bu1ld.plugin_registry").
-				With("file", file.Name).
+				With("file", file.NameInArchive).
+				With("archive", assetPath).
 				Wrapf(err, "open plugin asset file")
 		}
-		err = writeFileFromReader(destination, source, file.Mode())
+		err = writeFileFromFS(destination, source, mode)
 		closeErr := source.Close()
 		if err != nil {
 			return err
 		}
 		if closeErr != nil {
 			return oops.In("bu1ld.plugin_registry").
-				With("file", file.Name).
+				With("file", file.NameInArchive).
 				Wrapf(closeErr, "close plugin asset file")
 		}
-	}
-	return nil
-}
-
-func extractTar(reader io.Reader, target string) error {
-	tarReader := tar.NewReader(reader)
-	for {
-		header, err := tarReader.Next()
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return oops.In("bu1ld.plugin_registry").Wrapf(err, "read plugin tar asset")
-		}
-		destination, err := safeJoin(target, header.Name)
-		if err != nil {
-			return err
-		}
-		mode := os.FileMode(header.Mode)
-		switch header.Typeflag {
-		case tar.TypeDir:
-			if err := os.MkdirAll(destination, dirMode(mode)); err != nil {
-				return oops.In("bu1ld.plugin_registry").
-					With("path", destination).
-					Wrapf(err, "create plugin asset directory")
-			}
-		case tar.TypeReg, tar.TypeRegA:
-			if err := os.MkdirAll(filepath.Dir(destination), 0o750); err != nil {
-				return oops.In("bu1ld.plugin_registry").
-					With("path", filepath.Dir(destination)).
-					Wrapf(err, "create plugin asset parent directory")
-			}
-			if err := writeFileFromReader(destination, tarReader, mode); err != nil {
-				return err
-			}
-		}
-	}
+		return nil
+	})
 }
 
 func findManifestPath(root string) (string, error) {
@@ -344,7 +308,12 @@ func installTarget(root, id, version string) (string, error) {
 			With("path", root).
 			Wrapf(err, "resolve plugin install root")
 	}
-	target := filepath.Join(cleanRoot, id, version)
+	target, err := securejoin.SecureJoin(cleanRoot, filepath.Join(id, version))
+	if err != nil {
+		return "", oops.In("bu1ld.plugin_registry").
+			With("path", filepath.Join(id, version)).
+			Wrapf(err, "resolve plugin install target")
+	}
 	relative, err := filepath.Rel(cleanRoot, target)
 	if err != nil {
 		return "", oops.In("bu1ld.plugin_registry").
@@ -442,6 +411,10 @@ func writeFileFromReader(path string, reader io.Reader, mode os.FileMode) error 
 	return nil
 }
 
+func writeFileFromFS(path string, reader fs.File, mode os.FileMode) error {
+	return writeFileFromReader(path, reader, mode)
+}
+
 func dirMode(mode os.FileMode) os.FileMode {
 	if mode.Perm() == 0 {
 		return 0o750
@@ -461,7 +434,10 @@ func safeJoin(root, name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	path := filepath.Join(cleanRoot, filepath.Clean(name))
+	path, err := securejoin.SecureJoin(cleanRoot, name)
+	if err != nil {
+		return "", err
+	}
 	relative, err := filepath.Rel(cleanRoot, path)
 	if err != nil {
 		return "", err

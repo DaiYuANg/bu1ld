@@ -2,9 +2,6 @@
 package archive
 
 import (
-	"archive/tar"
-	"archive/zip"
-	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
@@ -14,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
+	"github.com/mholt/archives"
 	"github.com/samber/oops"
 	"github.com/spf13/afero"
 )
@@ -34,7 +32,7 @@ func (h *Handler) Kind() string {
 	return h.kind
 }
 
-func (h *Handler) Run(_ context.Context, workDir string, params map[string]any, _ io.Writer) error {
+func (h *Handler) Run(ctx context.Context, workDir string, params map[string]any, _ io.Writer) error {
 	spec := archiveSpecFromParams(params)
 	files, err := expandSourceFiles(workDir, spec.Srcs)
 	if err != nil {
@@ -42,9 +40,9 @@ func (h *Handler) Run(_ context.Context, workDir string, params map[string]any, 
 	}
 	switch h.kind {
 	case ZipActionKind:
-		return writeZip(workDir, spec.Out, files)
+		return writeZip(ctx, workDir, spec.Out, files)
 	case TarActionKind:
-		return writeTar(workDir, spec.Out, spec.Gzip, files)
+		return writeTar(ctx, workDir, spec.Out, spec.Gzip, files)
 	default:
 		return oops.In("bu1ld.archive").
 			With("action", h.kind).
@@ -134,91 +132,52 @@ func matchSource(workDir, src string) ([]string, error) {
 	return files, nil
 }
 
-func writeZip(workDir, out string, files []string) (err error) {
-	target, err := createOutput(workDir, out)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		err = closeArchive(err, target.Close(), "close zip output")
-	}()
-
-	writer := zip.NewWriter(target)
-	defer func() {
-		err = closeArchive(err, writer.Close(), "close zip writer")
-	}()
-	for _, file := range files {
-		if err := addZipFile(workDir, writer, file); err != nil {
-			return err
-		}
-	}
-	return nil
+func writeZip(ctx context.Context, workDir, out string, files []string) error {
+	return writeArchive(ctx, workDir, out, files, archives.Zip{})
 }
 
-func addZipFile(workDir string, writer *zip.Writer, file string) error {
-	source := filepath.Join(workDir, file)
-	info, err := os.Stat(source)
-	if err != nil {
-		return oops.In("bu1ld.archive").With("file", file).Wrapf(err, "stat zip source")
-	}
-	header, err := zip.FileInfoHeader(info)
-	if err != nil {
-		return oops.In("bu1ld.archive").With("file", file).Wrapf(err, "create zip header")
-	}
-	header.Name = filepath.ToSlash(file)
-	header.Method = zip.Deflate
-	entry, err := writer.CreateHeader(header)
-	if err != nil {
-		return oops.In("bu1ld.archive").With("file", file).Wrapf(err, "create zip entry")
-	}
-	return copyFileTo(entry, source, file)
-}
-
-func writeTar(workDir, out string, gzipEnabled bool, files []string) (err error) {
-	target, err := createOutput(workDir, out)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		err = closeArchive(err, target.Close(), "close tar output")
-	}()
-
-	var writer io.Writer = target
-	var gzipWriter *gzip.Writer
+func writeTar(ctx context.Context, workDir, out string, gzipEnabled bool, files []string) error {
+	format := archives.Archiver(archives.Tar{})
 	if gzipEnabled {
-		gzipWriter = gzip.NewWriter(target)
-		defer func() {
-			err = closeArchive(err, gzipWriter.Close(), "close gzip writer")
-		}()
-		writer = gzipWriter
-	}
-	tarWriter := tar.NewWriter(writer)
-	defer func() {
-		err = closeArchive(err, tarWriter.Close(), "close tar writer")
-	}()
-	for _, file := range files {
-		if err := addTarFile(workDir, tarWriter, file); err != nil {
-			return err
+		format = archives.CompressedArchive{
+			Compression: archives.Gz{},
+			Archival:    archives.Tar{},
 		}
 	}
-	return nil
+	return writeArchive(ctx, workDir, out, files, format)
 }
 
-func addTarFile(workDir string, writer *tar.Writer, file string) error {
-	source := filepath.Join(workDir, file)
-	info, err := os.Stat(source)
+func writeArchive(ctx context.Context, workDir, out string, files []string, format archives.Archiver) (err error) {
+	target, err := createOutput(workDir, out)
 	if err != nil {
-		return oops.In("bu1ld.archive").With("file", file).Wrapf(err, "stat tar source")
+		return err
 	}
-	header, err := tar.FileInfoHeader(info, "")
+	defer func() {
+		err = closeArchive(err, target.Close(), "close archive output")
+	}()
+
+	archiveFiles, err := archiveFilesFromDisk(ctx, workDir, files)
 	if err != nil {
-		return oops.In("bu1ld.archive").With("file", file).Wrapf(err, "create tar header")
+		return err
 	}
-	header.Name = filepath.ToSlash(file)
-	if err := writer.WriteHeader(header); err != nil {
-		return oops.In("bu1ld.archive").With("file", file).Wrapf(err, "write tar header")
+	return format.Archive(ctx, target, archiveFiles)
+}
+
+func archiveFilesFromDisk(ctx context.Context, workDir string, files []string) ([]archives.FileInfo, error) {
+	archiveFiles := make([]archives.FileInfo, 0, len(files))
+	for _, file := range files {
+		source := filepath.Join(workDir, filepath.FromSlash(file))
+		items, err := archives.FilesFromDisk(ctx, nil, map[string]string{
+			source: filepath.ToSlash(file),
+		})
+		if err != nil {
+			return nil, oops.In("bu1ld.archive").
+				With("file", file).
+				Wrapf(err, "read archive source")
+		}
+		archiveFiles = append(archiveFiles, items...)
 	}
-	return copyFileTo(writer, source, file)
+	return archiveFiles, nil
 }
 
 func createOutput(workDir, out string) (afero.File, error) {
@@ -232,20 +191,6 @@ func createOutput(workDir, out string) (afero.File, error) {
 		return nil, oops.In("bu1ld.archive").With("out", out).Wrapf(err, "create archive output")
 	}
 	return file, nil
-}
-
-func copyFileTo(writer io.Writer, source, label string) (err error) {
-	file, err := afero.NewOsFs().Open(source)
-	if err != nil {
-		return oops.In("bu1ld.archive").With("file", label).Wrapf(err, "open archive source")
-	}
-	defer func() {
-		err = closeArchive(err, file.Close(), "close archive source")
-	}()
-	if _, err := io.Copy(writer, file); err != nil {
-		return oops.In("bu1ld.archive").With("file", label).Wrapf(err, "write archive source")
-	}
-	return nil
 }
 
 func closeArchive(err, closeErr error, message string) error {

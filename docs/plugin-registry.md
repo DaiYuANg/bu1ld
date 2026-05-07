@@ -42,19 +42,19 @@ A Git registry source is only a metadata source. The Git repository contains
 `plugins.toml` and plugin entry TOML files. It does not have to contain plugin
 archives or binaries.
 
-Git sources are cloned into `.bu1ld/registries`, refreshed on each registry
-load, and keyed by repository URL plus ref. The `ref` query parameter can be a
-branch, tag, or commit. The optional `path` query parameter selects a
-subdirectory inside the checkout.
+Git sources are cloned into `.bu1ld/registries` with `go-git`, refreshed on
+each registry load, and keyed by repository URL plus ref. The `ref` query
+parameter can be a branch, tag, or commit. The optional `path` query parameter
+selects a subdirectory inside the checkout.
 
 ```bash
 BU1LD_PLUGIN_REGISTRY='git+https://example.com/platform/bu1ld-plugins.git?ref=main&path=registry' \
   bu1ld plugins search
 ```
 
-The implementation uses the local `git` executable, so SSH keys, credential
-helpers, private network remotes, and enterprise Git servers behave like normal
-Git commands.
+The implementation uses the Go `go-git` library instead of shelling out to a
+local `git` executable. This keeps registry loading embeddable and testable
+inside the bu1ld process.
 
 ## Registry Layout
 

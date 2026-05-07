@@ -7,7 +7,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import lombok.extern.slf4j.Slf4j;
 
 import static org.bu1ld.plugins.java.Protocol.ExecuteRequest;
 import static org.bu1ld.plugins.java.Protocol.ExecuteResult;
@@ -19,7 +18,6 @@ import static org.bu1ld.plugins.java.Protocol.TaskAction;
 import static org.bu1ld.plugins.java.Protocol.TaskSpec;
 
 @Component
-@Slf4j
 final class JavaBuildPlugin implements Plugin {
     static final String DEFAULT_ID = "org.bu1ld.java";
     static final String NAMESPACE = "java";
@@ -76,8 +74,6 @@ final class JavaBuildPlugin implements Plugin {
     @Override
     public List<TaskSpec> configure(PluginConfig config) {
         JavaConfig java = JavaConfig.from(config.fields());
-        log.info("configuring Java plugin namespace={} name={} release={} classes={} jar={}",
-            config.namespace(), java.name(), java.release(), java.classesDir(), java.jar());
 
         ImmutableList.Builder<TaskSpec> tasks = ImmutableList.builder();
         tasks.add(compileTask("compileJava", ImmutableList.of(), java.srcs(), java.classpath(), java.classesDir(), java.release()));
@@ -107,7 +103,6 @@ final class JavaBuildPlugin implements Plugin {
 
     @Override
     public ExecuteResult execute(ExecuteRequest request) throws Exception {
-        log.info("executing Java plugin action={} workDir={}", request.action(), request.workDir());
         return switch (request.action()) {
             case ACTION_COMPILE -> compiler.compile(request);
             case ACTION_JAR -> jarBuilder.create(request);

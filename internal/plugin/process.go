@@ -2,7 +2,7 @@ package plugin
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -16,6 +16,7 @@ import (
 	"bu1ld/pkg/pluginapi"
 
 	"github.com/samber/oops"
+	"go.lsp.dev/jsonrpc2"
 )
 
 type ProcessLoader struct {
@@ -46,14 +47,11 @@ func (l *ProcessLoader) Load(_ context.Context, declaration Declaration) (Plugin
 }
 
 type processClient struct {
-	cmd     *exec.Cmd
-	stdin   io.WriteCloser
-	stdout  io.ReadCloser
-	encoder *json.Encoder
-	decoder *json.Decoder
-	mu      sync.Mutex
-	nextID  int64
-	closed  bool
+	cmd    *exec.Cmd
+	conn   jsonrpc2.Conn
+	cancel context.CancelFunc
+	mu     sync.Mutex
+	closed bool
 }
 
 func startProcessClient(path string, env []string) (*processClient, error) {
@@ -73,99 +71,65 @@ func startProcessClient(path string, env []string) (*processClient, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
+	ctx, cancel := context.WithCancel(context.Background())
+	conn := jsonrpc2.NewConn(jsonrpc2.NewStream(pluginReadWriteCloser{
+		Reader: stdout,
+		Writer: stdin,
+	}))
+	conn.Go(ctx, jsonrpc2.MethodNotFoundHandler)
 	return &processClient{
-		cmd:     cmd,
-		stdin:   stdin,
-		stdout:  stdout,
-		encoder: json.NewEncoder(stdin),
-		decoder: json.NewDecoder(stdout),
+		cmd:    cmd,
+		conn:   conn,
+		cancel: cancel,
 	}, nil
 }
 
 func (c *processClient) Metadata() (Metadata, error) {
 	var result pluginapi.MetadataResult
-	if err := c.call(pluginapi.MethodMetadata, nil, &result); err != nil {
+	if err := c.call(context.Background(), pluginapi.MethodMetadata, nil, &result); err != nil {
 		return Metadata{}, fmt.Errorf("call plugin metadata: %w", err)
 	}
 	return result.Metadata, nil
 }
 
-func (c *processClient) Expand(_ context.Context, invocation Invocation) ([]TaskSpec, error) {
+func (c *processClient) Expand(ctx context.Context, invocation Invocation) ([]TaskSpec, error) {
 	params := pluginapi.ExpandParams{Invocation: invocation}
 	var result pluginapi.ExpandResult
-	if err := c.call(pluginapi.MethodExpand, params, &result); err != nil {
+	if err := c.call(ctx, pluginapi.MethodExpand, params, &result); err != nil {
 		return nil, fmt.Errorf("call plugin expand: %w", err)
 	}
 	return result.Tasks, nil
 }
 
-func (c *processClient) Configure(_ context.Context, config PluginConfig) ([]TaskSpec, error) {
+func (c *processClient) Configure(ctx context.Context, config PluginConfig) ([]TaskSpec, error) {
 	params := pluginapi.ConfigureParams{Config: config}
 	var result pluginapi.ConfigureResult
-	if err := c.call(pluginapi.MethodConfigure, params, &result); err != nil {
+	if err := c.call(ctx, pluginapi.MethodConfigure, params, &result); err != nil {
 		return nil, fmt.Errorf("call plugin configure: %w", err)
 	}
 	return result.Tasks, nil
 }
 
-func (c *processClient) Execute(_ context.Context, request ExecuteRequest) (ExecuteResult, error) {
+func (c *processClient) Execute(ctx context.Context, request ExecuteRequest) (ExecuteResult, error) {
 	params := pluginapi.ExecuteParams{Request: request}
 	var result pluginapi.ExecuteResult
-	if err := c.call(pluginapi.MethodExecute, params, &result); err != nil {
+	if err := c.call(ctx, pluginapi.MethodExecute, params, &result); err != nil {
 		return ExecuteResult{}, fmt.Errorf("call plugin execute: %w", err)
 	}
 	return result, nil
 }
 
-func (c *processClient) call(method string, params any, result any) error {
+func (c *processClient) call(ctx context.Context, method string, params any, result any) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed {
 		return fmt.Errorf("plugin process is closed")
 	}
-	c.nextID++
-	request := pluginapi.Request{
-		ID:     c.nextID,
-		Method: method,
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	if params != nil {
-		data, err := json.Marshal(params)
-		if err != nil {
-			return fmt.Errorf("marshal plugin params: %w", err)
-		}
-		request.Params = data
-	}
-	if err := c.encoder.Encode(request); err != nil {
-		return fmt.Errorf("encode plugin request: %w", err)
-	}
-
-	var response pluginapi.Response
-	if err := c.decoder.Decode(&response); err != nil {
-		return fmt.Errorf("decode plugin response: %w", err)
-	}
-	if response.ID != request.ID {
-		return fmt.Errorf("plugin response id %d does not match request id %d", response.ID, request.ID)
-	}
-	if response.Error != nil {
-		return errorsFromResponse(response.Error)
-	}
-	if result == nil {
-		return nil
-	}
-	if len(response.Result) == 0 {
-		return fmt.Errorf("plugin response result is empty")
-	}
-	if err := json.Unmarshal(response.Result, result); err != nil {
-		return fmt.Errorf("decode plugin result: %w", err)
-	}
-	return nil
-}
-
-func errorsFromResponse(response *pluginapi.ResponseError) error {
-	if response == nil || response.Message == "" {
-		return fmt.Errorf("plugin returned an error")
-	}
-	return fmt.Errorf("%s", response.Message)
+	_, err := c.conn.Call(ctx, method, params, result)
+	return err
 }
 
 func (c *processClient) Close() {
@@ -175,13 +139,17 @@ func (c *processClient) Close() {
 		return
 	}
 	c.closed = true
-	stdin := c.stdin
+	cancel := c.cancel
+	conn := c.conn
 	process := c.cmd.Process
 	cmd := c.cmd
 	c.mu.Unlock()
 
-	if stdin != nil {
-		_ = stdin.Close()
+	if cancel != nil {
+		cancel()
+	}
+	if conn != nil {
+		_ = conn.Close()
 	}
 	if process != nil {
 		_ = process.Kill()
@@ -189,6 +157,22 @@ func (c *processClient) Close() {
 	if cmd != nil {
 		_ = cmd.Wait()
 	}
+}
+
+type pluginReadWriteCloser struct {
+	io.Reader
+	io.Writer
+}
+
+func (c pluginReadWriteCloser) Close() error {
+	var err error
+	if closer, ok := c.Reader.(io.Closer); ok {
+		err = errors.Join(err, closer.Close())
+	}
+	if closer, ok := c.Writer.(io.Closer); ok {
+		err = errors.Join(err, closer.Close())
+	}
+	return err
 }
 
 func processCommand(path string) *exec.Cmd {

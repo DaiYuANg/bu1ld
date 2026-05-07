@@ -25,16 +25,18 @@ val bu1ldPluginBinary = providers.systemProperty("os.name")
     }
     .orElse("bin/bu1ld-java-plugin")
 
+java {
+    modularity.inferModulePath.set(true)
+}
+
 dependencies {
-    implementation(libs.jacksonDatabind)
-    implementation(libs.slf4jApi)
-    implementation(libs.julToSlf4j)
-    implementation(libs.logbackClassic)
+    implementation(libs.lsp4jJsonrpc)
     implementation(libs.commonsLang3)
     implementation(libs.commonsIo)
     implementation(libs.guava)
     implementation(libs.avajeInject)
     annotationProcessor(libs.avajeInjectGenerator)
+    testImplementation(libs.jacksonDatabind)
 }
 
 application {
@@ -46,6 +48,11 @@ tasks.withType<JavaCompile>().configureEach {
     options.encoding = "UTF-8"
     options.release.set(javaReleaseVersion.toInt())
     options.compilerArgs.add("-proc:full")
+}
+
+tasks.named<JavaCompile>("compileJava") {
+    options.compilerArgs.addAll(listOf("--module-path", classpath.asPath))
+    classpath = files()
 }
 
 tasks.named<Test>("test") {

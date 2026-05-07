@@ -1,6 +1,6 @@
 package org.bu1ld.plugins.java;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
+import com.google.gson.annotations.SerializedName;
 import java.util.List;
 import java.util.Map;
 import lombok.AccessLevel;
@@ -8,37 +8,13 @@ import lombok.NoArgsConstructor;
 
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class Protocol {
-    @NoArgsConstructor(access = AccessLevel.PRIVATE)
-    public static final class Method {
-        public static final String METADATA = "metadata";
-        public static final String CONFIGURE = "configure";
-        public static final String EXPAND = "expand";
-        public static final String EXECUTE = "execute";
-    }
-
-    public static record Request(long id, String method, Object params) {
-    }
-
-    @JsonInclude(JsonInclude.Include.NON_EMPTY)
-    public static record Response(long id, Object result, ResponseError error) {
-        public static Response result(long id, Object result) {
-            return new Response(id, result, null);
-        }
-
-        public static Response error(long id, String message) {
-            return new Response(id, null, new ResponseError(message));
-        }
-    }
-
-    public static record ResponseError(String message) {
-    }
-
-    @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public static record Metadata(
         String id,
         String namespace,
         List<RuleSchema> rules,
+        @SerializedName("config_fields")
         List<FieldSchema> configFields,
+        @SerializedName("auto_configure")
         boolean autoConfigure
     ) {
     }
@@ -70,14 +46,12 @@ public final class Protocol {
     public static record ExecuteParams(ExecuteRequest request) {
     }
 
-    public static record ExecuteRequest(String namespace, String action, String workDir, Map<String, Object> params) {
+    public static record ExecuteRequest(String namespace, String action, @SerializedName("work_dir") String workDir, Map<String, Object> params) {
     }
 
-    @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public static record ExecuteResult(String output) {
     }
 
-    @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public static record TaskSpec(
         String name,
         List<String> deps,
@@ -88,7 +62,6 @@ public final class Protocol {
     ) {
     }
 
-    @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public static record TaskAction(String kind, Map<String, Object> params) {
     }
 }

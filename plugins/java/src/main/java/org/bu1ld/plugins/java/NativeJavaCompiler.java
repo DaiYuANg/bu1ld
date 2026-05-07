@@ -17,25 +17,20 @@ import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
-import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 
 import static org.bu1ld.plugins.java.Protocol.ExecuteRequest;
 import static org.bu1ld.plugins.java.Protocol.ExecuteResult;
 
 @Component
-@Slf4j
 final class NativeJavaCompiler {
     ExecuteResult compile(ExecuteRequest request) throws IOException {
         CompileSpec spec = CompileSpec.from(request.params());
         Path workDir = Path.of(request.workDir()).toAbsolutePath().normalize();
         Path outputDir = workDir.resolve(spec.out()).normalize();
         List<Path> sources = ProjectFiles.expand(workDir, spec.srcs());
-        log.info("compiling Java sources workDir={} sources={} output={} release={}",
-            workDir, sources.size(), outputDir, spec.release());
         if (sources.isEmpty()) {
             FileUtils.forceMkdir(outputDir.toFile());
-            log.info("no Java sources matched patterns={}", spec.srcs());
             return new ExecuteResult("no Java source files matched\n");
         }
 
@@ -64,11 +59,9 @@ final class NativeJavaCompiler {
                 if (!compilerOutput.toString().isBlank()) {
                     message += compilerOutput;
                 }
-                log.warn("Java compilation failed diagnostics={}", message.stripTrailing());
                 throw new IllegalStateException("java compile failed\n" + message.stripTrailing());
             }
         }
-        log.info("compiled {} Java source file(s) to {}", sources.size(), spec.out());
         return new ExecuteResult("compiled " + sources.size() + " Java source file(s) to " + spec.out() + "\n");
     }
 

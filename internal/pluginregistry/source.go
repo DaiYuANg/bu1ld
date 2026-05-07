@@ -1,17 +1,20 @@
 package pluginregistry
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
+	securejoin "github.com/cyphar/filepath-securejoin"
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/samber/oops"
 )
 
@@ -107,24 +110,21 @@ func materializeGitSource(ctx context.Context, source Source, cacheDir string) (
 		cacheDir = filepath.Join(".bu1ld", "registries")
 	}
 	repoDir := filepath.Join(cacheDir, gitSourceCacheKey(source.Location+"\x00"+strings.TrimSpace(source.Ref)))
-	if _, err := exec.LookPath("git"); err != nil {
-		return "", oops.In("bu1ld.plugin_registry").
-			With("source", source.Location).
-			Wrapf(err, "find git executable")
-	}
 
 	if isGitCheckout(repoDir) {
-		if err := runGit(ctx, repoDir, "remote", "set-url", "origin", source.Location); err != nil {
+		repo, err := git.PlainOpen(repoDir)
+		if err != nil {
+			return "", oops.In("bu1ld.plugin_registry").
+				With("path", repoDir).
+				Wrapf(err, "open cached plugin registry git repository")
+		}
+		if err := setGitOrigin(repo, source.Location); err != nil {
 			return "", err
 		}
-		if err := runGit(ctx, repoDir, "fetch", "--quiet", "--force", "--tags", "origin"); err != nil {
+		if err := fetchGitSource(ctx, repo); err != nil {
 			return "", err
 		}
-		if strings.TrimSpace(source.Ref) != "" {
-			if err := checkoutGitRef(ctx, repoDir, source.Ref); err != nil {
-				return "", err
-			}
-		} else if err := runGit(ctx, repoDir, "pull", "--ff-only", "--quiet"); err != nil {
+		if err := checkoutGitSource(ctx, repo, source.Ref); err != nil {
 			return "", err
 		}
 	} else {
@@ -142,13 +142,18 @@ func materializeGitSource(ctx context.Context, source Source, cacheDir string) (
 				With("path", filepath.Dir(repoDir)).
 				Wrapf(err, "create plugin registry cache dir")
 		}
-		if err := runGit(ctx, "", "clone", "--quiet", source.Location, repoDir); err != nil {
-			return "", err
+		repo, err := git.PlainCloneContext(ctx, repoDir, false, &git.CloneOptions{
+			URL:  source.Location,
+			Tags: git.AllTags,
+		})
+		if err != nil {
+			return "", oops.In("bu1ld.plugin_registry").
+				With("source", source.Location).
+				With("path", repoDir).
+				Wrapf(err, "clone plugin registry git repository")
 		}
-		if strings.TrimSpace(source.Ref) != "" {
-			if err := checkoutGitRef(ctx, repoDir, source.Ref); err != nil {
-				return "", err
-			}
+		if err := checkoutGitSource(ctx, repo, source.Ref); err != nil {
+			return "", err
 		}
 	}
 
@@ -162,45 +167,92 @@ func materializeGitSource(ctx context.Context, source Source, cacheDir string) (
 	return root, nil
 }
 
-func runGit(ctx context.Context, dir string, args ...string) error {
-	cmd := exec.CommandContext(ctx, "git", args...)
-	if dir != "" {
-		cmd.Dir = dir
-	}
-	var output bytes.Buffer
-	cmd.Stdout = &output
-	cmd.Stderr = &output
-	if err := cmd.Run(); err != nil {
-		text := strings.TrimSpace(output.String())
-		if text == "" {
-			return oops.In("bu1ld.plugin_registry").
-				With("args", strings.Join(args, " ")).
-				Wrapf(err, "run git")
-		}
+func setGitOrigin(repo *git.Repository, location string) error {
+	cfg, err := repo.Config()
+	if err != nil {
 		return oops.In("bu1ld.plugin_registry").
-			With("args", strings.Join(args, " ")).
-			With("output", text).
-			Wrapf(err, "run git")
+			With("source", location).
+			Wrapf(err, "read plugin registry git config")
+	}
+	if cfg.Remotes == nil {
+		cfg.Remotes = map[string]*config.RemoteConfig{}
+	}
+	cfg.Remotes["origin"] = &config.RemoteConfig{
+		Name: "origin",
+		URLs: []string{location},
+	}
+	if err := repo.SetConfig(cfg); err != nil {
+		return oops.In("bu1ld.plugin_registry").
+			With("source", location).
+			Wrapf(err, "write plugin registry git origin")
 	}
 	return nil
 }
 
-func checkoutGitRef(ctx context.Context, repoDir, ref string) error {
-	ref = strings.TrimSpace(ref)
-	if ref == "" {
+func fetchGitSource(ctx context.Context, repo *git.Repository) error {
+	err := repo.FetchContext(ctx, &git.FetchOptions{
+		RemoteName: "origin",
+		RefSpecs: []config.RefSpec{
+			"+refs/heads/*:refs/remotes/origin/*",
+			"+refs/tags/*:refs/tags/*",
+		},
+		Tags:  git.AllTags,
+		Force: true,
+	})
+	if err == nil || errors.Is(err, git.NoErrAlreadyUpToDate) {
 		return nil
 	}
-	remoteRef := "refs/remotes/origin/" + ref
-	if gitRefExists(ctx, repoDir, remoteRef) {
-		return runGit(ctx, repoDir, "checkout", "--quiet", "--detach", "origin/"+ref)
-	}
-	return runGit(ctx, repoDir, "checkout", "--quiet", "--detach", ref)
+	return oops.In("bu1ld.plugin_registry").Wrapf(err, "fetch plugin registry git repository")
 }
 
-func gitRefExists(ctx context.Context, repoDir, ref string) bool {
-	cmd := exec.CommandContext(ctx, "git", "show-ref", "--verify", "--quiet", ref)
-	cmd.Dir = repoDir
-	return cmd.Run() == nil
+func checkoutGitSource(ctx context.Context, repo *git.Repository, ref string) error {
+	ref = strings.TrimSpace(ref)
+	worktree, err := repo.Worktree()
+	if err != nil {
+		return oops.In("bu1ld.plugin_registry").Wrapf(err, "open plugin registry git worktree")
+	}
+	if ref == "" {
+		if err := worktree.PullContext(ctx, &git.PullOptions{RemoteName: "origin", Force: true}); err != nil &&
+			!errors.Is(err, git.NoErrAlreadyUpToDate) {
+			return oops.In("bu1ld.plugin_registry").Wrapf(err, "pull plugin registry git repository")
+		}
+		return nil
+	}
+	hash, err := resolveGitRef(repo, ref)
+	if err != nil {
+		return err
+	}
+	if err := worktree.Checkout(&git.CheckoutOptions{Hash: hash, Force: true}); err != nil {
+		return oops.In("bu1ld.plugin_registry").
+			With("ref", ref).
+			Wrapf(err, "checkout plugin registry git ref")
+	}
+	return nil
+}
+
+func resolveGitRef(repo *git.Repository, ref string) (plumbing.Hash, error) {
+	if hash := plumbing.NewHash(ref); !hash.IsZero() {
+		if _, err := repo.CommitObject(hash); err == nil {
+			return hash, nil
+		}
+	}
+	revisions := []plumbing.Revision{
+		plumbing.Revision(ref),
+		plumbing.Revision("refs/heads/" + ref),
+		plumbing.Revision("refs/remotes/origin/" + ref),
+		plumbing.Revision("refs/tags/" + ref),
+	}
+	var lastErr error
+	for _, revision := range revisions {
+		hash, err := repo.ResolveRevision(revision)
+		if err == nil {
+			return *hash, nil
+		}
+		lastErr = err
+	}
+	return plumbing.ZeroHash, oops.In("bu1ld.plugin_registry").
+		With("ref", ref).
+		Wrapf(lastErr, "resolve plugin registry git ref")
 }
 
 func isGitCheckout(path string) bool {
@@ -232,7 +284,12 @@ func safeRegistryJoin(root, child string) (string, error) {
 			With("path", root).
 			Wrapf(err, "resolve registry root")
 	}
-	path := filepath.Join(base, child)
+	path, err := securejoin.SecureJoin(base, child)
+	if err != nil {
+		return "", oops.In("bu1ld.plugin_registry").
+			With("path", child).
+			Wrapf(err, "resolve registry source path")
+	}
 	relative, err := filepath.Rel(base, path)
 	if err != nil {
 		return "", oops.In("bu1ld.plugin_registry").

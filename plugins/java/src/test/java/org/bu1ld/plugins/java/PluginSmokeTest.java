@@ -23,13 +23,13 @@ public final class PluginSmokeTest {
         ObjectMapper mapper = new ObjectMapper();
         try (BeanScope scope = BeanScope.builder().build()) {
             Server server = scope.get(Server.class);
-            String request = String.join("\n",
-                json(mapper, 1, "metadata", null),
-                json(mapper, 2, "configure", Map.of("config", Map.of(
+            ByteArrayOutputStream request = new ByteArrayOutputStream();
+            writeFrame(request, json(mapper, 1, "metadata", null));
+            writeFrame(request, json(mapper, 2, "configure", Map.of("config", Map.of(
                     "namespace", "java",
                     "fields", Map.of("name", "smoke", "release", "17")
-                ))),
-                json(mapper, 3, "execute", Map.of("request", Map.of(
+                ))));
+            writeFrame(request, json(mapper, 3, "execute", Map.of("request", Map.of(
                     "namespace", "java",
                     "action", "compile",
                     "work_dir", project.toString(),
@@ -38,8 +38,8 @@ public final class PluginSmokeTest {
                         "out", "build/classes/java/main",
                         "release", "17"
                     )
-                ))),
-                json(mapper, 4, "execute", Map.of("request", Map.of(
+                ))));
+            writeFrame(request, json(mapper, 4, "execute", Map.of("request", Map.of(
                     "namespace", "java",
                     "action", "jar",
                     "work_dir", project.toString(),
@@ -47,10 +47,8 @@ public final class PluginSmokeTest {
                         "classes", "build/classes/java/main",
                         "out", "build/libs/smoke.jar"
                     )
-                ))),
-                ""
-            );
-            ByteArrayInputStream input = new ByteArrayInputStream(request.getBytes(StandardCharsets.UTF_8));
+                ))));
+            ByteArrayInputStream input = new ByteArrayInputStream(request.toByteArray());
             ByteArrayOutputStream output = new ByteArrayOutputStream();
 
             server.serve(input, output);
@@ -71,9 +69,15 @@ public final class PluginSmokeTest {
 
     private static String json(ObjectMapper mapper, long id, String method, Object params) throws Exception {
         if (params == null) {
-            return mapper.writeValueAsString(Map.of("id", id, "method", method));
+            return mapper.writeValueAsString(Map.of("jsonrpc", "2.0", "id", id, "method", method));
         }
-        return mapper.writeValueAsString(Map.of("id", id, "method", method, "params", params));
+        return mapper.writeValueAsString(Map.of("jsonrpc", "2.0", "id", id, "method", method, "params", params));
+    }
+
+    private static void writeFrame(ByteArrayOutputStream output, String json) {
+        byte[] payload = json.getBytes(StandardCharsets.UTF_8);
+        output.writeBytes(("Content-Length: " + payload.length + "\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+        output.writeBytes(payload);
     }
 
     private static void requireContains(String text, String want) {

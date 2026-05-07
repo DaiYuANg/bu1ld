@@ -13,9 +13,8 @@ The plugin build uses:
 
 - Gradle wrapper checked into `plugins/java/gradle/wrapper`.
 - Version catalog at `plugins/java/gradle/plugin.versions.toml`.
-- Jackson for protocol JSON.
+- Eclipse LSP4J JSON-RPC for the process plugin protocol.
 - Avaje Inject for dependency injection.
-- SLF4J, Logback, and `jul-to-slf4j` for logging.
 - Apache Commons Lang and Commons IO for utilities.
 - Guava for immutable collections and classpath handling.
 - FreeFair Lombok Gradle plugin for Lombok wiring.
@@ -60,14 +59,15 @@ declares the `compile` and `jar` rules.
 ## Runtime Model
 
 The CLI resolves `plugin.toml`, starts the configured launcher as an external
-process, and exchanges line-delimited JSON messages over stdin/stdout.
+process, and exchanges JSON-RPC 2.0 messages over stdin/stdout. The Go side
+uses `go.lsp.dev/jsonrpc2` stream framing; the Java side uses Eclipse LSP4J
+JSON-RPC `Launcher`, so both sides use `Content-Length` framed messages.
 
 The Java main method:
 
-1. Installs JUL-to-SLF4J routing.
-2. Creates an Avaje `BeanScope`.
-3. Resolves `Server`.
-4. Calls `serve(System.in, System.out)`.
+1. Creates an Avaje `BeanScope`.
+2. Resolves `Server`.
+3. Calls `serve(System.in, System.out)`.
 
 The server dispatches:
 
@@ -77,19 +77,6 @@ The server dispatches:
 - `execute`
 
 until stdin closes. Stdout is reserved for protocol messages.
-
-## Logging
-
-Logs are written through Logback to stderr and to
-`.bu1ld/logs/java-plugin.log` by default.
-
-Environment variables:
-
-- `BU1LD_PLUGIN_LOG_DIR`: move file logs.
-- `BU1LD_PLUGIN_LOG_LEVEL`: adjust `org.bu1ld.plugins.java` verbosity.
-
-JUL-based framework logs flow into the same Logback pipeline through
-`jul-to-slf4j`.
 
 ## Build Rules
 

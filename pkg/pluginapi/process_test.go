@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -11,66 +12,70 @@ import (
 func TestServeHandlesMetadataAndExpand(t *testing.T) {
 	t.Parallel()
 
-	input := strings.NewReader(strings.Join([]string{
-		`{"id":1,"method":"metadata"}`,
-		`{"id":2,"method":"configure","params":{"config":{"namespace":"fake","fields":{"message":"configured"}}}}`,
-		`{"id":3,"method":"expand","params":{"invocation":{"namespace":"fake","rule":"echo","target":"hello","fields":{"message":"world"}}}}`,
-		`{"id":4,"method":"execute","params":{"request":{"namespace":"fake","action":"echo","work_dir":".","params":{"message":"executed"}}}}`,
-		"",
-	}, "\n"))
+	var input bytes.Buffer
+	writeTestMessage(t, &input, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "metadata"})
+	writeTestMessage(t, &input, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      2,
+		"method":  "configure",
+		"params": map[string]any{
+			"config": map[string]any{"namespace": "fake", "fields": map[string]any{"message": "configured"}},
+		},
+	})
+	writeTestMessage(t, &input, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      3,
+		"method":  "expand",
+		"params": map[string]any{
+			"invocation": map[string]any{
+				"namespace": "fake",
+				"rule":      "echo",
+				"target":    "hello",
+				"fields":    map[string]any{"message": "world"},
+			},
+		},
+	})
+	writeTestMessage(t, &input, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      4,
+		"method":  "execute",
+		"params": map[string]any{
+			"request": map[string]any{
+				"namespace": "fake",
+				"action":    "echo",
+				"work_dir":  ".",
+				"params":    map[string]any{"message": "executed"},
+			},
+		},
+	})
 	var output bytes.Buffer
 
-	if err := Serve(fakePlugin{}, input, &output); err != nil {
+	if err := Serve(fakePlugin{}, &input, &output); err != nil {
 		t.Fatalf("Serve() error = %v", err)
 	}
 
-	decoder := json.NewDecoder(&output)
-	var metadataResponse Response
-	if err := decoder.Decode(&metadataResponse); err != nil {
-		t.Fatalf("decode metadata response: %v", err)
+	text := output.String()
+	for _, want := range []string{
+		`"id":"org.bu1ld.fake"`,
+		`"name":"configured"`,
+		`"command":["echo","world"]`,
+		`"output":"executed\n"`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("output = %s, want substring %q", text, want)
+		}
 	}
-	var metadata MetadataResult
-	if err := json.Unmarshal(metadataResponse.Result, &metadata); err != nil {
-		t.Fatalf("decode metadata result: %v", err)
-	}
-	if got, want := metadata.Metadata.ID, "org.bu1ld.fake"; got != want {
-		t.Fatalf("metadata id = %q, want %q", got, want)
-	}
+}
 
-	var configureResponse Response
-	if err := decoder.Decode(&configureResponse); err != nil {
-		t.Fatalf("decode configure response: %v", err)
-	}
-	var configure ConfigureResult
-	if err := json.Unmarshal(configureResponse.Result, &configure); err != nil {
-		t.Fatalf("decode configure result: %v", err)
-	}
-	if got, want := configure.Tasks[0].Name, "configured"; got != want {
-		t.Fatalf("configured task = %q, want %q", got, want)
-	}
+func writeTestMessage(t *testing.T, out *bytes.Buffer, message any) {
+	t.Helper()
 
-	var expandResponse Response
-	if err := decoder.Decode(&expandResponse); err != nil {
-		t.Fatalf("decode expand response: %v", err)
+	payload, err := json.Marshal(message)
+	if err != nil {
+		t.Fatalf("marshal message: %v", err)
 	}
-	var expand ExpandResult
-	if err := json.Unmarshal(expandResponse.Result, &expand); err != nil {
-		t.Fatalf("decode expand result: %v", err)
-	}
-	if got, want := expand.Tasks[0].Command[1], "world"; got != want {
-		t.Fatalf("command arg = %q, want %q", got, want)
-	}
-
-	var executeResponse Response
-	if err := decoder.Decode(&executeResponse); err != nil {
-		t.Fatalf("decode execute response: %v", err)
-	}
-	var execute ExecuteResult
-	if err := json.Unmarshal(executeResponse.Result, &execute); err != nil {
-		t.Fatalf("decode execute result: %v", err)
-	}
-	if got, want := execute.Output, "executed\n"; got != want {
-		t.Fatalf("execute output = %q, want %q", got, want)
+	if _, err := fmt.Fprintf(out, "Content-Length: %d\r\n\r\n%s", len(payload), payload); err != nil {
+		t.Fatalf("write message: %v", err)
 	}
 }
 

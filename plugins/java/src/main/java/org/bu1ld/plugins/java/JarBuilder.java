@@ -9,7 +9,6 @@ import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
-import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 
@@ -17,14 +16,12 @@ import static org.bu1ld.plugins.java.Protocol.ExecuteRequest;
 import static org.bu1ld.plugins.java.Protocol.ExecuteResult;
 
 @Component
-@Slf4j
 final class JarBuilder {
     ExecuteResult create(ExecuteRequest request) throws IOException {
         JarSpec spec = JarSpec.from(request.params());
         Path workDir = Path.of(request.workDir()).toAbsolutePath().normalize();
         Path classesDir = workDir.resolve(spec.classes()).normalize();
         Path output = workDir.resolve(spec.out()).normalize();
-        log.info("creating jar classes={} output={}", classesDir, output);
         if (!Files.isDirectory(classesDir)) {
             throw new IllegalStateException("classes directory does not exist: " + spec.classes());
         }
@@ -45,7 +42,6 @@ final class JarBuilder {
                 count[0]++;
             }
         }
-        log.info("created jar {} with {} file(s)", spec.out(), count[0]);
         return new ExecuteResult("created jar " + spec.out() + " with " + count[0] + " file(s)\n");
     }
 

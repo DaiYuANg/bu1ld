@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
+
+	"go.lsp.dev/jsonrpc2"
 )
 
 const (
@@ -62,72 +65,76 @@ func ServeProcess(item Plugin) error {
 }
 
 func Serve(item Plugin, input io.Reader, output io.Writer) error {
-	decoder := json.NewDecoder(input)
-	encoder := json.NewEncoder(output)
-	for {
-		var request Request
-		if err := decoder.Decode(&request); err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-			return fmt.Errorf("decode plugin request: %w", err)
-		}
-		response := handleRequest(item, request)
-		if err := encoder.Encode(response); err != nil {
-			return fmt.Errorf("encode plugin response: %w", err)
-		}
+	conn := jsonrpc2.NewConn(jsonrpc2.NewStream(readWriteCloser{
+		Reader: input,
+		Writer: output,
+	}))
+	conn.Go(context.Background(), func(ctx context.Context, reply jsonrpc2.Replier, request jsonrpc2.Request) error {
+		return handleRequest(ctx, item, reply, request)
+	})
+	<-conn.Done()
+	if err := conn.Err(); err != nil && !isStreamEOF(err) {
+		return fmt.Errorf("serve plugin JSON-RPC connection: %w", err)
 	}
+	return nil
 }
 
-func handleRequest(item Plugin, request Request) Response {
-	switch request.Method {
+func handleRequest(ctx context.Context, item Plugin, reply jsonrpc2.Replier, request jsonrpc2.Request) error {
+	switch request.Method() {
 	case MethodMetadata:
 		metadata, err := item.Metadata()
 		if err != nil {
-			return errorResponse(request.ID, fmt.Errorf("read plugin metadata: %w", err))
+			return reply(ctx, nil, fmt.Errorf("read plugin metadata: %w", err))
 		}
-		return resultResponse(request.ID, MetadataResult{Metadata: metadata})
+		return reply(ctx, MetadataResult{Metadata: metadata}, nil)
 	case MethodConfigure:
 		configurable, ok := item.(ConfigurablePlugin)
 		if !ok {
-			return errorResponse(request.ID, fmt.Errorf("plugin does not support configure"))
+			return reply(ctx, nil, fmt.Errorf("plugin does not support configure"))
 		}
 		var params ConfigureParams
-		if err := json.Unmarshal(request.Params, &params); err != nil {
-			return errorResponse(request.ID, fmt.Errorf("decode configure params: %w", err))
+		if err := decodeParams(request, &params); err != nil {
+			return reply(ctx, nil, err)
 		}
-		tasks, err := configurable.Configure(context.Background(), params.Config)
+		tasks, err := configurable.Configure(ctx, params.Config)
 		if err != nil {
-			return errorResponse(request.ID, fmt.Errorf("configure plugin: %w", err))
+			return reply(ctx, nil, fmt.Errorf("configure plugin: %w", err))
 		}
-		return resultResponse(request.ID, ConfigureResult{Tasks: tasks})
+		return reply(ctx, ConfigureResult{Tasks: tasks}, nil)
 	case MethodExpand:
 		var params ExpandParams
-		if err := json.Unmarshal(request.Params, &params); err != nil {
-			return errorResponse(request.ID, fmt.Errorf("decode expand params: %w", err))
+		if err := decodeParams(request, &params); err != nil {
+			return reply(ctx, nil, err)
 		}
-		tasks, err := item.Expand(context.Background(), params.Invocation)
+		tasks, err := item.Expand(ctx, params.Invocation)
 		if err != nil {
-			return errorResponse(request.ID, fmt.Errorf("expand plugin invocation: %w", err))
+			return reply(ctx, nil, fmt.Errorf("expand plugin invocation: %w", err))
 		}
-		return resultResponse(request.ID, ExpandResult{Tasks: tasks})
+		return reply(ctx, ExpandResult{Tasks: tasks}, nil)
 	case MethodExecute:
 		executable, ok := item.(ExecutablePlugin)
 		if !ok {
-			return errorResponse(request.ID, fmt.Errorf("plugin does not support execute"))
+			return reply(ctx, nil, fmt.Errorf("plugin does not support execute"))
 		}
 		var params ExecuteParams
-		if err := json.Unmarshal(request.Params, &params); err != nil {
-			return errorResponse(request.ID, fmt.Errorf("decode execute params: %w", err))
+		if err := decodeParams(request, &params); err != nil {
+			return reply(ctx, nil, err)
 		}
-		result, err := executable.Execute(context.Background(), params.Request)
+		result, err := executable.Execute(ctx, params.Request)
 		if err != nil {
-			return errorResponse(request.ID, fmt.Errorf("execute plugin action: %w", err))
+			return reply(ctx, nil, fmt.Errorf("execute plugin action: %w", err))
 		}
-		return resultResponse(request.ID, result)
+		return reply(ctx, result, nil)
 	default:
-		return errorResponse(request.ID, fmt.Errorf("unknown plugin method %q", request.Method))
+		return reply(ctx, nil, fmt.Errorf("unknown plugin method %q", request.Method()))
 	}
+}
+
+func decodeParams(request jsonrpc2.Request, target any) error {
+	if err := json.Unmarshal(request.Params(), target); err != nil {
+		return fmt.Errorf("decode %s params: %w", request.Method(), err)
+	}
+	return nil
 }
 
 func resultResponse(id int64, result any) Response {
@@ -140,4 +147,17 @@ func resultResponse(id int64, result any) Response {
 
 func errorResponse(id int64, err error) Response {
 	return Response{ID: id, Error: &ResponseError{Message: err.Error()}}
+}
+
+type readWriteCloser struct {
+	io.Reader
+	io.Writer
+}
+
+func (c readWriteCloser) Close() error {
+	return nil
+}
+
+func isStreamEOF(err error) bool {
+	return errors.Is(err, io.EOF) || strings.Contains(err.Error(), "EOF")
 }
