@@ -40,6 +40,15 @@ type cacheStatusOutput struct {
 	Status int
 }
 
+type goCachePutActionInput struct {
+	Key  string       `path:"key"`
+	Body GoCacheEntry `json:"body"`
+}
+
+type goCacheActionOutput struct {
+	Body GoCacheEntry `json:"body"`
+}
+
 func NewHTTPXServer(store *Store, logger *slog.Logger) (httpx.ServerRuntime, error) {
 	server, _, err := newHTTPXServer(store, logger, chi.NewMux())
 	return server, err
@@ -78,6 +87,7 @@ func newHTTPXServer(store *Store, logger *slog.Logger, router *chi.Mux) (httpx.S
 	for _, register := range []func(httpx.ServerRuntime) error{
 		store.registerActionRoutes,
 		store.registerBlobRoutes,
+		store.registerGoCacheRoutes,
 	} {
 		if err := register(server); err != nil {
 			return nil, nil, err
@@ -104,6 +114,25 @@ func (s *Store) registerBlobRoutes(server httpx.ServerRuntime) error {
 		return err
 	}
 	return httpx.Put(server, "/v1/blobs/{key}", s.putBlob)
+}
+
+func (s *Store) registerGoCacheRoutes(server httpx.ServerRuntime) error {
+	if err := httpx.Get(server, "/v1/go/cache/actions/{key}", s.getGoCacheAction); err != nil {
+		return err
+	}
+	if err := httpx.Head(server, "/v1/go/cache/actions/{key}", s.headGoCacheAction); err != nil {
+		return err
+	}
+	if err := httpx.Put(server, "/v1/go/cache/actions/{key}", s.putGoCacheAction); err != nil {
+		return err
+	}
+	if err := httpx.Get(server, "/v1/go/cache/outputs/{key}", s.getGoCacheOutput); err != nil {
+		return err
+	}
+	if err := httpx.Head(server, "/v1/go/cache/outputs/{key}", s.headGoCacheOutput); err != nil {
+		return err
+	}
+	return httpx.Put(server, "/v1/go/cache/outputs/{key}", s.putGoCacheOutput)
 }
 
 func (s *Store) getAction(_ context.Context, input *cacheKeyInput) (*cacheDataOutput, error) {
@@ -146,6 +175,72 @@ func (s *Store) putAction(_ context.Context, input *cachePutInput) (*cacheStatus
 		return nil, err
 	}
 	return &cacheStatusOutput{Status: http.StatusCreated}, nil
+}
+
+func (s *Store) getGoCacheAction(_ context.Context, input *cacheKeyInput) (*goCacheActionOutput, error) {
+	if err := validateCacheKey(input.Key, "go cache action id"); err != nil {
+		return nil, err
+	}
+	entry, hit, err := s.LoadGoCacheEntry(input.Key)
+	if err != nil {
+		return nil, err
+	}
+	if !hit {
+		return nil, httpx.NewError(http.StatusNotFound, "go cache action not found")
+	}
+	return &goCacheActionOutput{Body: entry}, nil
+}
+
+func (s *Store) headGoCacheAction(_ context.Context, input *cacheKeyInput) (*cacheHeadOutput, error) {
+	if err := validateCacheKey(input.Key, "go cache action id"); err != nil {
+		return nil, err
+	}
+	return s.statCacheData(s.goCacheActionPath(input.Key))
+}
+
+func (s *Store) putGoCacheAction(_ context.Context, input *goCachePutActionInput) (*cacheStatusOutput, error) {
+	if err := validateCacheKey(input.Key, "go cache action id"); err != nil {
+		return nil, err
+	}
+
+	entry := input.Body
+	if entry.ActionID != "" && entry.ActionID != input.Key {
+		return nil, httpx.NewError(http.StatusBadRequest, "go cache action id mismatch")
+	}
+	if err := validateCacheKey(entry.OutputID, "go cache output id"); err != nil {
+		return nil, err
+	}
+	if entry.Size < 0 {
+		return nil, httpx.NewError(http.StatusBadRequest, "go cache output size must be non-negative")
+	}
+	info, err := s.fs.Stat(s.blobPath(entry.OutputID))
+	if err != nil {
+		if isNotExist(err) {
+			return nil, httpx.NewError(http.StatusBadRequest, "go cache action references missing output")
+		}
+		return nil, oops.In("bu1ld.cache.server").
+			With("output_id", entry.OutputID).
+			Wrapf(err, "stat go cache output")
+	}
+	if entry.Size != info.Size() {
+		return nil, httpx.NewError(http.StatusBadRequest, "go cache output size mismatch")
+	}
+	if err := s.SaveGoCacheEntry(input.Key, entry); err != nil {
+		return nil, err
+	}
+	return &cacheStatusOutput{Status: http.StatusCreated}, nil
+}
+
+func (s *Store) getGoCacheOutput(ctx context.Context, input *cacheKeyInput) (*cacheDataOutput, error) {
+	return s.getBlob(ctx, input)
+}
+
+func (s *Store) headGoCacheOutput(ctx context.Context, input *cacheKeyInput) (*cacheHeadOutput, error) {
+	return s.headBlob(ctx, input)
+}
+
+func (s *Store) putGoCacheOutput(ctx context.Context, input *cachePutInput) (*cacheStatusOutput, error) {
+	return s.putBlob(ctx, input)
 }
 
 func (s *Store) getBlob(_ context.Context, input *cacheKeyInput) (*cacheDataOutput, error) {
@@ -208,13 +303,7 @@ func (s *Store) statCacheData(path string) (*cacheHeadOutput, error) {
 }
 
 func validateCacheKey(value, label string) error {
-	if len(value) != 64 || strings.Contains(value, "/") {
-		return httpx.NewError(http.StatusBadRequest, "invalid "+label)
-	}
-	for _, char := range value {
-		if (char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') {
-			continue
-		}
+	if strings.Contains(value, "/") || !isCacheKey(value) {
 		return httpx.NewError(http.StatusBadRequest, "invalid "+label)
 	}
 	return nil

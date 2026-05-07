@@ -94,7 +94,7 @@ func coreModule(cfg config.Config, output io.Writer) dix.Module {
 			dix.Provider1[engine.ActionRunner, config.Config](newActionRunner),
 			dix.ProviderErr1[eventx.BusRuntime, io.Writer](newEventBus),
 			dix.Provider2[engineIO, eventx.BusRuntime, io.Writer](newEngineIO),
-			dix.ProviderErr1[*buildplugin.Registry, *dsl.Loader](newPluginRegistry),
+			dix.ProviderErr2[*buildplugin.Registry, *dsl.Loader, config.Config](newPluginRegistry),
 			dix.Provider6[*engine.Engine, config.Config, *snapshot.Snapshotter, *cache.Store, engine.CommandRunner, engine.ActionRunner, engineIO](newEngine),
 			dix.ProviderErr6[*App, CommandRequest, *dsl.Loader, *buildplugin.Registry, *engine.Engine, *cache.Store, io.Writer](New),
 		),
@@ -149,7 +149,7 @@ func newActionRunner(cfg config.Config) engine.ActionRunner {
 		archive.NewZipHandler(),
 		archive.NewTarHandler(),
 		gitplugin.NewInfoHandler(),
-		buildplugin.NewExecuteHandler(buildplugin.LoadOptions{ProjectDir: cfg.WorkDir}),
+		buildplugin.NewExecuteHandler(buildplugin.LoadOptions{ProjectDir: cfg.WorkDir, Env: cfg.ChildEnv()}),
 	)
 }
 
@@ -173,9 +173,11 @@ func newEngine(
 	return engine.New(cfg, snapshotter, store, runner, actions, runtime.bus, runtime.output)
 }
 
-func newPluginRegistry(loader *dsl.Loader) (*buildplugin.Registry, error) {
+func newPluginRegistry(loader *dsl.Loader, cfg config.Config) (*buildplugin.Registry, error) {
+	options := loader.LoadOptions()
+	options.Env = cfg.ChildEnv()
 	registry, err := buildplugin.NewRegistry(
-		loader.LoadOptions(),
+		options,
 		docker.New(),
 		archive.New(),
 		gitplugin.New(),

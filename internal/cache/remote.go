@@ -2,6 +2,7 @@ package cache
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -64,6 +65,38 @@ func (c *RemoteClient) PutBlob(digest string, data []byte) error {
 	return c.put("/v1/blobs/"+digest, data)
 }
 
+func (c *RemoteClient) GetGoCacheEntry(actionID string) (GoCacheEntry, bool, error) {
+	data, hit, err := c.get("/v1/go/cache/actions/" + actionID)
+	if err != nil || !hit {
+		return GoCacheEntry{}, hit, err
+	}
+	var entry GoCacheEntry
+	if err := json.Unmarshal(data, &entry); err != nil {
+		return GoCacheEntry{}, false, oops.In("bu1ld.cache.remote").
+			With("action_id", actionID).
+			Wrapf(err, "decode remote go cache action")
+	}
+	return entry, true, nil
+}
+
+func (c *RemoteClient) PutGoCacheEntry(actionID string, entry GoCacheEntry) error {
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return oops.In("bu1ld.cache.remote").
+			With("action_id", actionID).
+			Wrapf(err, "encode go cache action")
+	}
+	return c.putContent("/v1/go/cache/actions/"+actionID, data, "application/json")
+}
+
+func (c *RemoteClient) GetGoCacheOutput(outputID string) ([]byte, bool, error) {
+	return c.get("/v1/go/cache/outputs/" + outputID)
+}
+
+func (c *RemoteClient) PutGoCacheOutput(outputID string, data []byte) error {
+	return c.put("/v1/go/cache/outputs/"+outputID, data)
+}
+
 func (c *RemoteClient) get(path string) ([]byte, bool, error) {
 	req, err := http.NewRequest(http.MethodGet, c.url(path), nil)
 	if err != nil {
@@ -97,13 +130,17 @@ func (c *RemoteClient) get(path string) ([]byte, bool, error) {
 }
 
 func (c *RemoteClient) put(path string, data []byte) error {
+	return c.putContent(path, data, "application/octet-stream")
+}
+
+func (c *RemoteClient) putContent(path string, data []byte, contentType string) error {
 	req, err := http.NewRequest(http.MethodPut, c.url(path), bytes.NewReader(data))
 	if err != nil {
 		return oops.In("bu1ld.cache.remote").
 			With("path", path).
 			Wrapf(err, "create remote cache request")
 	}
-	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("Content-Type", contentType)
 
 	resp, err := c.client.Do(req)
 	if err != nil {

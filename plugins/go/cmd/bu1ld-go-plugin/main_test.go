@@ -33,4 +33,7 @@ func TestGoPluginModuleResolvesPlugin(t *testing.T) {
 	if got, want := metadata.ID, "org.bu1ld.go"; got != want {
 		t.Fatalf("metadata id = %q, want %q", got, want)
 	}
+	if _, ok := item.(pluginapi.ExecutablePlugin); !ok {
+		t.Fatalf("resolved plugin does not implement ExecutablePlugin")
+	}
 }

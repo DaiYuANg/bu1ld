@@ -33,7 +33,7 @@ func (l *ProcessLoader) Load(_ context.Context, declaration Declaration) (Plugin
 		return nil, err
 	}
 
-	client, err := startProcessClient(path)
+	client, err := startProcessClient(path, l.options.Env)
 	if err != nil {
 		return nil, oops.In("bu1ld.plugins").
 			With("namespace", declaration.Namespace).
@@ -56,8 +56,11 @@ type processClient struct {
 	closed  bool
 }
 
-func startProcessClient(path string) (*processClient, error) {
+func startProcessClient(path string, env []string) (*processClient, error) {
 	cmd := processCommand(path)
+	if len(env) > 0 {
+		cmd.Env = mergeEnv(os.Environ(), env)
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("open plugin stdin: %w", err)
@@ -196,6 +199,29 @@ func processCommand(path string) *exec.Cmd {
 		}
 	}
 	return exec.Command(path)
+}
+
+func mergeEnv(base []string, overrides []string) []string {
+	positions := map[string]int{}
+	merged := append([]string{}, base...)
+	for i, item := range merged {
+		if key, _, ok := strings.Cut(item, "="); ok {
+			positions[key] = i
+		}
+	}
+	for _, item := range overrides {
+		key, _, ok := strings.Cut(item, "=")
+		if !ok || key == "" {
+			continue
+		}
+		if index, exists := positions[key]; exists {
+			merged[index] = item
+			continue
+		}
+		positions[key] = len(merged)
+		merged = append(merged, item)
+	}
+	return merged
 }
 
 func (l *ProcessLoader) Close() {

@@ -297,6 +297,22 @@ go.binary build {
 }
 ```
 
+The Go plugin executes `go.binary` and `go.test` through `plugin.exec`, so it
+can inject Go toolchain environment settings. When `BU1LD_REMOTE_CACHE__URL` is
+configured, the plugin derives `GOCACHEPROG` automatically:
+
+```dotenv
+BU1LD_REMOTE_CACHE__URL=http://192.168.1.10:19876
+BU1LD_REMOTE_CACHE__PULL=true
+BU1LD_REMOTE_CACHE__PUSH=true
+```
+
+That starts `bu1ld-go-cacheprog --remote-cache-url <url>` as Go's
+`GOCACHEPROG`. The adapter speaks Go's stdin/stdout cacheprog protocol locally
+and stores action/output records in the bu1ld coordinator over HTTP. Set
+`BU1LD_GO__CACHEPROG` or an individual rule's `cacheprog = "..."` field to
+override the generated command.
+
 The first-party Java plugin is written in Java, built with Gradle, uses Jackson
 for protocol JSON, SLF4J and Logback for logging, Avaje Inject for dependency
 injection, Commons Lang and Commons IO for small utilities, Guava for immutable
@@ -444,6 +460,17 @@ go run ./cmd/cli build --remote-cache-url http://127.0.0.1:19876
 Remote pulls are enabled when `--remote-cache-url` is set. Remote pushes are
 opt-in through `--remote-cache-push`, so regular builds do not publish outputs
 unless requested.
+
+The coordinator also exposes Go build-cache resources for `bu1ld-go-cacheprog`:
+
+```text
+GET/HEAD/PUT /v1/go/cache/actions/{actionID}
+GET/HEAD/PUT /v1/go/cache/outputs/{outputID}
+```
+
+`actionID` and `outputID` are the 64-character hex forms of Go's cacheprog
+`ActionID` and `OutputID`; output bodies are stored in the same content-addressed
+blob store used by bu1ld action cache.
 
 For LAN setups, `BU1LD_` environment variables can hold the same settings.
 `configx` loads dotenv values before normal environment variables, and

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/arcgolabs/collectionx/list"
 	"github.com/arcgolabs/configx"
@@ -122,6 +123,19 @@ func (c Config) StateDir() string {
 
 func (c Config) LogPath() string {
 	return filepath.Join(c.StateDir(), "bu1ld.log")
+}
+
+func (c Config) ChildEnv() []string {
+	return []string{
+		"BU1LD_ENV=" + c.Env,
+		"BU1LD_REMOTE_CACHE__URL=" + c.RemoteCacheURL,
+		"BU1LD_REMOTE_CACHE_URL=" + c.RemoteCacheURL,
+		"BU1LD_REMOTE_CACHE__PULL=" + strconv.FormatBool(c.RemoteCachePull),
+		"BU1LD_REMOTE_CACHE_PULL=" + strconv.FormatBool(c.RemoteCachePull),
+		"BU1LD_REMOTE_CACHE__PUSH=" + strconv.FormatBool(c.RemoteCachePush),
+		"BU1LD_REMOTE_CACHE_PUSH=" + strconv.FormatBool(c.RemoteCachePush),
+		"BU1LD_SERVER__COORDINATOR__LISTEN_ADDR=" + c.ServerCoordinatorListenAddr,
+	}
 }
 
 func existingConfigFiles(workDir string) *list.List[string] {

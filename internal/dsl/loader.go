@@ -151,7 +151,10 @@ func (l *Loader) LoadFile() (*File, error) {
 }
 
 func (l *Loader) LoadOptions() buildplugin.LoadOptions {
-	return buildplugin.LoadOptions{ProjectDir: l.cfg.WorkDir}
+	return buildplugin.LoadOptions{
+		ProjectDir: l.cfg.WorkDir,
+		Env:        l.cfg.ChildEnv(),
+	}
 }
 
 func (l *Loader) PluginSchemas() ([]buildplugin.Metadata, error) {

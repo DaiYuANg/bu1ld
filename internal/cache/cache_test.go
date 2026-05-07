@@ -2,6 +2,8 @@ package cache
 
 import (
 	"bytes"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -155,5 +157,103 @@ func TestRemoteCacheRejectsBlobDigestMismatch(t *testing.T) {
 
 	if got, want := resp.StatusCode, http.StatusBadRequest; got != want {
 		t.Fatalf("status = %d, want %d", got, want)
+	}
+}
+
+func TestGoCacheHTTPRoutesStoreActionAndOutput(t *testing.T) {
+	t.Parallel()
+
+	store := NewStore(config.Config{WorkDir: "/server"}, afero.NewMemMapFs())
+	server := httptest.NewServer(NewHTTPHandler(store))
+	defer server.Close()
+
+	actionID := strings.Repeat("1", 64)
+	body := []byte("compiled go package")
+	outputID := snapshot.HashBytes(body)
+
+	action := GoCacheEntry{
+		ActionID: actionID,
+		OutputID: outputID,
+		Size:     int64(len(body)),
+	}
+	encodedAction, err := json.Marshal(action)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	missingOutputReq, err := http.NewRequest(http.MethodPut, server.URL+"/v1/go/cache/actions/"+actionID, bytes.NewReader(encodedAction))
+	if err != nil {
+		t.Fatalf("NewRequest(action missing output) error = %v", err)
+	}
+	missingOutputReq.Header.Set("Content-Type", "application/json")
+	missingOutputResp, err := http.DefaultClient.Do(missingOutputReq)
+	if err != nil {
+		t.Fatalf("Do(action missing output) error = %v", err)
+	}
+	missingOutputResp.Body.Close()
+	if got, want := missingOutputResp.StatusCode, http.StatusBadRequest; got != want {
+		t.Fatalf("missing output status = %d, want %d", got, want)
+	}
+
+	outputReq, err := http.NewRequest(http.MethodPut, server.URL+"/v1/go/cache/outputs/"+outputID, bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("NewRequest(output) error = %v", err)
+	}
+	outputReq.Header.Set("Content-Type", "application/octet-stream")
+	outputResp, err := http.DefaultClient.Do(outputReq)
+	if err != nil {
+		t.Fatalf("Do(output) error = %v", err)
+	}
+	outputResp.Body.Close()
+	if got, want := outputResp.StatusCode, http.StatusCreated; got != want {
+		t.Fatalf("output status = %d, want %d", got, want)
+	}
+
+	actionReq, err := http.NewRequest(http.MethodPut, server.URL+"/v1/go/cache/actions/"+actionID, bytes.NewReader(encodedAction))
+	if err != nil {
+		t.Fatalf("NewRequest(action) error = %v", err)
+	}
+	actionReq.Header.Set("Content-Type", "application/json")
+	actionResp, err := http.DefaultClient.Do(actionReq)
+	if err != nil {
+		t.Fatalf("Do(action) error = %v", err)
+	}
+	actionResp.Body.Close()
+	if got, want := actionResp.StatusCode, http.StatusCreated; got != want {
+		t.Fatalf("action status = %d, want %d", got, want)
+	}
+
+	getActionResp, err := http.Get(server.URL + "/v1/go/cache/actions/" + actionID)
+	if err != nil {
+		t.Fatalf("Get(action) error = %v", err)
+	}
+	defer getActionResp.Body.Close()
+	if got, want := getActionResp.StatusCode, http.StatusOK; got != want {
+		t.Fatalf("get action status = %d, want %d", got, want)
+	}
+	var gotAction GoCacheEntry
+	if err := json.NewDecoder(getActionResp.Body).Decode(&gotAction); err != nil {
+		t.Fatalf("Decode(action) error = %v", err)
+	}
+	if got, want := gotAction.OutputID, outputID; got != want {
+		t.Fatalf("OutputID = %q, want %q", got, want)
+	}
+	if got, want := gotAction.Size, int64(len(body)); got != want {
+		t.Fatalf("Size = %d, want %d", got, want)
+	}
+
+	getOutputResp, err := http.Get(server.URL + "/v1/go/cache/outputs/" + outputID)
+	if err != nil {
+		t.Fatalf("Get(output) error = %v", err)
+	}
+	defer getOutputResp.Body.Close()
+	if got, want := getOutputResp.StatusCode, http.StatusOK; got != want {
+		t.Fatalf("get output status = %d, want %d", got, want)
+	}
+	gotBody, err := io.ReadAll(getOutputResp.Body)
+	if err != nil {
+		t.Fatalf("ReadAll(output) error = %v", err)
+	}
+	if !bytes.Equal(gotBody, body) {
+		t.Fatalf("output body = %q, want %q", gotBody, body)
 	}
 }

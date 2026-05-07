@@ -16,6 +16,7 @@ type LoadOptions struct {
 	ProjectDir string
 	LocalDir   string
 	GlobalDir  string
+	Env        []string
 }
 
 type Registry struct {
