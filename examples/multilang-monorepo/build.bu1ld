@@ -1,0 +1,10 @@
+workspace {
+  name = "multilang-monorepo"
+  default = build
+  packages = ["apps/*", "libs/*"]
+}
+
+task build {
+  deps = ["libs/java-greeting:build", "apps/go-cli:build"]
+  command = []
+}

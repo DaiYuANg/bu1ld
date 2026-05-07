@@ -1,0 +1,25 @@
+workspace {
+  name = "go-project"
+}
+
+plugin go {
+  source = local
+  id = "org.bu1ld.go"
+  version = "0.1.0"
+  path = "../../plugins/go/plugin.toml"
+}
+
+go.generate generate {
+  out = "build/generated/go"
+}
+
+go.test test {
+  deps = [generate]
+  packages = ["./..."]
+}
+
+go.binary build {
+  deps = [test]
+  main = "./cmd/hello"
+  out = os == "windows" ? "dist/hello.exe" : "dist/hello"
+}

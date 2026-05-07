@@ -46,3 +46,77 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  java-plugin-assets:
+    needs: goreleaser
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            plugin_os: linux
+            plugin_arch: amd64
+            extension: tar.gz
+          - runner: macos-15-intel
+            plugin_os: darwin
+            plugin_arch: amd64
+            extension: tar.gz
+          - runner: macos-15
+            plugin_os: darwin
+            plugin_arch: arm64
+            extension: tar.gz
+          - runner: windows-latest
+            plugin_os: windows
+            plugin_arch: amd64
+            extension: zip
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Build Java plugin
+        if: runner.os != 'Windows'
+        run: ./plugins/java/gradlew -p plugins/java assemble
+
+      - name: Build Java plugin
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\plugins\java\gradlew.bat -p plugins/java assemble
+
+      - name: Upload Java plugin asset
+        if: runner.os != 'Windows'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          asset="bu1ld-java-plugin_${version}_${{ matrix.plugin_os }}_${{ matrix.plugin_arch }}.${{ matrix.extension }}"
+          stage="dist/java-plugin-package"
+          rm -rf "$stage"
+          mkdir -p "$stage"
+          cp -R plugins/java/build/plugin/. "$stage/"
+          tar -czf "$asset" -C "$stage" .
+          gh release upload "$GITHUB_REF_NAME" "$asset" --clobber
+
+      - name: Upload Java plugin asset
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          $asset = "bu1ld-java-plugin_${version}_${{ matrix.plugin_os }}_${{ matrix.plugin_arch }}.${{ matrix.extension }}"
+          $stage = "dist\java-plugin-package"
+          if (Test-Path $stage) {
+            Remove-Item -Recurse -Force $stage
+          }
+          New-Item -ItemType Directory -Force $stage | Out-Null
+          Copy-Item -Path "plugins\java\build\plugin\*" -Destination $stage -Recurse -Force
+          Compress-Archive -Path "$stage\*" -DestinationPath $asset -Force
+          gh release upload $env:GITHUB_REF_NAME $asset --clobber

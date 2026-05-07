@@ -68,6 +68,11 @@ workspace {
   name = "mono"
   packages = ["apps/*", "libs/*"]
 }
+
+task build {
+  deps = ["apps/api:build", "libs/core:build"]
+  command = []
+}
 `)
 	writeDSLFile(t, projectDir, "libs/core/build.bu1ld", `
 package {
@@ -107,6 +112,13 @@ task build {
 	}
 	if got, want := strings.Join(task.Deps.Values(), ","), "libs/core:build"; got != want {
 		t.Fatalf("apps/api:build deps = %q, want %q", got, want)
+	}
+	task, ok = project.FindTask("build")
+	if !ok {
+		t.Fatalf("root build task not found")
+	}
+	if got, want := strings.Join(task.Deps.Values(), ","), "apps/api:build,libs/core:build"; got != want {
+		t.Fatalf("root build deps = %q, want %q", got, want)
 	}
 }
 

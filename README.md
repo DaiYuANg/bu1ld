@@ -136,7 +136,8 @@ task build {
 Package tasks are exposed as globally unique ids such as `apps/api:build`.
 Package dependencies automatically add same-name task dependencies, so
 `apps/api:build` depends on `libs/core:build` when both packages define
-`build`.
+`build`. Root aggregate tasks can depend on package-qualified task ids by using
+string deps such as `deps = ["apps/api:build"]`.
 
 The repository build uses plain tasks so it can bootstrap plugin binaries
 without requiring any process plugin to be installed first:
@@ -391,8 +392,11 @@ go run ./cmd/lsp stdio
 ```
 
 Runnable examples live under `examples/archive-basic`, `examples/docker-image`,
-and `examples/java-plugin-smoke`. The archive example is covered by CLI
-end-to-end tests; the Docker example requires a local Docker daemon.
+`examples/go-project`, `examples/java-project`,
+`examples/multilang-monorepo`, and `examples/java-plugin-smoke`. The archive
+example is covered by CLI end-to-end tests; the Docker example requires a local
+Docker daemon. The plugin examples use local plugin manifests and document the
+small bootstrap commands needed before running them.
 
 `plugins list` prints builtin, declared, and manifest-discovered plugins with
 source, namespace, resolved path, rules, and status. `plugins doctor` also

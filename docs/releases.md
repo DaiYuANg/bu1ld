@@ -73,16 +73,31 @@ The workflow runs:
 - Go plugin tests
 - Java plugin Gradle checks
 - root GoReleaser publish
+- Java plugin jpackage app-image builds on Linux, Windows, and macOS runners
 
-GitHub Release assets are produced from GoReleaser output. Java plugin
-packaging remains Gradle/jpackage-based and can be attached to a release in a
-later workflow step when the plugin distribution format is finalized.
+Go plugin release assets are produced by GoReleaser. Java plugin release assets
+are produced after GoReleaser creates the GitHub Release: each platform job runs
+`plugins/java assemble`, copies the jpackage app image contents and
+`plugin.toml` into one staging directory, archives that directory, and uploads
+the result to the same release.
+
+Java plugin asset names follow:
+
+- `bu1ld-java-plugin_<version>_linux_amd64.tar.gz`
+- `bu1ld-java-plugin_<version>_darwin_amd64.tar.gz`
+- `bu1ld-java-plugin_<version>_darwin_arm64.tar.gz`
+- `bu1ld-java-plugin_<version>_windows_amd64.zip`
+
+The archive root contains `plugin.toml` plus the app image contents. This means
+registry installation and local `path = ".../plugin.toml"` development both use
+the same manifest-driven layout.
 
 ## Registry Update
 
 After a release, update the plugin registry metadata with the new plugin version
 and asset URLs. The registry should contain metadata only; the actual asset URL
 can point at GitHub Release, an object store, an internal HTTP server, or any
-other artifact location.
+other artifact location. The first-party embedded registry already follows this
+shape for `org.bu1ld.go` and `org.bu1ld.java`.
 
 See [Plugin Registry](plugin-registry.md).

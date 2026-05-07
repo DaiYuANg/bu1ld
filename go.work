@@ -2,5 +2,7 @@ go 1.26.2
 
 use (
 	.
+	./examples/go-project
+	./examples/multilang-monorepo/apps/go-cli
 	./plugins/go
 )

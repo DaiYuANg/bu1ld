@@ -3,6 +3,7 @@ package plugin
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -72,6 +73,25 @@ binary = "bu1ld-rust"
 	}
 	if got, want := manifests[0].Manifest.ID, "org.bu1ld.rust"; got != want {
 		t.Fatalf("manifest id = %q, want %q", got, want)
+	}
+}
+
+func TestManifestBinaryPathUsesWindowsExeFallback(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS != "windows" {
+		t.Skip("windows executable fallback is platform-specific")
+	}
+
+	root := t.TempDir()
+	manifestPath := filepath.Join(root, ManifestFileName)
+	executable := filepath.Join(root, "bu1ld-go-plugin.exe")
+	if err := os.WriteFile(executable, []byte("plugin"), 0o600); err != nil {
+		t.Fatalf("write plugin binary: %v", err)
+	}
+
+	manifest := Manifest{Binary: "bu1ld-go-plugin"}
+	if got := manifest.BinaryPath(manifestPath); got != executable {
+		t.Fatalf("BinaryPath() = %q, want %q", got, executable)
 	}
 }
 

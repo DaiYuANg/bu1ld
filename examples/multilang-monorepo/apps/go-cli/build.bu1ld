@@ -1,0 +1,21 @@
+package {
+  name = "apps/go-cli"
+  deps = ["libs/java-greeting"]
+}
+
+plugin go {
+  source = local
+  id = "org.bu1ld.go"
+  version = "0.1.0"
+  path = "../../plugins/go/plugin.toml"
+}
+
+go.test test {
+  packages = ["./..."]
+}
+
+go.binary build {
+  deps = [test]
+  main = "./cmd/app"
+  out = os == "windows" ? "dist/go-cli.exe" : "dist/go-cli"
+}

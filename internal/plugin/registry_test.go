@@ -163,6 +163,78 @@ func TestProcessLoaderDiscoversInstalledPluginPath(t *testing.T) {
 	}
 }
 
+func TestProcessLoaderResolvesExplicitManifestPath(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	manifest := filepath.Join(root, "plugin.toml")
+	binary := filepath.Join(root, "bin", "bu1ld-java-plugin")
+	if err := os.MkdirAll(filepath.Dir(binary), 0o750); err != nil {
+		t.Fatalf("mkdir plugin bin: %v", err)
+	}
+	if err := os.WriteFile(binary, []byte("#!/bin/sh\n"), 0o600); err != nil {
+		t.Fatalf("write plugin binary: %v", err)
+	}
+	writePluginManifestForLoader(t, manifest, `
+id = "org.bu1ld.java"
+namespace = "java"
+version = "0.1.0"
+binary = "bin/bu1ld-java-plugin"
+`)
+
+	loader := NewProcessLoader(LoadOptions{ProjectDir: filepath.Dir(root)})
+	path, err := loader.resolvePath(Declaration{
+		Namespace: "java",
+		Source:    SourceLocal,
+		Version:   "0.1.0",
+		Path:      "./" + filepath.Base(root) + "/plugin.toml",
+	})
+	if err != nil {
+		t.Fatalf("resolve manifest path: %v", err)
+	}
+	if path != binary {
+		t.Fatalf("resolved path = %q, want %q", path, binary)
+	}
+}
+
+func TestProcessLoaderResolvesExplicitManifestDirectory(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	binary := filepath.Join(root, "bu1ld-go-plugin")
+	if err := os.WriteFile(binary, []byte("#!/bin/sh\n"), 0o600); err != nil {
+		t.Fatalf("write plugin binary: %v", err)
+	}
+	writePluginManifestForLoader(t, filepath.Join(root, ManifestFileName), `
+id = "org.bu1ld.go"
+namespace = "go"
+version = "0.1.0"
+binary = "bu1ld-go-plugin"
+`)
+
+	loader := NewProcessLoader(LoadOptions{})
+	path, err := loader.resolvePath(Declaration{
+		Namespace: "go",
+		Source:    SourceLocal,
+		ID:        "org.bu1ld.go",
+		Path:      root,
+	})
+	if err != nil {
+		t.Fatalf("resolve manifest directory: %v", err)
+	}
+	if path != binary {
+		t.Fatalf("resolved path = %q, want %q", path, binary)
+	}
+}
+
+func writePluginManifestForLoader(t *testing.T, path, content string) {
+	t.Helper()
+
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write plugin manifest: %v", err)
+	}
+}
+
 type fakePlugin struct{}
 
 func (p fakePlugin) Metadata() (Metadata, error) {

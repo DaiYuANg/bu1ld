@@ -28,10 +28,25 @@ Supported runtime sources:
 - `builtin`: native Go plugin linked into the CLI.
 - `local`: project `.bu1ld/plugins/<id>/<version>`.
 - `global`: user `~/.bu1ld/plugins/<id>/<version>`.
-- `path`: direct local development path.
 
-If an exact local/global install path is missing, bu1ld can discover plugin
-manifests under the corresponding plugin directory.
+For local development, keep `source = local` or `source = global` and set
+`path`. The path can point at:
+
+- a plugin executable
+- a directory containing `plugin.toml`
+- a `plugin.toml` manifest file
+
+When `path` points at a manifest or manifest directory, bu1ld reads the TOML
+manifest and starts the declared `binary`. If an exact local/global install path
+is missing, bu1ld can also discover plugin manifests under the corresponding
+plugin directory.
+
+```text
+plugin java {
+  source = local
+  path = "./plugins/java/build/plugin/plugin.toml"
+}
+```
 
 ## Manifest
 

@@ -11,7 +11,7 @@ import static org.bu1ld.plugins.java.Protocol.ExpandParams;
 import static org.bu1ld.plugins.java.Protocol.ExpandResult;
 import static org.bu1ld.plugins.java.Protocol.MetadataResult;
 
-interface PluginJsonRpcService {
+public interface PluginJsonRpcService {
     @JsonRequest
     CompletableFuture<MetadataResult> metadata();
 

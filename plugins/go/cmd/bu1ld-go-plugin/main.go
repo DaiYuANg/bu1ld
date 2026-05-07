@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 
 	"bu1ld/pkg/pluginapi"
@@ -22,6 +23,7 @@ func run(ctx context.Context) (err error) {
 	spec := dix.New(
 		"bu1ld go plugin",
 		dix.Modules(goPluginModule()),
+		dix.UseLogger(slog.New(slog.DiscardHandler)),
 	)
 	runtime, err := spec.Start(ctx)
 	if err != nil {

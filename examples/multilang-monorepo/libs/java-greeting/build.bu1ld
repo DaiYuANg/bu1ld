@@ -1,0 +1,15 @@
+package {
+  name = "libs/java-greeting"
+}
+
+plugin java {
+  source = local
+  id = "org.bu1ld.java"
+  version = "0.1.0"
+  path = "../../plugins/java/build/plugin/plugin.toml"
+}
+
+java {
+  name = "java-greeting"
+  release = "17"
+}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 
 	"github.com/arcgolabs/collectionx/list"
@@ -74,10 +75,19 @@ func (m Manifest) Validate() error {
 }
 
 func (m Manifest) BinaryPath(manifestPath string) string {
+	binary := m.Binary
 	if filepath.IsAbs(m.Binary) {
-		return m.Binary
+		binary = m.Binary
+	} else {
+		binary = filepath.Join(filepath.Dir(manifestPath), m.Binary)
 	}
-	return filepath.Join(filepath.Dir(manifestPath), m.Binary)
+	if runtime.GOOS == "windows" && filepath.Ext(binary) == "" && !fileExistsAt(binary) {
+		executable := binary + ".exe"
+		if fileExistsAt(executable) {
+			return executable
+		}
+	}
+	return binary
 }
 
 func ResolveManifestPath(root string, declaration Declaration) (string, bool, error) {
@@ -85,26 +95,41 @@ func ResolveManifestPath(root string, declaration Declaration) (string, bool, er
 	if err != nil || !ok {
 		return "", ok, err
 	}
-	manifest, err := ReadManifest(path)
+	binary, err := ResolveManifestBinary(path, declaration)
 	if err != nil {
 		return "", false, err
 	}
-	if manifest.ID != pluginID(declaration) {
-		return "", false, oops.In("bu1ld.plugins").
+	return binary, true, nil
+}
+
+func ResolveManifestBinary(path string, declaration Declaration) (string, error) {
+	manifest, err := ReadManifest(path)
+	if err != nil {
+		return "", err
+	}
+	if declaration.ID != "" && manifest.ID != declaration.ID {
+		return "", oops.In("bu1ld.plugins").
 			With("file", path).
-			With("plugin", pluginID(declaration)).
+			With("plugin", declaration.ID).
 			With("manifest_id", manifest.ID).
-			Errorf("%s id %q does not match declaration id %q", path, manifest.ID, pluginID(declaration))
+			Errorf("%s id %q does not match declaration id %q", path, manifest.ID, declaration.ID)
+	}
+	if declaration.ID == "" && declaration.Namespace != "" && manifest.Namespace != "" && manifest.Namespace != declaration.Namespace {
+		return "", oops.In("bu1ld.plugins").
+			With("file", path).
+			With("namespace", declaration.Namespace).
+			With("manifest_namespace", manifest.Namespace).
+			Errorf("%s namespace %q does not match declaration namespace %q", path, manifest.Namespace, declaration.Namespace)
 	}
 	if declaration.Version != "" && manifest.Version != declaration.Version {
-		return "", false, oops.In("bu1ld.plugins").
+		return "", oops.In("bu1ld.plugins").
 			With("file", path).
-			With("plugin", pluginID(declaration)).
+			With("plugin", manifest.ID).
 			With("manifest_version", manifest.Version).
 			With("declared_version", declaration.Version).
 			Errorf("%s version %q does not match declaration version %q", path, manifest.Version, declaration.Version)
 	}
-	return manifest.BinaryPath(path), true, nil
+	return manifest.BinaryPath(path), nil
 }
 
 func DiscoverManifests(root string) ([]ManifestFile, error) {
@@ -181,4 +206,9 @@ func resolveManifestFile(root string, declaration Declaration) (string, bool, er
 		}
 	}
 	return "", false, nil
+}
+
+func fileExistsAt(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }

@@ -62,7 +62,7 @@ tasks.named<Test>("test") {
 val pluginPackageRoot = layout.buildDirectory.dir("jpackage")
 val pluginImageDirectory = pluginPackageRoot.map { directory -> directory.dir("bu1ld-java-plugin") }
 val pluginOutputDirectory = layout.buildDirectory.dir("plugin")
-val pluginManifestFile = pluginOutputDirectory.map { it.file("plugin.toml") }
+val generatedPluginManifestFile = layout.buildDirectory.file("generated/plugin/plugin.toml")
 
 jlink {
     addOptions(
@@ -90,10 +90,10 @@ jlink {
 }
 
 val writePluginManifest by tasks.registering {
-    outputs.file(pluginManifestFile)
+    outputs.file(generatedPluginManifestFile)
 
     doLast {
-        val file = pluginManifestFile.get().asFile
+        val file = generatedPluginManifestFile.get().asFile
         file.parentFile.mkdirs()
         file.writeText(
             """
@@ -115,8 +115,15 @@ val writePluginManifest by tasks.registering {
 
 val jpackageImage = tasks.named("jpackageImage")
 
-tasks.named("assemble") {
+val stageBu1ldPlugin by tasks.registering(Sync::class) {
     dependsOn(jpackageImage, writePluginManifest)
+    from(pluginImageDirectory)
+    from(generatedPluginManifestFile)
+    into(pluginOutputDirectory)
+}
+
+tasks.named("assemble") {
+    dependsOn(stageBu1ldPlugin)
 }
 
 val smokeTest by tasks.registering(JavaExec::class) {
@@ -130,8 +137,7 @@ tasks.named("check") {
 }
 
 tasks.register<Sync>("installBu1ldPlugin") {
-    dependsOn(jpackageImage, writePluginManifest)
-    from(pluginImageDirectory)
-    from(pluginManifestFile)
+    dependsOn(stageBu1ldPlugin)
+    from(pluginOutputDirectory)
     into(layout.projectDirectory.dir("../../.bu1ld/plugins/$bu1ldPluginId/$bu1ldPluginVersion"))
 }

@@ -35,6 +35,19 @@ On Windows:
 The task writes the plugin under
 `.bu1ld/plugins/org.bu1ld.java/0.1.0/`.
 
+For local development without installing, point a project directly at the
+generated manifest:
+
+```text
+plugin java {
+  source = local
+  path = "./plugins/java/build/plugin/plugin.toml"
+}
+```
+
+The manifest's `binary` field points back to the jpackage app image generated
+by `assemble`.
+
 ## Packaging
 
 The plugin is a JPMS module named `org.bu1ld.plugins.java`. The Gradle build

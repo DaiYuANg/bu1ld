@@ -159,7 +159,7 @@ func taskFormSpec() planschema.FormSpec {
 		Declares:     "task",
 		BodyMode:     planschema.BodyScript,
 		Fields: planschema.Fields(
-			planschema.FieldSpec{Name: "deps", Type: planschema.ListType{Elem: planschema.RefType{Kind: "task"}}},
+			planschema.FieldSpec{Name: "deps", Type: taskDependencyListType()},
 			planschema.FieldSpec{Name: "inputs", Type: planschema.ListType{Elem: planschema.TypePath}},
 			planschema.FieldSpec{Name: "outputs", Type: planschema.ListType{Elem: planschema.TypePath}},
 			planschema.FieldSpec{Name: "command", Type: planschema.ListType{Elem: planschema.TypeString}},
@@ -241,7 +241,7 @@ func pluginFieldType(field buildplugin.FieldSchema) planschema.Type {
 		return planschema.TypeString
 	case buildplugin.FieldList:
 		if field.Name == "deps" {
-			return planschema.ListType{Elem: planschema.RefType{Kind: "task"}}
+			return taskDependencyListType()
 		}
 		if isPathListField(field.Name) {
 			return planschema.ListType{Elem: planschema.TypePath}
@@ -254,6 +254,10 @@ func pluginFieldType(field buildplugin.FieldSchema) planschema.Type {
 	default:
 		return planschema.TypeAny
 	}
+}
+
+func taskDependencyListType() planschema.Type {
+	return planschema.ListType{Elem: planschema.TypeAny}
 }
 
 func isPathStringField(name string) bool {

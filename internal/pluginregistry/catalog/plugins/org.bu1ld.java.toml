@@ -9,3 +9,27 @@ tags = ["java", "jpms", "javac", "jpackage"]
 version = "0.1.0"
 bu1ld = ">=0.1.0"
 manifest = "plugin.toml"
+
+[[versions.assets]]
+os = "linux"
+arch = "amd64"
+url = "https://github.com/DaiYuANg/bu1ld/releases/download/v0.1.0/bu1ld-java-plugin_0.1.0_linux_amd64.tar.gz"
+format = "tar.gz"
+
+[[versions.assets]]
+os = "darwin"
+arch = "amd64"
+url = "https://github.com/DaiYuANg/bu1ld/releases/download/v0.1.0/bu1ld-java-plugin_0.1.0_darwin_amd64.tar.gz"
+format = "tar.gz"
+
+[[versions.assets]]
+os = "darwin"
+arch = "arm64"
+url = "https://github.com/DaiYuANg/bu1ld/releases/download/v0.1.0/bu1ld-java-plugin_0.1.0_darwin_arm64.tar.gz"
+format = "tar.gz"
+
+[[versions.assets]]
+os = "windows"
+arch = "amd64"
+url = "https://github.com/DaiYuANg/bu1ld/releases/download/v0.1.0/bu1ld-java-plugin_0.1.0_windows_amd64.zip"
+format = "zip"

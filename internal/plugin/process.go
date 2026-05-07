@@ -227,22 +227,13 @@ func (l *ProcessLoader) resolvePath(declaration Declaration) (string, error) {
 			With("source", declaration.Source).
 			New("builtin plugins are not process-backed")
 	case SourceLocal:
-		if filepath.IsAbs(declaration.Path) {
-			return declaration.Path, nil
-		}
 		if declaration.Path != "" {
-			if isProjectRelative(declaration.Path) {
-				return filepath.Join(projectDir(l.options.ProjectDir), declaration.Path), nil
-			}
-			return filepath.Join(localPluginDir(l.options), declaration.Path), nil
+			return l.resolveExplicitPath(declaration, localPluginDir(l.options), true)
 		}
 		return l.resolveInstalledPath(localPluginDir(l.options), declaration)
 	case SourceGlobal:
 		if declaration.Path != "" {
-			if filepath.IsAbs(declaration.Path) {
-				return declaration.Path, nil
-			}
-			return filepath.Join(globalPluginDir(l.options.GlobalDir), declaration.Path), nil
+			return l.resolveExplicitPath(declaration, globalPluginDir(l.options.GlobalDir), false)
 		}
 		return l.resolveInstalledPath(globalPluginDir(l.options.GlobalDir), declaration)
 	default:
@@ -251,6 +242,47 @@ func (l *ProcessLoader) resolvePath(declaration Declaration) (string, error) {
 			With("source", declaration.Source).
 			Errorf("plugin source %q is not process-backed", declaration.Source)
 	}
+}
+
+func (l *ProcessLoader) resolveExplicitPath(declaration Declaration, root string, projectRelative bool) (string, error) {
+	candidate := declaration.Path
+	if !filepath.IsAbs(candidate) {
+		if projectRelative && isProjectRelative(candidate) {
+			candidate = filepath.Join(projectDir(l.options.ProjectDir), candidate)
+		} else {
+			candidate = filepath.Join(root, candidate)
+		}
+	}
+	resolved, ok, err := resolveExplicitManifestCandidate(candidate, declaration)
+	if err != nil || ok {
+		return resolved, err
+	}
+	return candidate, nil
+}
+
+func resolveExplicitManifestCandidate(candidate string, declaration Declaration) (string, bool, error) {
+	info, err := os.Stat(candidate)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", false, nil
+		}
+		return "", false, oops.In("bu1ld.plugins").
+			With("path", candidate).
+			Wrapf(err, "stat plugin path")
+	}
+	if info.IsDir() {
+		manifestPath := filepath.Join(candidate, ManifestFileName)
+		if !fileExists(manifestPath) {
+			return "", false, nil
+		}
+		binary, err := ResolveManifestBinary(manifestPath, declaration)
+		return binary, true, err
+	}
+	if filepath.Base(candidate) != ManifestFileName {
+		return "", false, nil
+	}
+	binary, err := ResolveManifestBinary(candidate, declaration)
+	return binary, true, err
 }
 
 func (l *ProcessLoader) resolveInstalledPath(root string, declaration Declaration) (string, error) {
