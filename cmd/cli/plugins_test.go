@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -187,19 +188,25 @@ plugin rust {
 
 func writeWrongPluginLock(projectDir, binary string) error {
 	path := filepath.Join(projectDir, "bu1ld.lock")
-	if err := os.WriteFile(path, []byte(`{
-  "version": 1,
-  "plugins": [
-    {
-      "source": "local",
-      "namespace": "rust",
-      "id": "org.bu1ld.rust",
-      "version": "0.1.0",
-      "path": "`+binary+`",
-      "checksum": "sha256:wrong"
-    }
-  ]
-}`), 0o600); err != nil {
+	lock := map[string]any{
+		"version": 1,
+		"plugins": []map[string]string{
+			{
+				"source":    "local",
+				"namespace": "rust",
+				"id":        "org.bu1ld.rust",
+				"version":   "0.1.0",
+				"path":      binary,
+				"checksum":  "sha256:wrong",
+			},
+		},
+	}
+	data, err := json.MarshalIndent(lock, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal wrong plugin lock: %w", err)
+	}
+	data = append(data, '\n')
+	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	return nil

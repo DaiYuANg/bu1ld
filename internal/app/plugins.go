@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -483,6 +484,9 @@ func executableFileError(path string) error {
 		return oops.In("bu1ld.plugins").
 			With("path", path).
 			Errorf("%s is a directory", path)
+	}
+	if runtime.GOOS == "windows" {
+		return nil
 	}
 	if info.Mode()&0o111 == 0 {
 		return oops.In("bu1ld.plugins").

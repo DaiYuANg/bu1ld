@@ -46,6 +46,16 @@ func RunCommand(ctx context.Context, cfg config.Config, output io.Writer, reques
 			}
 			err = errors.Join(err, stopErr)
 		}
+		if closeErr := logx.Close(runtime.Logger()); closeErr != nil {
+			closeErr = oops.In("bu1ld.app").
+				With("command", request.Kind).
+				Wrapf(closeErr, "close logger")
+			if err == nil {
+				err = closeErr
+				return
+			}
+			err = errors.Join(err, closeErr)
+		}
 	}()
 
 	app, err := dix.ResolveAs[*App](runtime.Container())
@@ -94,9 +104,6 @@ func coreModule(cfg config.Config, output io.Writer) dix.Module {
 			dix.OnStop[*buildplugin.Registry](func(_ context.Context, registry *buildplugin.Registry) error {
 				registry.Close()
 				return nil
-			}),
-			dix.OnStop[*slog.Logger](func(_ context.Context, logger *slog.Logger) error {
-				return logx.Close(logger)
 			}),
 		),
 	)
