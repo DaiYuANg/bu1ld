@@ -1,0 +1,26 @@
+[versions]
+avajeInject = "12.4"
+commonsIo = "2.21.0"
+commonsLang3 = "3.20.0"
+freefairLombok = "9.2.0"
+guava = "33.5.0-jre"
+jackson = "2.21.2"
+jlink = "4.0.0"
+javaRelease = "17"
+logback = "1.5.32"
+slf4j = "2.0.17"
+
+[libraries]
+avajeInject = { group = "io.avaje", name = "avaje-inject", version.ref = "avajeInject" }
+avajeInjectGenerator = { group = "io.avaje", name = "avaje-inject-generator", version.ref = "avajeInject" }
+commonsIo = { group = "commons-io", name = "commons-io", version.ref = "commonsIo" }
+commonsLang3 = { group = "org.apache.commons", name = "commons-lang3", version.ref = "commonsLang3" }
+guava = { group = "com.google.guava", name = "guava", version.ref = "guava" }
+jacksonDatabind = { group = "com.fasterxml.jackson.core", name = "jackson-databind", version.ref = "jackson" }
+julToSlf4j = { group = "org.slf4j", name = "jul-to-slf4j", version.ref = "slf4j" }
+logbackClassic = { group = "ch.qos.logback", name = "logback-classic", version.ref = "logback" }
+slf4jApi = { group = "org.slf4j", name = "slf4j-api", version.ref = "slf4j" }
+
+[plugins]
+jlink = { id = "org.beryx.jlink", version.ref = "jlink" }
+lombok = { id = "io.freefair.lombok", version.ref = "freefairLombok" }

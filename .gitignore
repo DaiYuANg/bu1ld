@@ -146,6 +146,7 @@ dmypy.json
 .pytype/
 cython_debug/
 .idea
+.gradle/
 !internal/build
 !internal/build/
 !internal/build/**

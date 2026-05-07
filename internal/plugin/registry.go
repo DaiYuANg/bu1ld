@@ -134,6 +134,7 @@ func (r *Registry) Expand(ctx context.Context, invocation Invocation) ([]build.T
 	tasks := list.NewListWithCapacity[build.Task](len(specs))
 	for i := range specs {
 		spec := specs[i]
+		spec = r.decoratePluginAction(invocation.Namespace, spec)
 		tasks.Add(TaskSpecToBuild(spec))
 	}
 	for _, task := range tasks.Values() {
@@ -143,6 +144,68 @@ func (r *Registry) Expand(ctx context.Context, invocation Invocation) ([]build.T
 				With("rule", invocation.Rule).
 				With("task", task.Name).
 				Wrapf(err, "validate expanded plugin task")
+		}
+	}
+	return tasks.Values(), nil
+}
+
+func (r *Registry) Configure(ctx context.Context, configs map[string]PluginConfig) ([]build.Task, error) {
+	tasks := list.NewList[build.Task]()
+	var firstErr error
+	r.active.Range(func(namespace string, item Plugin) bool {
+		metadata, err := item.Metadata()
+		if err != nil {
+			firstErr = oops.In("bu1ld.plugins").
+				With("namespace", namespace).
+				Wrapf(err, "read plugin metadata")
+			return false
+		}
+		config, hasConfig := configs[namespace]
+		if !metadata.AutoConfigure && !hasConfig {
+			return true
+		}
+		if config.Namespace == "" {
+			config.Namespace = namespace
+		}
+		if config.Fields == nil {
+			config.Fields = map[string]any{}
+		}
+		if err := ValidateInvocation(RuleSchema{Name: "config", Fields: metadata.ConfigFields}, Invocation{
+			Namespace: namespace,
+			Rule:      "config",
+			Fields:    config.Fields,
+		}); err != nil {
+			firstErr = err
+			return false
+		}
+		configurable, ok := item.(ConfigurablePlugin)
+		if !ok {
+			firstErr = oops.In("bu1ld.plugins").
+				With("namespace", namespace).
+				New("plugin does not support configure")
+			return false
+		}
+		specs, err := configurable.Configure(ctx, config)
+		if err != nil {
+			firstErr = oops.In("bu1ld.plugins").
+				With("namespace", namespace).
+				Wrapf(err, "configure plugin")
+			return false
+		}
+		for i := range specs {
+			spec := r.decoratePluginAction(namespace, specs[i])
+			tasks.Add(TaskSpecToBuild(spec))
+		}
+		return true
+	})
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	for _, task := range tasks.Values() {
+		if err := task.Validate(); err != nil {
+			return nil, oops.In("bu1ld.plugins").
+				With("task", task.Name).
+				Wrapf(err, "validate configured plugin task")
 		}
 	}
 	return tasks.Values(), nil
@@ -161,6 +224,23 @@ func (r *Registry) Schemas() ([]Metadata, error) {
 		return true
 	})
 	return metadata.Values(), firstErr
+}
+
+func (r *Registry) ConfigNamespaces() (map[string]Metadata, error) {
+	items := map[string]Metadata{}
+	schemas, err := r.Schemas()
+	if err != nil {
+		return nil, err
+	}
+	for _, metadata := range schemas {
+		if metadata.Namespace == "" {
+			continue
+		}
+		if metadata.AutoConfigure || len(metadata.ConfigFields) > 0 {
+			items[metadata.Namespace] = metadata
+		}
+	}
+	return items, nil
 }
 
 func (r *Registry) Metadata(namespace string) (Metadata, error) {
@@ -210,6 +290,33 @@ func (r *Registry) setScoped(source Source, namespace string, item Plugin) {
 	case SourceGlobal:
 		r.globalPlugins.Set(namespace, item)
 	}
+}
+
+func (r *Registry) decoratePluginAction(namespace string, spec TaskSpec) TaskSpec {
+	if spec.Action.Kind != PluginExecActionKind {
+		return spec
+	}
+	if spec.Action.Params == nil {
+		spec.Action.Params = map[string]any{}
+	}
+	if _, ok := spec.Action.Params["namespace"]; !ok {
+		spec.Action.Params["namespace"] = namespace
+	}
+	if declaration, ok := r.declarations.Get(namespace); ok {
+		if _, exists := spec.Action.Params["source"]; !exists && declaration.Source != "" {
+			spec.Action.Params["source"] = string(declaration.Source)
+		}
+		if _, exists := spec.Action.Params["id"]; !exists && declaration.ID != "" {
+			spec.Action.Params["id"] = declaration.ID
+		}
+		if _, exists := spec.Action.Params["version"]; !exists && declaration.Version != "" {
+			spec.Action.Params["version"] = declaration.Version
+		}
+		if _, exists := spec.Action.Params["path"]; !exists && declaration.Path != "" {
+			spec.Action.Params["path"] = declaration.Path
+		}
+	}
+	return spec
 }
 
 func (r *Registry) resolveBuiltin(declaration Declaration) (Plugin, error) {

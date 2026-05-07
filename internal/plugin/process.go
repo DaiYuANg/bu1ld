@@ -2,21 +2,25 @@ package plugin
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
+	"sync"
 
 	"bu1ld/pkg/pluginapi"
 
-	hplugin "github.com/hashicorp/go-plugin"
 	"github.com/samber/oops"
 )
 
 type ProcessLoader struct {
 	options LoadOptions
-	clients []*hplugin.Client
+	clients []*processClient
 }
 
 func NewProcessLoader(options LoadOptions) *ProcessLoader {
@@ -29,53 +33,174 @@ func (l *ProcessLoader) Load(_ context.Context, declaration Declaration) (Plugin
 		return nil, err
 	}
 
-	client := hplugin.NewClient(&hplugin.ClientConfig{
-		HandshakeConfig:  pluginapi.Handshake,
-		Plugins:          hplugin.PluginSet{pluginapi.ProcessPluginName: pluginapi.ClientPlugin()},
-		Cmd:              processCommand(path),
-		AllowedProtocols: []hplugin.Protocol{hplugin.ProtocolNetRPC},
-	})
-	rpcClient, err := client.Client()
+	client, err := startProcessClient(path)
 	if err != nil {
-		client.Kill()
 		return nil, oops.In("bu1ld.plugins").
 			With("namespace", declaration.Namespace).
 			With("source", declaration.Source).
 			With("path", path).
 			Wrapf(err, "start plugin process")
 	}
-	raw, err := rpcClient.Dispense(pluginapi.ProcessPluginName)
-	if err != nil {
-		client.Kill()
-		return nil, oops.In("bu1ld.plugins").
-			With("namespace", declaration.Namespace).
-			With("source", declaration.Source).
-			With("path", path).
-			Wrapf(err, "dispense plugin client")
-	}
-	item, ok := raw.(Plugin)
-	if !ok {
-		client.Kill()
-		return nil, oops.In("bu1ld.plugins").
-			With("namespace", declaration.Namespace).
-			With("source", declaration.Source).
-			With("path", path).
-			Errorf("plugin returned incompatible client %T", raw)
-	}
 	l.clients = append(l.clients, client)
-	return item, nil
+	return client, nil
+}
+
+type processClient struct {
+	cmd     *exec.Cmd
+	stdin   io.WriteCloser
+	stdout  io.ReadCloser
+	encoder *json.Encoder
+	decoder *json.Decoder
+	mu      sync.Mutex
+	nextID  int64
+	closed  bool
+}
+
+func startProcessClient(path string) (*processClient, error) {
+	cmd := processCommand(path)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, fmt.Errorf("open plugin stdin: %w", err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("open plugin stdout: %w", err)
+	}
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	return &processClient{
+		cmd:     cmd,
+		stdin:   stdin,
+		stdout:  stdout,
+		encoder: json.NewEncoder(stdin),
+		decoder: json.NewDecoder(stdout),
+	}, nil
+}
+
+func (c *processClient) Metadata() (Metadata, error) {
+	var result pluginapi.MetadataResult
+	if err := c.call(pluginapi.MethodMetadata, nil, &result); err != nil {
+		return Metadata{}, fmt.Errorf("call plugin metadata: %w", err)
+	}
+	return result.Metadata, nil
+}
+
+func (c *processClient) Expand(_ context.Context, invocation Invocation) ([]TaskSpec, error) {
+	params := pluginapi.ExpandParams{Invocation: invocation}
+	var result pluginapi.ExpandResult
+	if err := c.call(pluginapi.MethodExpand, params, &result); err != nil {
+		return nil, fmt.Errorf("call plugin expand: %w", err)
+	}
+	return result.Tasks, nil
+}
+
+func (c *processClient) Configure(_ context.Context, config PluginConfig) ([]TaskSpec, error) {
+	params := pluginapi.ConfigureParams{Config: config}
+	var result pluginapi.ConfigureResult
+	if err := c.call(pluginapi.MethodConfigure, params, &result); err != nil {
+		return nil, fmt.Errorf("call plugin configure: %w", err)
+	}
+	return result.Tasks, nil
+}
+
+func (c *processClient) Execute(_ context.Context, request ExecuteRequest) (ExecuteResult, error) {
+	params := pluginapi.ExecuteParams{Request: request}
+	var result pluginapi.ExecuteResult
+	if err := c.call(pluginapi.MethodExecute, params, &result); err != nil {
+		return ExecuteResult{}, fmt.Errorf("call plugin execute: %w", err)
+	}
+	return result, nil
+}
+
+func (c *processClient) call(method string, params any, result any) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return fmt.Errorf("plugin process is closed")
+	}
+	c.nextID++
+	request := pluginapi.Request{
+		ID:     c.nextID,
+		Method: method,
+	}
+	if params != nil {
+		data, err := json.Marshal(params)
+		if err != nil {
+			return fmt.Errorf("marshal plugin params: %w", err)
+		}
+		request.Params = data
+	}
+	if err := c.encoder.Encode(request); err != nil {
+		return fmt.Errorf("encode plugin request: %w", err)
+	}
+
+	var response pluginapi.Response
+	if err := c.decoder.Decode(&response); err != nil {
+		return fmt.Errorf("decode plugin response: %w", err)
+	}
+	if response.ID != request.ID {
+		return fmt.Errorf("plugin response id %d does not match request id %d", response.ID, request.ID)
+	}
+	if response.Error != nil {
+		return errorsFromResponse(response.Error)
+	}
+	if result == nil {
+		return nil
+	}
+	if len(response.Result) == 0 {
+		return fmt.Errorf("plugin response result is empty")
+	}
+	if err := json.Unmarshal(response.Result, result); err != nil {
+		return fmt.Errorf("decode plugin result: %w", err)
+	}
+	return nil
+}
+
+func errorsFromResponse(response *pluginapi.ResponseError) error {
+	if response == nil || response.Message == "" {
+		return fmt.Errorf("plugin returned an error")
+	}
+	return fmt.Errorf("%s", response.Message)
+}
+
+func (c *processClient) Close() {
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return
+	}
+	c.closed = true
+	stdin := c.stdin
+	process := c.cmd.Process
+	cmd := c.cmd
+	c.mu.Unlock()
+
+	if stdin != nil {
+		_ = stdin.Close()
+	}
+	if process != nil {
+		_ = process.Kill()
+	}
+	if cmd != nil {
+		_ = cmd.Wait()
+	}
 }
 
 func processCommand(path string) *exec.Cmd {
-	return &exec.Cmd{
-		Path: path,
-		Args: []string{path},
+	if runtime.GOOS == "windows" {
+		ext := strings.ToLower(filepath.Ext(path))
+		if ext == ".bat" || ext == ".cmd" {
+			return exec.Command("cmd", "/c", path)
+		}
 	}
+	return exec.Command(path)
 }
 
 func (l *ProcessLoader) Close() {
 	for _, client := range l.clients {
-		client.Kill()
+		client.Close()
 	}
 	l.clients = nil
 }
@@ -153,7 +278,7 @@ func pluginInstallPath(root string, declaration Declaration) string {
 func discoverInstalledPlugin(root string, declaration Declaration) (string, bool, error) {
 	patterns := pluginDiscoveryPatterns(declaration)
 	for _, pattern := range patterns {
-		matches, err := hplugin.Discover(pattern, root)
+		matches, err := filepath.Glob(filepath.Join(root, pattern))
 		if err != nil {
 			return "", false, oops.In("bu1ld.plugins").
 				With("root", root).

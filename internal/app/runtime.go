@@ -91,9 +91,11 @@ func coreModule(cfg config.Config, output io.Writer) dix.Module {
 			dix.Provider1[*snapshot.Snapshotter, afero.Fs](snapshot.NewSnapshotter),
 			dix.Provider2[*cache.Store, config.Config, afero.Fs](cache.NewStore),
 			dix.Provider0[engine.CommandRunner](engine.NewExecRunner),
+			dix.Provider1[engine.ActionRunner, config.Config](newActionRunner),
 			dix.ProviderErr1[eventx.BusRuntime, io.Writer](newEventBus),
+			dix.Provider2[engineIO, eventx.BusRuntime, io.Writer](newEngineIO),
 			dix.ProviderErr1[*buildplugin.Registry, *dsl.Loader](newPluginRegistry),
-			dix.Provider6[*engine.Engine, config.Config, *snapshot.Snapshotter, *cache.Store, engine.CommandRunner, eventx.BusRuntime, io.Writer](newEngine),
+			dix.Provider6[*engine.Engine, config.Config, *snapshot.Snapshotter, *cache.Store, engine.CommandRunner, engine.ActionRunner, engineIO](newEngine),
 			dix.ProviderErr6[*App, CommandRequest, *dsl.Loader, *buildplugin.Registry, *engine.Engine, *cache.Store, io.Writer](New),
 		),
 		dix.WithModuleHooks(
@@ -141,13 +143,23 @@ func newEventBus(output io.Writer) (eventx.BusRuntime, error) {
 	return bus, nil
 }
 
-func newActionRunner() engine.ActionRunner {
+func newActionRunner(cfg config.Config) engine.ActionRunner {
 	return engine.NewActionRunner(
 		docker.NewImageHandler(),
 		archive.NewZipHandler(),
 		archive.NewTarHandler(),
 		gitplugin.NewInfoHandler(),
+		buildplugin.NewExecuteHandler(buildplugin.LoadOptions{ProjectDir: cfg.WorkDir}),
 	)
+}
+
+type engineIO struct {
+	bus    eventx.BusRuntime
+	output io.Writer
+}
+
+func newEngineIO(bus eventx.BusRuntime, output io.Writer) engineIO {
+	return engineIO{bus: bus, output: output}
 }
 
 func newEngine(
@@ -155,10 +167,10 @@ func newEngine(
 	snapshotter *snapshot.Snapshotter,
 	store *cache.Store,
 	runner engine.CommandRunner,
-	bus eventx.BusRuntime,
-	output io.Writer,
+	actions engine.ActionRunner,
+	runtime engineIO,
 ) *engine.Engine {
-	return engine.New(cfg, snapshotter, store, runner, newActionRunner(), bus, output)
+	return engine.New(cfg, snapshotter, store, runner, actions, runtime.bus, runtime.output)
 }
 
 func newPluginRegistry(loader *dsl.Loader) (*buildplugin.Registry, error) {

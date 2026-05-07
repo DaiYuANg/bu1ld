@@ -37,12 +37,14 @@ func run(ctx context.Context) (err error) {
 	if err != nil {
 		return fmt.Errorf("resolve plugin: %w", err)
 	}
-	pluginapi.ServeProcess(item)
+	if err := pluginapi.ServeProcess(item); err != nil {
+		return fmt.Errorf("serve plugin process: %w", err)
+	}
 	return nil
 }
 
 func goPluginModule() dix.Module {
-	return dix.NewModule("go-plugin",
+	return dix.NewModule("go-build-plugin",
 		dix.WithModuleProviders(
 			dix.Provider0[*goplugin.Plugin](goplugin.New),
 			dix.Provider1[pluginapi.Plugin, *goplugin.Plugin](func(plugin *goplugin.Plugin) pluginapi.Plugin {

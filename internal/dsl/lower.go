@@ -70,10 +70,25 @@ func lowerProject(ctx context.Context, file *File, registry *buildplugin.Registr
 	if file == nil || file.Result.HIR == nil {
 		return build.Project{Tasks: tasks, Packages: list.NewList[build.Package]()}, nil
 	}
+	configs, configNamespaces, err := pluginConfigurations(file, registry)
+	if err != nil {
+		return build.Project{}, err
+	}
+	configuredTasks, err := registry.Configure(ctx, configs)
+	if err != nil {
+		return build.Project{}, dslErrorAt(file.Result.FileSet, token.NoPos, "configure plugins: %v", err)
+	}
+	for _, task := range configuredTasks {
+		if seen.Contains(task.Name) {
+			return build.Project{}, dslErrorAt(file.Result.FileSet, token.NoPos, "duplicate task %q", task.Name)
+		}
+		seen.Add(task.Name)
+		tasks.Add(task)
+	}
 	forms := file.Result.HIR.Forms.Values()
 	for i := range forms {
 		form := forms[i]
-		items, err := lowerTopLevelForm(ctx, file.Result.FileSet, form, registry)
+		items, err := lowerTopLevelForm(ctx, file.Result.FileSet, form, registry, configNamespaces)
 		if err != nil {
 			return build.Project{}, err
 		}
@@ -88,7 +103,41 @@ func lowerProject(ctx context.Context, file *File, registry *buildplugin.Registr
 	return build.Project{Tasks: tasks, Packages: list.NewList[build.Package]()}, nil
 }
 
-func lowerTopLevelForm(ctx context.Context, fset *token.FileSet, form planocomp.HIRForm, registry *buildplugin.Registry) ([]build.Task, error) {
+func pluginConfigurations(file *File, registry *buildplugin.Registry) (map[string]buildplugin.PluginConfig, map[string]buildplugin.Metadata, error) {
+	configNamespaces, err := registry.ConfigNamespaces()
+	if err != nil {
+		return nil, nil, err
+	}
+	configs := map[string]buildplugin.PluginConfig{}
+	if file == nil || file.Result.HIR == nil {
+		return configs, configNamespaces, nil
+	}
+	for _, form := range file.Result.HIR.Forms.Values() {
+		if _, ok := configNamespaces[form.Kind]; !ok {
+			continue
+		}
+		if _, exists := configs[form.Kind]; exists {
+			return nil, nil, dslErrorAt(file.Result.FileSet, form.Pos, "duplicate plugin config %q", form.Kind)
+		}
+		fields, err := invocationFields(file.Result.FileSet, form)
+		if err != nil {
+			return nil, nil, err
+		}
+		configs[form.Kind] = buildplugin.PluginConfig{
+			Namespace: form.Kind,
+			Fields:    fields,
+		}
+	}
+	return configs, configNamespaces, nil
+}
+
+func lowerTopLevelForm(
+	ctx context.Context,
+	fset *token.FileSet,
+	form planocomp.HIRForm,
+	registry *buildplugin.Registry,
+	configNamespaces map[string]buildplugin.Metadata,
+) ([]build.Task, error) {
 	switch form.Kind {
 	case "workspace", "package", "plugin", "toolchain":
 		return nil, nil
@@ -99,6 +148,9 @@ func lowerTopLevelForm(ctx context.Context, fset *token.FileSet, form planocomp.
 		}
 		return []build.Task{task}, nil
 	default:
+		if _, ok := configNamespaces[form.Kind]; ok {
+			return nil, nil
+		}
 		namespace, rule, ok := splitQualifiedKind(form.Kind)
 		if !ok {
 			return nil, dslErrorAt(fset, form.Pos, "unknown form %q", form.Kind)

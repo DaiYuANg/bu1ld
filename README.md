@@ -11,7 +11,7 @@ The first version includes:
 - A basic DSL language server with parse diagnostics, semantic diagnostics, and schema completions
 - A plugin registry with builtin, local, and global plugin sources
 - Builtin `docker`, `archive`, and `git` plugins
-- A first-party external Go process plugin
+- First-party external Go and Java process plugins
 - Monorepo workspace package discovery and package-scoped task ids
 - Task graph planning with dependency ordering and cycle detection
 - A configuration cache for unchanged build scripts and plugin binaries
@@ -51,10 +51,13 @@ The first version includes:
 ├── pkg/
 │   └── pluginapi/
 ├── plugins/
-│   └── go/
-│       ├── cmd/
-│       │   └── bu1ld-go-plugin/
-│       └── go.mod
+│   ├── go/
+│   │   ├── cmd/
+│   │   │   └── bu1ld-go-plugin/
+│   │   └── go.mod
+│   └── java/
+│       ├── build.gradle.kts
+│       └── src/
 ├── integration/
 │   └── vscode/
 ├── build.bu1ld
@@ -231,9 +234,9 @@ Local plugins are external process plugins resolved under the project
 `.bu1ld/plugins` directory by default. Global plugins are resolved under the
 user home `.bu1ld/plugins` directory by default. A `path = "./..."` value can be
 used for local plugin development. External process plugins implement the public
-`pkg/pluginapi` protocol and are launched through HashiCorp `go-plugin`. When
-the exact install path is missing, local and global plugin resolution falls back
-to `go-plugin` discovery under the corresponding plugin directory.
+`pkg/pluginapi` JSON-RPC protocol over stdin/stdout. When the exact install path
+is missing, local and global plugin resolution falls back to file discovery
+under the corresponding plugin directory.
 
 Installed plugins can include a manifest at
 `.bu1ld/plugins/<id>/<version>/plugin.toml` or
@@ -254,6 +257,9 @@ The first-party Go plugin is external. Build it with:
 ```bash
 go build -C plugins/go -o ../../.bu1ld/plugins/org.bu1ld.go/0.1.0/bu1ld-go-plugin ./cmd/bu1ld-go-plugin
 ```
+
+On Windows, use `bu1ld-go-plugin.exe` for both the output file and manifest
+binary.
 
 Then install a manifest beside the binary:
 
@@ -290,9 +296,86 @@ go.binary build {
 }
 ```
 
+The first-party Java plugin is written in Java, built with Gradle, uses Jackson
+for protocol JSON, SLF4J and Logback for logging, Avaje Inject for dependency
+injection, Commons Lang and Commons IO for small utilities, Guava for immutable
+collections and classpath handling, and the FreeFair Lombok Gradle plugin for
+Lombok wiring. Its Gradle build uses `gradle/plugin.versions.toml` for version
+catalog and the checked-in Gradle wrapper only to build the plugin itself. Java
+project builds are native bu1ld plugin actions: `compileJava` calls the
+`JavaCompiler` API directly and `jar` writes the archive through Java's jar APIs.
+Packaging uses the
+`org.beryx.jlink` plugin for `jpackageImage`; this path only builds an app-image
+artifact (no MSI/DMG/DEB/RPM installers):
+`skipInstaller = true`.
+The plugin is now packaged as a JPMS module (`org.bu1ld.plugins.java`) and
+`jlink` uses a trimmed runtime image with `--strip-debug`, `--compress 2`,
+`--no-header-files`, `--no-man-pages`, and `--strip-native-commands`. Build it with:
+
+```bash
+./plugins/java/gradlew -p plugins/java installBu1ldPlugin
+```
+The Gradle wrapper jar is checked in under
+`plugins/java/gradle/wrapper/gradle-wrapper.jar`, so this does not require a
+locally installed Gradle.
+
+This produces plugin artifacts under
+`.bu1ld/plugins/org.bu1ld.java/0.1.0/`. A local install can copy that folder to
+`.bu1ld/plugins/org.bu1ld.java/0.1.0/`.
+
+Inside this repository, the full Java plugin smoke path is:
+
+```bash
+go run ./cmd/cli build --no-cache java_plugin_verify
+```
+
+That task runs the Java plugin Gradle checks, builds and installs the jpackage
+app image, then builds `examples/java-plugin-smoke` through the external Java
+plugin. The example uses Gradle-style defaults such as `src/main/java`,
+`build/classes/java/main`, and `build/libs/<name>.jar`.
+
+The Java RPC server starts from the jpackage launcher generated for
+`org.bu1ld.plugins.java.Bu1ldJavaPlugin`. The CLI resolves `plugin.toml`, starts
+the configured binary as an external process, and exchanges line-delimited JSON
+messages over stdin/stdout. The Java main method creates an Avaje `BeanScope`,
+gets `Server`, and calls `serve(System.in, System.out)`; the server dispatches
+`metadata`, `configure`, `expand`, and `execute` requests until stdin closes.
+Plugin logs are written through Logback to stderr and to
+`.bu1ld/logs/java-plugin.log` by default. Set `BU1LD_PLUGIN_LOG_DIR` to move the
+file logs and `BU1LD_PLUGIN_LOG_LEVEL` to adjust `org.bu1ld.plugins.java`
+verbosity. The Java launcher installs `jul-to-slf4j`, so JUL-based framework
+logs flow into the same Logback pipeline while stdout remains reserved for
+JSON-RPC.
+
+Plugins can register tasks during project configuration. The Java plugin opts
+into this with `auto_configure`, so a project only needs a plugin declaration
+and an optional `java { ... }` block to get `compileJava`, `classes`, `jar`, and
+`build` tasks.
+
+Projects can opt into it with:
+
+```text
+plugin java {
+  source = local
+  id = "org.bu1ld.java"
+  version = "0.1.0"
+}
+
+java {
+  name = "app"
+  release = "17"
+}
+
+java.compile generated {
+  srcs = ["generated/**/*.java"]
+  out = "build/classes/java/generated"
+}
+```
+
 Additional first-party plugins can live under `plugins/<name>`. They do not
-need to be Go modules; they only need to serve the `pkg/pluginapi` RPC protocol
-and ship a `plugin.toml` manifest.
+need to be Go modules; they only need to serve the line-delimited
+`pkg/pluginapi` JSON-RPC protocol (`metadata`, optional `configure`, `expand`,
+and optional `execute`) and ship a `plugin.toml` manifest.
 
 ## Usage
 
@@ -328,15 +411,15 @@ go run ./cmd/server status
 go run ./cmd/lsp stdio
 ```
 
-Runnable examples live under `examples/archive-basic` and
-`examples/docker-image`. The archive example is covered by CLI end-to-end tests;
-the Docker example requires a local Docker daemon.
+Runnable examples live under `examples/archive-basic`, `examples/docker-image`,
+and `examples/java-plugin-smoke`. The archive example is covered by CLI
+end-to-end tests; the Docker example requires a local Docker daemon.
 
 `plugins list` prints builtin, declared, and manifest-discovered plugins with
 source, namespace, resolved path, rules, and status. `plugins doctor` also
 checks the local and global plugin directories and returns a non-zero exit when
-a plugin is missing, not executable, has an invalid manifest, or cannot complete
-the `go-plugin` handshake.
+a plugin is missing, not executable, has an invalid manifest, or cannot answer
+the process protocol metadata request.
 
 `plugins lock` writes `bu1ld.lock` with declared plugin source, namespace, id,
 version, resolved path, and binary checksum. When `bu1ld.lock` exists,
@@ -372,4 +455,6 @@ all supported platform binaries.
 ```bash
 go test ./...
 go test ./plugins/go/...
+./plugins/java/gradlew -p plugins/java check
+go run ./cmd/cli build --no-cache java_plugin_verify
 ```

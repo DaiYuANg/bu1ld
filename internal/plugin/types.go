@@ -29,14 +29,20 @@ type FieldSchema = pluginapi.FieldSchema
 type RuleSchema = pluginapi.RuleSchema
 type Invocation = pluginapi.Invocation
 type Plugin = pluginapi.Plugin
+type ConfigurablePlugin = pluginapi.ConfigurablePlugin
+type ExecutablePlugin = pluginapi.ExecutablePlugin
+type PluginConfig = pluginapi.PluginConfig
+type ExecuteRequest = pluginapi.ExecuteRequest
+type ExecuteResult = pluginapi.ExecuteResult
 type TaskSpec = pluginapi.TaskSpec
 type TaskAction = pluginapi.TaskAction
 
 const (
-	FieldString = pluginapi.FieldString
-	FieldList   = pluginapi.FieldList
-	FieldObject = pluginapi.FieldObject
-	FieldBool   = pluginapi.FieldBool
+	FieldString          = pluginapi.FieldString
+	FieldList            = pluginapi.FieldList
+	FieldObject          = pluginapi.FieldObject
+	FieldBool            = pluginapi.FieldBool
+	PluginExecActionKind = pluginapi.PluginExecActionKind
 )
 
 var ValidateInvocation = pluginapi.ValidateInvocation

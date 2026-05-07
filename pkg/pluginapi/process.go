@@ -2,104 +2,142 @@ package pluginapi
 
 import (
 	"context"
-	"encoding/gob"
+	"encoding/json"
+	"errors"
 	"fmt"
-	"net/rpc"
-
-	hplugin "github.com/hashicorp/go-plugin"
+	"io"
+	"os"
 )
 
-const ProcessPluginName = "build"
+const (
+	MethodMetadata       = "metadata"
+	MethodConfigure      = "configure"
+	MethodExpand         = "expand"
+	MethodExecute        = "execute"
+	PluginExecActionKind = "plugin.exec"
+)
 
-var Handshake = hplugin.HandshakeConfig{
-	ProtocolVersion:  1,
-	MagicCookieKey:   "BU1LD_PLUGIN",
-	MagicCookieValue: "bu1ld-plugin-v1",
+type Request struct {
+	ID     int64           `json:"id"`
+	Method string          `json:"method"`
+	Params json.RawMessage `json:"params,omitempty"`
 }
 
-func init() {
-	gob.Register("")
-	gob.Register([]string{})
-	gob.Register(map[string]any{})
+type Response struct {
+	ID     int64           `json:"id"`
+	Result json.RawMessage `json:"result,omitempty"`
+	Error  *ResponseError  `json:"error,omitempty"`
 }
 
-func ClientPlugin() hplugin.Plugin {
-	return &rpcPlugin{}
+type ResponseError struct {
+	Message string `json:"message"`
 }
 
-func ServeProcess(item Plugin) {
-	hplugin.Serve(&hplugin.ServeConfig{
-		HandshakeConfig: Handshake,
-		Plugins: hplugin.PluginSet{
-			ProcessPluginName: &rpcPlugin{Impl: item},
-		},
-	})
+type MetadataResult struct {
+	Metadata Metadata `json:"metadata"`
 }
 
-type rpcPlugin struct {
-	Impl Plugin
+type ExpandParams struct {
+	Invocation Invocation `json:"invocation"`
 }
 
-func (p *rpcPlugin) Server(*hplugin.MuxBroker) (any, error) {
-	return &rpcServer{Impl: p.Impl}, nil
+type ExpandResult struct {
+	Tasks []TaskSpec `json:"tasks"`
 }
 
-func (p *rpcPlugin) Client(_ *hplugin.MuxBroker, client *rpc.Client) (any, error) {
-	return &rpcClient{client: client}, nil
+type ConfigureParams struct {
+	Config PluginConfig `json:"config"`
 }
 
-type rpcClient struct {
-	client *rpc.Client
+type ConfigureResult struct {
+	Tasks []TaskSpec `json:"tasks"`
 }
 
-func (c *rpcClient) Metadata() (Metadata, error) {
-	var response metadataResponse
-	if err := c.client.Call("Plugin.Metadata", metadataRequest{}, &response); err != nil {
-		return Metadata{}, fmt.Errorf("call plugin metadata: %w", err)
+type ExecuteParams struct {
+	Request ExecuteRequest `json:"request"`
+}
+
+func ServeProcess(item Plugin) error {
+	return Serve(item, os.Stdin, os.Stdout)
+}
+
+func Serve(item Plugin, input io.Reader, output io.Writer) error {
+	decoder := json.NewDecoder(input)
+	encoder := json.NewEncoder(output)
+	for {
+		var request Request
+		if err := decoder.Decode(&request); err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return fmt.Errorf("decode plugin request: %w", err)
+		}
+		response := handleRequest(item, request)
+		if err := encoder.Encode(response); err != nil {
+			return fmt.Errorf("encode plugin response: %w", err)
+		}
 	}
-	return response.Metadata, nil
 }
 
-func (c *rpcClient) Expand(ctx context.Context, invocation Invocation) ([]TaskSpec, error) {
-	var response expandResponse
-	if err := c.client.Call("Plugin.Expand", expandRequest{Invocation: invocation}, &response); err != nil {
-		return nil, fmt.Errorf("call plugin expand: %w", err)
+func handleRequest(item Plugin, request Request) Response {
+	switch request.Method {
+	case MethodMetadata:
+		metadata, err := item.Metadata()
+		if err != nil {
+			return errorResponse(request.ID, fmt.Errorf("read plugin metadata: %w", err))
+		}
+		return resultResponse(request.ID, MetadataResult{Metadata: metadata})
+	case MethodConfigure:
+		configurable, ok := item.(ConfigurablePlugin)
+		if !ok {
+			return errorResponse(request.ID, fmt.Errorf("plugin does not support configure"))
+		}
+		var params ConfigureParams
+		if err := json.Unmarshal(request.Params, &params); err != nil {
+			return errorResponse(request.ID, fmt.Errorf("decode configure params: %w", err))
+		}
+		tasks, err := configurable.Configure(context.Background(), params.Config)
+		if err != nil {
+			return errorResponse(request.ID, fmt.Errorf("configure plugin: %w", err))
+		}
+		return resultResponse(request.ID, ConfigureResult{Tasks: tasks})
+	case MethodExpand:
+		var params ExpandParams
+		if err := json.Unmarshal(request.Params, &params); err != nil {
+			return errorResponse(request.ID, fmt.Errorf("decode expand params: %w", err))
+		}
+		tasks, err := item.Expand(context.Background(), params.Invocation)
+		if err != nil {
+			return errorResponse(request.ID, fmt.Errorf("expand plugin invocation: %w", err))
+		}
+		return resultResponse(request.ID, ExpandResult{Tasks: tasks})
+	case MethodExecute:
+		executable, ok := item.(ExecutablePlugin)
+		if !ok {
+			return errorResponse(request.ID, fmt.Errorf("plugin does not support execute"))
+		}
+		var params ExecuteParams
+		if err := json.Unmarshal(request.Params, &params); err != nil {
+			return errorResponse(request.ID, fmt.Errorf("decode execute params: %w", err))
+		}
+		result, err := executable.Execute(context.Background(), params.Request)
+		if err != nil {
+			return errorResponse(request.ID, fmt.Errorf("execute plugin action: %w", err))
+		}
+		return resultResponse(request.ID, result)
+	default:
+		return errorResponse(request.ID, fmt.Errorf("unknown plugin method %q", request.Method))
 	}
-	return response.Tasks, nil
 }
 
-type rpcServer struct {
-	Impl Plugin
-}
-
-func (s *rpcServer) Metadata(_ metadataRequest, response *metadataResponse) error {
-	metadata, err := s.Impl.Metadata()
+func resultResponse(id int64, result any) Response {
+	data, err := json.Marshal(result)
 	if err != nil {
-		return fmt.Errorf("read plugin metadata: %w", err)
+		return errorResponse(id, fmt.Errorf("marshal plugin result: %w", err))
 	}
-	response.Metadata = metadata
-	return nil
+	return Response{ID: id, Result: data}
 }
 
-func (s *rpcServer) Expand(request expandRequest, response *expandResponse) error {
-	tasks, err := s.Impl.Expand(context.Background(), request.Invocation)
-	if err != nil {
-		return fmt.Errorf("expand plugin invocation: %w", err)
-	}
-	response.Tasks = tasks
-	return nil
-}
-
-type metadataRequest struct{}
-
-type metadataResponse struct {
-	Metadata Metadata
-}
-
-type expandRequest struct {
-	Invocation Invocation
-}
-
-type expandResponse struct {
-	Tasks []TaskSpec
+func errorResponse(id int64, err error) Response {
+	return Response{ID: id, Error: &ResponseError{Message: err.Error()}}
 }

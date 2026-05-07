@@ -13,6 +13,37 @@ task build {
 task go_plugin {
   deps = [prepare, test]
   inputs = ["go.work", "go.mod", "go.sum", "pkg/pluginapi/**/*.go", "plugins/go/go.mod", "plugins/go/**/*.go"]
-  outputs = ["dist/bu1ld-go-plugin"]
-  command = ["go", "build", "-C", "plugins/go", "-o", "../../dist/bu1ld-go-plugin", "./cmd/bu1ld-go-plugin"]
+  outputs = ["dist/bu1ld-go-plugin" + (os == "windows" ? ".exe" : "")]
+  command = ["go", "build", "-C", "plugins/go", "-o", "../../dist/bu1ld-go-plugin" + (os == "windows" ? ".exe" : ""), "./cmd/bu1ld-go-plugin"]
+}
+
+task java_plugin_check {
+  deps = [prepare]
+  inputs = ["plugins/java/settings.gradle.kts", "plugins/java/build.gradle.kts", "plugins/java/gradle/plugin.versions.toml", "plugins/java/gradlew", "plugins/java/gradlew.bat", "plugins/java/gradle/wrapper/gradle-wrapper.jar", "plugins/java/gradle/wrapper/gradle-wrapper.properties", "plugins/java/src/**/*.java"]
+  command = os == "windows" ? ["cmd", "/c", "plugins\\java\\gradlew.bat", "-p", "plugins/java", "check"] : ["./plugins/java/gradlew", "-p", "plugins/java", "check"]
+}
+
+task java_plugin {
+  deps = [prepare]
+  inputs = ["plugins/java/settings.gradle.kts", "plugins/java/build.gradle.kts", "plugins/java/gradle/plugin.versions.toml", "plugins/java/gradlew", "plugins/java/gradlew.bat", "plugins/java/gradle/wrapper/gradle-wrapper.jar", "plugins/java/gradle/wrapper/gradle-wrapper.properties", "plugins/java/src/**/*.java"]
+  outputs = [".bu1ld/plugins/org.bu1ld.java/0.1.0"]
+  command = os == "windows" ? ["cmd", "/c", "plugins\\java\\gradlew.bat", "-p", "plugins/java", "installBu1ldPlugin"] : ["./plugins/java/gradlew", "-p", "plugins/java", "installBu1ldPlugin"]
+}
+
+task java_plugin_verify {
+  deps = [java_plugin_check, java_plugin]
+  inputs = ["examples/java-plugin-smoke/build.bu1ld", "examples/java-plugin-smoke/src/**/*.java", "cmd/cli/**/*.go", "internal/**/*.go", "pkg/**/*.go"]
+  outputs = ["examples/java-plugin-smoke/build/libs/smoke.jar"]
+  command = [
+    "go",
+    "run",
+    "./cmd/cli",
+    "--no-cache",
+    "--project-dir",
+    "examples/java-plugin-smoke",
+    "--file",
+    "build.bu1ld",
+    "build",
+    "build"
+  ]
 }

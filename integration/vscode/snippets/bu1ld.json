@@ -30,6 +30,17 @@
     ],
     "description": "Declare the external Go plugin"
   },
+  "java plugin": {
+    "prefix": "plugin-java",
+    "body": [
+      "plugin java {",
+      "  source = local",
+      "  id = \"org.bu1ld.java\"",
+      "  version = \"${1:0.1.0}\"",
+      "}"
+    ],
+    "description": "Declare the external Java plugin"
+  },
   "task": {
     "prefix": "task",
     "body": [
@@ -63,6 +74,37 @@
       "}"
     ],
     "description": "Declare a Go test rule"
+  },
+  "java config": {
+    "prefix": "java-config",
+    "body": [
+      "java {",
+      "  name = \"${1:app}\"",
+      "  release = \"${2:17}\"",
+      "}"
+    ],
+    "description": "Configure the external Java plugin"
+  },
+  "java compile": {
+    "prefix": "java-compile",
+    "body": [
+      "java.compile ${1:compileGenerated} {",
+      "  srcs = [\"${2:generated/**/*.java}\"]",
+      "  out = \"${3:build/classes/java/generated}\"",
+      "}"
+    ],
+    "description": "Declare a native Java compile rule"
+  },
+  "java jar": {
+    "prefix": "java-jar",
+    "body": [
+      "java.jar ${1:package} {",
+      "  deps = [${2:compileJava}]",
+      "  classes = \"${3:build/classes/java/main}\"",
+      "  out = \"${4:build/libs/app.jar}\"",
+      "}"
+    ],
+    "description": "Declare a native Java jar rule"
   },
   "docker image": {
     "prefix": "docker-image",

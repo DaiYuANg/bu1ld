@@ -74,12 +74,7 @@ func shouldIgnoreFirstPassDiagnostic(item planodiag.Diagnostic) bool {
 	if item.Code != planodiag.CodeUnknownForm {
 		return false
 	}
-	const prefix = `unknown form "`
-	if !strings.HasPrefix(item.Message, prefix) || !strings.HasSuffix(item.Message, `"`) {
-		return false
-	}
-	name := strings.TrimSuffix(strings.TrimPrefix(item.Message, prefix), `"`)
-	return strings.Contains(name, ".")
+	return true
 }
 
 func dslErrorAt(fset *token.FileSet, pos token.Pos, format string, args ...any) error {

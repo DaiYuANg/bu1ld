@@ -59,6 +59,21 @@ func registerPluginRuleForms(compiler *planocomp.Compiler, registry *buildplugin
 		return oops.In("bu1ld.dsl").Wrapf(err, "read plugin schemas")
 	}
 	for _, metadata := range schemas {
+		if metadata.AutoConfigure || len(metadata.ConfigFields) > 0 {
+			spec := planschema.FormSpec{
+				Name:      metadata.Namespace,
+				LabelKind: planschema.LabelNone,
+				BodyMode:  planschema.BodyFieldOnly,
+				Fields:    planschema.Fields(pluginFieldSpecs(metadata.ConfigFields)...),
+				Docs:      metadata.ID + " plugin configuration.",
+			}
+			if err := compiler.RegisterForm(spec); err != nil {
+				return oops.In("bu1ld.dsl").
+					With("plugin", metadata.ID).
+					With("namespace", metadata.Namespace).
+					Wrapf(err, "register plugin config form")
+			}
+		}
 		for _, rule := range metadata.Rules {
 			spec := planschema.FormSpec{
 				Name:         metadata.Namespace + "." + rule.Name,
@@ -202,12 +217,12 @@ func shellActionSpec() planocomp.ActionSpec {
 }
 
 func pluginRuleFields(rule buildplugin.RuleSchema) *mapping.OrderedMap[string, planschema.FieldSpec] {
-	return planschema.Fields(pluginFieldSpecs(rule)...)
+	return planschema.Fields(pluginFieldSpecs(rule.Fields)...)
 }
 
-func pluginFieldSpecs(rule buildplugin.RuleSchema) []planschema.FieldSpec {
-	items := make([]planschema.FieldSpec, 0, len(rule.Fields))
-	for _, field := range rule.Fields {
+func pluginFieldSpecs(fields []buildplugin.FieldSchema) []planschema.FieldSpec {
+	items := make([]planschema.FieldSpec, 0, len(fields))
+	for _, field := range fields {
 		items = append(items, planschema.FieldSpec{
 			Name:     field.Name,
 			Type:     pluginFieldType(field),
@@ -243,7 +258,7 @@ func pluginFieldType(field buildplugin.FieldSchema) planschema.Type {
 
 func isPathStringField(name string) bool {
 	switch name {
-	case "main", "out", "path":
+	case "main", "out", "path", "build_dir", "classes_dir", "jar":
 		return true
 	default:
 		return false
@@ -252,7 +267,7 @@ func isPathStringField(name string) bool {
 
 func isPathListField(name string) bool {
 	switch name {
-	case "inputs", "outputs", "srcs":
+	case "inputs", "outputs", "srcs", "resources":
 		return true
 	default:
 		return false
