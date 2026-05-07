@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -116,6 +117,102 @@ plugin archive {
 	}
 }
 
+func TestPluginsSearchCommand(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	writeBuildFile(t, projectDir, ``)
+
+	var out bytes.Buffer
+	cmd := NewRootCommand(&out)
+	cmd.SetArgs([]string{"--project-dir", projectDir, "plugins", "search", "go"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	got := out.String()
+	for _, want := range []string{"ID", "org.bu1ld.go", "go", "0.1.0"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("output = %q, want substring %q", got, want)
+		}
+	}
+}
+
+func TestPluginsInfoCommand(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	writeBuildFile(t, projectDir, ``)
+
+	var out bytes.Buffer
+	cmd := NewRootCommand(&out)
+	cmd.SetArgs([]string{"--project-dir", projectDir, "plugins", "info", "org.bu1ld.java"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	got := out.String()
+	for _, want := range []string{"id: org.bu1ld.java", "namespace: java", "JPMS", "0.1.0"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("output = %q, want substring %q", got, want)
+		}
+	}
+}
+
+func TestPluginsInstallCommandInstallsFromExternalRegistry(t *testing.T) {
+	projectDir := t.TempDir()
+	registryDir := t.TempDir()
+	writeBuildFile(t, projectDir, ``)
+	t.Setenv("BU1LD_PLUGIN_REGISTRY", registryDir)
+
+	writeRegistryTestFile(t, filepath.Join(registryDir, "plugins.toml"), `
+version = 1
+
+[[plugins]]
+id = "org.example.echo"
+file = "plugins/org.example.echo.toml"
+`)
+	writeRegistryTestFile(t, filepath.Join(registryDir, "plugins", "org.example.echo.toml"), fmt.Sprintf(`
+id = "org.example.echo"
+namespace = "echo"
+description = "Test plugin"
+
+[[versions]]
+version = "0.1.0"
+
+[[versions.assets]]
+os = "%s"
+arch = "%s"
+url = "../assets/echo"
+format = "dir"
+`, runtime.GOOS, runtime.GOARCH))
+	writeRegistryTestFile(t, filepath.Join(registryDir, "assets", "echo", "plugin.toml"), `
+id = "org.example.echo"
+namespace = "echo"
+version = "0.1.0"
+binary = "echo"
+`)
+	writeRegistryTestFile(t, filepath.Join(registryDir, "assets", "echo", "echo"), "#!/bin/sh\n")
+
+	var out bytes.Buffer
+	cmd := NewRootCommand(&out)
+	cmd.SetArgs([]string{"--project-dir", projectDir, "plugins", "install", "org.example.echo"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "installed org.example.echo@0.1.0") {
+		t.Fatalf("output = %q, want install message", got)
+	}
+
+	manifest := filepath.Join(projectDir, ".bu1ld", "plugins", "org.example.echo", "0.1.0", "plugin.toml")
+	if _, err := os.Stat(manifest); err != nil {
+		t.Fatalf("installed manifest missing: %v", err)
+	}
+}
+
 func TestPluginsDoctorReportsLockChecksumMismatch(t *testing.T) {
 	t.Parallel()
 
@@ -212,4 +309,14 @@ func writeWrongPluginLock(projectDir, binary string) error {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	return nil
+}
+
+func writeRegistryTestFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
 }

@@ -254,6 +254,32 @@ binary = "bu1ld-rust"
 name = "binary"
 ```
 
+`bu1ld plugins search`, `bu1ld plugins info`, `bu1ld plugins install`, and
+`bu1ld plugins update` operate on the plugin distribution registry. The CLI
+embeds the first-party registry entries for `org.bu1ld.go` and
+`org.bu1ld.java`, while `BU1LD_PLUGIN_REGISTRY` can point at another
+`plugins.toml` file or directory:
+
+```bash
+bu1ld plugins search java
+bu1ld plugins info org.bu1ld.go
+bu1ld plugins install org.bu1ld.go@0.1.0
+BU1LD_PLUGIN_REGISTRY=./registry bu1ld plugins search
+```
+
+Registry plugin entries are TOML files referenced by an index:
+
+```toml
+version = 1
+
+[[plugins]]
+id = "org.example.rust"
+file = "plugins/org.example.rust.toml"
+```
+
+Each plugin entry declares versions and optional OS/arch assets. Assets can be
+`zip`, `tar`, `tar.gz`, or a local `dir` source for development registry tests.
+
 The first-party Go plugin is external. Build it with:
 
 ```bash
@@ -444,6 +470,9 @@ go run ./cmd/cli clean
 go run ./cmd/cli plugins list
 go run ./cmd/cli plugins doctor
 go run ./cmd/cli plugins lock
+go run ./cmd/cli plugins search go
+go run ./cmd/cli plugins info org.bu1ld.go
+go run ./cmd/cli plugins install org.bu1ld.go@0.1.0
 go run ./cmd/daemon status
 go run ./cmd/server status
 go run ./cmd/lsp stdio
@@ -462,6 +491,13 @@ the process protocol metadata request.
 `plugins lock` writes `bu1ld.lock` with declared plugin source, namespace, id,
 version, resolved path, and binary checksum. When `bu1ld.lock` exists,
 `plugins doctor` verifies locked plugin paths and checksums.
+
+`plugins search` and `plugins info` read the embedded first-party distribution
+registry unless `BU1LD_PLUGIN_REGISTRY` is set. `plugins install` installs a
+matching registry asset into `.bu1ld/plugins/<id>/<version>` by default, and
+`plugins install --global` targets `~/.bu1ld/plugins/<id>/<version>`.
+`plugins update` selects the latest matching version and replaces the installed
+copy.
 
 Project configuration is cached under `.bu1ld/cache/config/project.bin`.
 `bu1ld` reuses the evaluated task graph when the root build file, imported
@@ -543,8 +579,8 @@ goreleaser release --snapshot --clean --skip=publish
 Tagged releases are handled by `.github/workflows/release.yml`:
 
 ```bash
-git tag v0.1.0-alpha.1
-git push origin v0.1.0-alpha.1
+git tag v0.1.0
+git push origin v0.1.0
 ```
 
 The release workflow runs Go tests, Go plugin tests, the Java plugin Gradle

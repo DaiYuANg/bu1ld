@@ -33,6 +33,10 @@ const (
 	CommandPluginsList       CommandKind = "plugins.list"
 	CommandPluginsDoctor     CommandKind = "plugins.doctor"
 	CommandPluginsLock       CommandKind = "plugins.lock"
+	CommandPluginsSearch     CommandKind = "plugins.search"
+	CommandPluginsInfo       CommandKind = "plugins.info"
+	CommandPluginsInstall    CommandKind = "plugins.install"
+	CommandPluginsUpdate     CommandKind = "plugins.update"
 	CommandDaemonStatus      CommandKind = "daemon.status"
 	CommandDaemonStart       CommandKind = "daemon.start"
 	CommandDaemonStop        CommandKind = "daemon.stop"
@@ -42,12 +46,15 @@ const (
 )
 
 type CommandRequest struct {
-	Kind        CommandKind
-	Targets     []string
-	AllPackages bool
-	BaseRef     string
-	ForceWrite  bool
-	ListenAddr  string
+	Kind         CommandKind
+	Targets      []string
+	AllPackages  bool
+	BaseRef      string
+	ForceWrite   bool
+	ListenAddr   string
+	PluginQuery  string
+	PluginRef    string
+	PluginGlobal bool
 }
 
 type App struct {

@@ -1,0 +1,488 @@
+package pluginregistry
+
+import (
+	"context"
+	"embed"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+
+	"github.com/pelletier/go-toml/v2"
+	"github.com/samber/oops"
+)
+
+const (
+	defaultIndexFile = "plugins.toml"
+	embeddedRoot     = "catalog"
+)
+
+//go:embed catalog/plugins.toml catalog/plugins/*.toml
+var embeddedCatalog embed.FS
+
+type LoadOptions struct {
+	Source string
+	Client *http.Client
+}
+
+type Index struct {
+	Version int
+	Items   []Plugin
+}
+
+type IndexFile struct {
+	Version int         `toml:"version"`
+	Plugins []PluginRef `toml:"plugins"`
+}
+
+type PluginRef struct {
+	ID   string `toml:"id"`
+	File string `toml:"file"`
+}
+
+type Plugin struct {
+	ID          string          `toml:"id"`
+	Namespace   string          `toml:"namespace"`
+	Owner       string          `toml:"owner,omitempty"`
+	Description string          `toml:"description,omitempty"`
+	Homepage    string          `toml:"homepage,omitempty"`
+	Tags        []string        `toml:"tags,omitempty"`
+	Versions    []PluginVersion `toml:"versions,omitempty"`
+}
+
+type PluginVersion struct {
+	Version  string        `toml:"version"`
+	Bu1ld    string        `toml:"bu1ld,omitempty"`
+	Manifest string        `toml:"manifest,omitempty"`
+	Assets   []PluginAsset `toml:"assets,omitempty"`
+}
+
+type PluginAsset struct {
+	OS     string `toml:"os,omitempty"`
+	Arch   string `toml:"arch,omitempty"`
+	URL    string `toml:"url"`
+	SHA256 string `toml:"sha256,omitempty"`
+	Format string `toml:"format,omitempty"`
+}
+
+func Load(ctx context.Context, options LoadOptions) (*Index, error) {
+	if strings.TrimSpace(options.Source) == "" {
+		return LoadEmbedded()
+	}
+	if options.Client == nil {
+		options.Client = http.DefaultClient
+	}
+	return loadExternal(ctx, options)
+}
+
+func LoadEmbedded() (*Index, error) {
+	indexPath := filepath.ToSlash(filepath.Join(embeddedRoot, defaultIndexFile))
+	data, err := embeddedCatalog.ReadFile(indexPath)
+	if err != nil {
+		return nil, oops.In("bu1ld.plugin_registry").
+			With("file", indexPath).
+			Wrapf(err, "read embedded plugin registry")
+	}
+	indexFile, err := parseIndexFile(indexPath, data)
+	if err != nil {
+		return nil, err
+	}
+
+	plugins := make([]Plugin, 0, len(indexFile.Plugins))
+	for _, ref := range indexFile.Plugins {
+		path := filepath.ToSlash(filepath.Join(embeddedRoot, ref.File))
+		data, err := embeddedCatalog.ReadFile(path)
+		if err != nil {
+			return nil, oops.In("bu1ld.plugin_registry").
+				With("file", path).
+				Wrapf(err, "read embedded plugin registry entry")
+		}
+		plugin, err := parsePluginFile(path, data)
+		if err != nil {
+			return nil, err
+		}
+		if plugin.ID != ref.ID {
+			return nil, oops.In("bu1ld.plugin_registry").
+				With("file", path).
+				With("plugin", plugin.ID).
+				With("index_plugin", ref.ID).
+				Errorf("registry plugin id %q does not match index id %q", plugin.ID, ref.ID)
+		}
+		plugins = append(plugins, plugin)
+	}
+	return newIndex(indexFile.Version, plugins)
+}
+
+func (i *Index) Search(query string) []Plugin {
+	query = strings.ToLower(strings.TrimSpace(query))
+	items := slices.Clone(i.Items)
+	if query == "" {
+		return items
+	}
+	values := make([]Plugin, 0, len(items))
+	for _, item := range items {
+		if item.matches(query) {
+			values = append(values, item)
+		}
+	}
+	return values
+}
+
+func (i *Index) Find(id string) (Plugin, bool) {
+	for _, item := range i.Items {
+		if item.ID == id {
+			return item, true
+		}
+	}
+	return Plugin{}, false
+}
+
+func (p Plugin) LatestVersion() (PluginVersion, bool) {
+	if len(p.Versions) == 0 {
+		return PluginVersion{}, false
+	}
+	return p.Versions[0], true
+}
+
+func (p Plugin) Version(version string) (PluginVersion, bool) {
+	for _, item := range p.Versions {
+		if item.Version == version {
+			return item, true
+		}
+	}
+	return PluginVersion{}, false
+}
+
+func (v PluginVersion) Asset(goos, goarch string) (PluginAsset, bool) {
+	for _, asset := range v.Assets {
+		if asset.OS == goos && asset.Arch == goarch {
+			return asset, true
+		}
+	}
+	for _, asset := range v.Assets {
+		if asset.OS == "" && asset.Arch == "" {
+			return asset, true
+		}
+	}
+	return PluginAsset{}, false
+}
+
+func ParseRef(ref string) (id string, version string, err error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return "", "", fmt.Errorf("plugin reference is required")
+	}
+	id, version, _ = strings.Cut(ref, "@")
+	id = strings.TrimSpace(id)
+	version = strings.TrimSpace(version)
+	if id == "" {
+		return "", "", fmt.Errorf("plugin id is required")
+	}
+	return id, version, nil
+}
+
+func Select(index *Index, ref string) (Plugin, PluginVersion, error) {
+	id, version, err := ParseRef(ref)
+	if err != nil {
+		return Plugin{}, PluginVersion{}, err
+	}
+	plugin, ok := index.Find(id)
+	if !ok {
+		return Plugin{}, PluginVersion{}, fmt.Errorf("plugin %q was not found in the registry", id)
+	}
+	if version != "" {
+		item, ok := plugin.Version(version)
+		if !ok {
+			return Plugin{}, PluginVersion{}, fmt.Errorf("plugin %q version %q was not found in the registry", id, version)
+		}
+		return plugin, item, nil
+	}
+	item, ok := plugin.LatestVersion()
+	if !ok {
+		return Plugin{}, PluginVersion{}, fmt.Errorf("plugin %q has no versions in the registry", id)
+	}
+	return plugin, item, nil
+}
+
+func loadExternal(ctx context.Context, options LoadOptions) (*Index, error) {
+	source := strings.TrimSpace(options.Source)
+	data, indexBase, err := readRegistryFile(ctx, options.Client, source)
+	if err != nil {
+		return nil, err
+	}
+	indexFile, err := parseIndexFile(source, data)
+	if err != nil {
+		return nil, err
+	}
+
+	plugins := make([]Plugin, 0, len(indexFile.Plugins))
+	for _, ref := range indexFile.Plugins {
+		entrySource, err := resolveRegistryRef(indexBase, ref.File)
+		if err != nil {
+			return nil, err
+		}
+		data, entryBase, err := readRegistryFile(ctx, options.Client, entrySource)
+		if err != nil {
+			return nil, err
+		}
+		plugin, err := parsePluginFile(entrySource, data)
+		if err != nil {
+			return nil, err
+		}
+		if plugin.ID != ref.ID {
+			return nil, oops.In("bu1ld.plugin_registry").
+				With("file", entrySource).
+				With("plugin", plugin.ID).
+				With("index_plugin", ref.ID).
+				Errorf("registry plugin id %q does not match index id %q", plugin.ID, ref.ID)
+		}
+		resolvePluginAssets(&plugin, entryBase)
+		plugins = append(plugins, plugin)
+	}
+	return newIndex(indexFile.Version, plugins)
+}
+
+func readRegistryFile(ctx context.Context, client *http.Client, source string) ([]byte, string, error) {
+	if isHTTPURL(source) {
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
+		if err != nil {
+			return nil, "", oops.In("bu1ld.plugin_registry").
+				With("url", source).
+				Wrapf(err, "create plugin registry request")
+		}
+		response, err := client.Do(request)
+		if err != nil {
+			return nil, "", oops.In("bu1ld.plugin_registry").
+				With("url", source).
+				Wrapf(err, "fetch plugin registry")
+		}
+		defer response.Body.Close()
+		if response.StatusCode < 200 || response.StatusCode >= 300 {
+			return nil, "", oops.In("bu1ld.plugin_registry").
+				With("url", source).
+				With("status", response.Status).
+				Errorf("fetch plugin registry returned %s", response.Status)
+		}
+		data, err := io.ReadAll(response.Body)
+		if err != nil {
+			return nil, "", oops.In("bu1ld.plugin_registry").
+				With("url", source).
+				Wrapf(err, "read plugin registry response")
+		}
+		return data, source, nil
+	}
+
+	path, err := registryPath(source)
+	if err != nil {
+		return nil, "", err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, "", oops.In("bu1ld.plugin_registry").
+			With("file", path).
+			Wrapf(err, "read plugin registry")
+	}
+	return data, path, nil
+}
+
+func parseIndexFile(path string, data []byte) (IndexFile, error) {
+	var index IndexFile
+	if err := toml.Unmarshal(data, &index); err != nil {
+		return IndexFile{}, oops.In("bu1ld.plugin_registry").
+			With("file", path).
+			Wrapf(err, "parse plugin registry")
+	}
+	if index.Version == 0 {
+		return IndexFile{}, oops.In("bu1ld.plugin_registry").
+			With("file", path).
+			New("plugin registry version is required")
+	}
+	for _, plugin := range index.Plugins {
+		if strings.TrimSpace(plugin.ID) == "" {
+			return IndexFile{}, oops.In("bu1ld.plugin_registry").
+				With("file", path).
+				New("registry plugin id is required")
+		}
+		if strings.TrimSpace(plugin.File) == "" {
+			return IndexFile{}, oops.In("bu1ld.plugin_registry").
+				With("file", path).
+				With("plugin", plugin.ID).
+				New("registry plugin file is required")
+		}
+	}
+	return index, nil
+}
+
+func parsePluginFile(path string, data []byte) (Plugin, error) {
+	var plugin Plugin
+	if err := toml.Unmarshal(data, &plugin); err != nil {
+		return Plugin{}, oops.In("bu1ld.plugin_registry").
+			With("file", path).
+			Wrapf(err, "parse plugin registry entry")
+	}
+	if strings.TrimSpace(plugin.ID) == "" {
+		return Plugin{}, oops.In("bu1ld.plugin_registry").
+			With("file", path).
+			New("registry plugin id is required")
+	}
+	if strings.TrimSpace(plugin.Namespace) == "" {
+		return Plugin{}, oops.In("bu1ld.plugin_registry").
+			With("file", path).
+			With("plugin", plugin.ID).
+			New("registry plugin namespace is required")
+	}
+	for _, version := range plugin.Versions {
+		if strings.TrimSpace(version.Version) == "" {
+			return Plugin{}, oops.In("bu1ld.plugin_registry").
+				With("file", path).
+				With("plugin", plugin.ID).
+				New("registry plugin version is required")
+		}
+	}
+	return plugin, nil
+}
+
+func newIndex(version int, plugins []Plugin) (*Index, error) {
+	if version == 0 {
+		return nil, oops.In("bu1ld.plugin_registry").New("plugin registry version is required")
+	}
+	items := slices.Clone(plugins)
+	slices.SortFunc(items, func(left, right Plugin) int {
+		return strings.Compare(left.ID, right.ID)
+	})
+	return &Index{Version: version, Items: items}, nil
+}
+
+func (p Plugin) matches(query string) bool {
+	values := []string{
+		p.ID,
+		p.Namespace,
+		p.Owner,
+		p.Description,
+		p.Homepage,
+		strings.Join(p.Tags, " "),
+	}
+	for _, value := range values {
+		if strings.Contains(strings.ToLower(value), query) {
+			return true
+		}
+	}
+	return false
+}
+
+func registryPath(source string) (string, error) {
+	if strings.HasPrefix(source, "file://") {
+		path, err := fileURLPath(source)
+		if err != nil {
+			return "", err
+		}
+		info, statErr := os.Stat(path)
+		if statErr == nil && info.IsDir() {
+			return filepath.Join(path, defaultIndexFile), nil
+		}
+		return path, nil
+	}
+	info, err := os.Stat(source)
+	if err == nil && info.IsDir() {
+		return filepath.Join(source, defaultIndexFile), nil
+	}
+	if err == nil {
+		return source, nil
+	}
+	if os.IsNotExist(err) && filepath.Ext(source) == "" {
+		return filepath.Join(source, defaultIndexFile), nil
+	}
+	return source, nil
+}
+
+func resolveRegistryRef(base, ref string) (string, error) {
+	if isHTTPURL(ref) || strings.HasPrefix(ref, "file://") || filepath.IsAbs(ref) {
+		return ref, nil
+	}
+	if isHTTPURL(base) {
+		baseURL, err := url.Parse(base)
+		if err != nil {
+			return "", oops.In("bu1ld.plugin_registry").
+				With("url", base).
+				Wrapf(err, "parse plugin registry url")
+		}
+		refURL, err := url.Parse(ref)
+		if err != nil {
+			return "", oops.In("bu1ld.plugin_registry").
+				With("url", ref).
+				Wrapf(err, "parse plugin registry entry url")
+		}
+		return baseURL.ResolveReference(refURL).String(), nil
+	}
+	if strings.HasPrefix(base, "file://") {
+		path, err := fileURLPath(base)
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(filepath.Dir(path), filepath.FromSlash(ref)), nil
+	}
+	if filepath.IsAbs(ref) {
+		return ref, nil
+	}
+	return filepath.Join(filepath.Dir(base), filepath.FromSlash(ref)), nil
+}
+
+func resolvePluginAssets(plugin *Plugin, base string) {
+	for versionIndex := range plugin.Versions {
+		version := &plugin.Versions[versionIndex]
+		for assetIndex := range version.Assets {
+			asset := &version.Assets[assetIndex]
+			asset.URL = resolveAssetURL(base, asset.URL)
+		}
+	}
+}
+
+func resolveAssetURL(base, assetURL string) string {
+	if assetURL == "" || isHTTPURL(assetURL) || strings.HasPrefix(assetURL, "file://") || filepath.IsAbs(assetURL) {
+		return assetURL
+	}
+	if isHTTPURL(base) {
+		baseURL, err := url.Parse(base)
+		if err != nil {
+			return assetURL
+		}
+		refURL, err := url.Parse(assetURL)
+		if err != nil {
+			return assetURL
+		}
+		return baseURL.ResolveReference(refURL).String()
+	}
+	if strings.HasPrefix(base, "file://") {
+		path, err := fileURLPath(base)
+		if err != nil {
+			return assetURL
+		}
+		return filepath.Join(filepath.Dir(path), filepath.FromSlash(assetURL))
+	}
+	return filepath.Join(filepath.Dir(base), filepath.FromSlash(assetURL))
+}
+
+func isHTTPURL(value string) bool {
+	return strings.HasPrefix(value, "https://") || strings.HasPrefix(value, "http://")
+}
+
+func fileURLPath(value string) (string, error) {
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return "", oops.In("bu1ld.plugin_registry").
+			With("url", value).
+			Wrapf(err, "parse file url")
+	}
+	path := parsed.Path
+	if parsed.Host != "" {
+		path = "//" + parsed.Host + path
+	}
+	if len(path) >= 3 && path[0] == '/' && path[2] == ':' {
+		path = path[1:]
+	}
+	return filepath.FromSlash(path), nil
+}

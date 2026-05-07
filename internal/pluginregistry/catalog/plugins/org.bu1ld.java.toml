@@ -1,0 +1,11 @@
+id = "org.bu1ld.java"
+namespace = "java"
+owner = "bu1ld"
+description = "First-party Java build plugin with JPMS compiler tasks and jpackage distribution."
+homepage = "https://github.com/DaiYuANg/bu1ld"
+tags = ["java", "jpms", "javac", "jpackage"]
+
+[[versions]]
+version = "0.1.0"
+bu1ld = ">=0.1.0"
+manifest = "plugin.toml"

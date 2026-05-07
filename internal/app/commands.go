@@ -25,6 +25,14 @@ func (a *App) handlers() map[CommandKind]commandHandler {
 		CommandPluginsList:   func(ctx context.Context) error { return a.printPlugins(ctx, false) },
 		CommandPluginsDoctor: a.printPluginsDoctor,
 		CommandPluginsLock:   a.writePluginsLock,
+		CommandPluginsSearch: a.printPluginRegistrySearch,
+		CommandPluginsInfo:   a.printPluginRegistryInfo,
+		CommandPluginsInstall: func(ctx context.Context) error {
+			return a.installRegistryPlugin(ctx, a.request.ForceWrite, "installed")
+		},
+		CommandPluginsUpdate: func(ctx context.Context) error {
+			return a.installRegistryPlugin(ctx, true, "updated")
+		},
 		CommandDaemonStatus: func(context.Context) error {
 			return writeLine(a.output, "daemon status: unavailable (not implemented)")
 		},

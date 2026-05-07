@@ -1,0 +1,9 @@
+version = 1
+
+[[plugins]]
+id = "org.bu1ld.go"
+file = "plugins/org.bu1ld.go.toml"
+
+[[plugins]]
+id = "org.bu1ld.java"
+file = "plugins/org.bu1ld.java.toml"
