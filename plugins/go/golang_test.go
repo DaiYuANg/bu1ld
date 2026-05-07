@@ -62,6 +62,48 @@ func TestExpandBinary(t *testing.T) {
 	}
 }
 
+func TestExpandReleaseDefaultsToEmbeddedGoReleaser(t *testing.T) {
+	tasks, err := New().Expand(context.Background(), pluginapi.Invocation{
+		Namespace: "go",
+		Rule:      "release",
+		Target:    "release",
+		Fields:    map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("Expand() error = %v", err)
+	}
+	if got, want := len(tasks), 1; got != want {
+		t.Fatalf("task count = %d, want %d", got, want)
+	}
+	task := tasks[0]
+	if got, want := task.Outputs, []string{"dist/**"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("outputs = %#v, want %#v", got, want)
+	}
+	if got, want := task.Action.Kind, pluginapi.PluginExecActionKind; got != want {
+		t.Fatalf("action kind = %q, want %q", got, want)
+	}
+	params, ok := task.Action.Params["params"].(map[string]any)
+	if !ok {
+		t.Fatalf("action params type = %T, want map[string]any", task.Action.Params["params"])
+	}
+	if got, want := params["config"], ".goreleaser.yaml"; got != want {
+		t.Fatalf("config = %q, want %q", got, want)
+	}
+	args, ok := params["args"].([]string)
+	if !ok {
+		t.Fatalf("args type = %T, want []string", params["args"])
+	}
+	if got, want := strings.Join(args, " "), "release --snapshot --clean --skip=publish"; got != want {
+		t.Fatalf("args = %q, want %q", got, want)
+	}
+	if got, want := params["module"], DefaultGoReleaserModule; got != want {
+		t.Fatalf("module = %q, want %q", got, want)
+	}
+	if got, want := params["version"], DefaultGoReleaserVersion; got != want {
+		t.Fatalf("version = %q, want %q", got, want)
+	}
+}
+
 func TestExecuteInjectsGOCACHEPROGFromEnvironment(t *testing.T) {
 	restoreEnv(t, goEnvKeys()...)
 
@@ -160,6 +202,49 @@ func TestExecuteDerivesGOCACHEPROGFromRemoteCacheEnvironment(t *testing.T) {
 	}
 }
 
+func TestExecuteReleaseFallsBackToGoRunGoReleaser(t *testing.T) {
+	restoreEnv(t, goEnvKeys()...)
+
+	workDir := t.TempDir()
+	binDir := t.TempDir()
+	argsFile := filepath.Join(workDir, "goreleaser-args.txt")
+	writeFakeGoArgs(t, binDir)
+
+	t.Setenv("PATH", binDir)
+	t.Setenv("BU1LD_FAKE_GO_ARGS", argsFile)
+
+	_, err := New().Execute(context.Background(), pluginapi.ExecuteRequest{
+		Action:  "release",
+		WorkDir: workDir,
+		Params: map[string]any{
+			"config":       ".goreleaser.yaml",
+			"args":         []any{"check"},
+			"version":      "v2.15.4",
+			"prefer_local": false,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	data, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	got := strings.TrimSpace(string(data))
+	for _, want := range []string{
+		"run",
+		"github.com/goreleaser/goreleaser/v2@v2.15.4",
+		"--config",
+		".goreleaser.yaml",
+		"check",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("go args = %q, want to contain %q", got, want)
+		}
+	}
+}
+
 func goEnvKeys() []string {
 	return []string{
 		"BU1LD_GO__CACHEPROG",
@@ -171,6 +256,7 @@ func goEnvKeys() []string {
 		"GOCACHEPROG",
 		"PATH",
 		"BU1LD_FAKE_GO_ENV",
+		"BU1LD_FAKE_GO_ARGS",
 	}
 }
 
@@ -188,6 +274,25 @@ func writeFakeGo(t *testing.T, dir string) {
 
 	path := filepath.Join(dir, "go")
 	content := "#!/bin/sh\nprintf '%s' \"$GOCACHEPROG\" > \"$BU1LD_FAKE_GO_ENV\"\n"
+	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
+		t.Fatalf("WriteFile(%s) error = %v", path, err)
+	}
+}
+
+func writeFakeGoArgs(t *testing.T, dir string) {
+	t.Helper()
+
+	if runtime.GOOS == "windows" {
+		path := filepath.Join(dir, "go.bat")
+		content := "@echo off\r\necho %*> \"%BU1LD_FAKE_GO_ARGS%\"\r\n"
+		if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
+			t.Fatalf("WriteFile(%s) error = %v", path, err)
+		}
+		return
+	}
+
+	path := filepath.Join(dir, "go")
+	content := "#!/bin/sh\nprintf '%s' \"$*\" > \"$BU1LD_FAKE_GO_ARGS\"\n"
 	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
 		t.Fatalf("WriteFile(%s) error = %v", path, err)
 	}

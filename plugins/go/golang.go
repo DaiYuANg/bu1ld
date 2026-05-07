@@ -13,8 +13,14 @@ import (
 )
 
 const (
-	DefaultID = "org.bu1ld.go"
-	Namespace = "go"
+	DefaultID                    = "org.bu1ld.go"
+	Namespace                    = "go"
+	DefaultGoReleaserModule      = "github.com/goreleaser/goreleaser/v2"
+	DefaultGoReleaserVersion     = "v2.15.4"
+	DefaultGoReleaserCommand     = "goreleaser"
+	defaultGoReleaserConfig      = ".goreleaser.yaml"
+	defaultGoReleaserOutput      = "dist/**"
+	defaultGoReleaserReleaseMode = "snapshot"
 )
 
 type Plugin struct {
@@ -58,6 +64,21 @@ func (p *Plugin) Metadata() (pluginapi.Metadata, error) {
 					{Name: "cacheprog", Type: pluginapi.FieldString},
 				},
 			},
+			{
+				Name: "release",
+				Fields: []pluginapi.FieldSchema{
+					{Name: "deps", Type: pluginapi.FieldList},
+					{Name: "inputs", Type: pluginapi.FieldList},
+					{Name: "outputs", Type: pluginapi.FieldList},
+					{Name: "config", Type: pluginapi.FieldString},
+					{Name: "args", Type: pluginapi.FieldList},
+					{Name: "mode", Type: pluginapi.FieldString},
+					{Name: "command", Type: pluginapi.FieldString},
+					{Name: "module", Type: pluginapi.FieldString},
+					{Name: "version", Type: pluginapi.FieldString},
+					{Name: "prefer_local", Type: pluginapi.FieldBool},
+				},
+			},
 		},
 	}, nil
 }
@@ -72,6 +93,12 @@ func (p *Plugin) Expand(_ context.Context, invocation pluginapi.Invocation) ([]p
 		return []pluginapi.TaskSpec{task}, nil
 	case "test":
 		task, err := expandTest(invocation)
+		if err != nil {
+			return nil, err
+		}
+		return []pluginapi.TaskSpec{task}, nil
+	case "release":
+		task, err := expandRelease(invocation)
 		if err != nil {
 			return nil, err
 		}
@@ -145,6 +172,67 @@ func expandTest(invocation pluginapi.Invocation) (pluginapi.TaskSpec, error) {
 	}, nil
 }
 
+func expandRelease(invocation pluginapi.Invocation) (pluginapi.TaskSpec, error) {
+	deps, err := invocation.OptionalList("deps", nil)
+	if err != nil {
+		return pluginapi.TaskSpec{}, fmt.Errorf("read go.release deps field: %w", err)
+	}
+	inputs, err := invocation.OptionalList("inputs", []string{defaultGoReleaserConfig, "go.mod", "go.sum", "**/*.go"})
+	if err != nil {
+		return pluginapi.TaskSpec{}, fmt.Errorf("read go.release inputs field: %w", err)
+	}
+	outputs, err := invocation.OptionalList("outputs", []string{defaultGoReleaserOutput})
+	if err != nil {
+		return pluginapi.TaskSpec{}, fmt.Errorf("read go.release outputs field: %w", err)
+	}
+	config, err := invocation.OptionalString("config", defaultGoReleaserConfig)
+	if err != nil {
+		return pluginapi.TaskSpec{}, fmt.Errorf("read go.release config field: %w", err)
+	}
+	args, err := invocation.OptionalList("args", nil)
+	if err != nil {
+		return pluginapi.TaskSpec{}, fmt.Errorf("read go.release args field: %w", err)
+	}
+	mode, err := invocation.OptionalString("mode", defaultGoReleaserReleaseMode)
+	if err != nil {
+		return pluginapi.TaskSpec{}, fmt.Errorf("read go.release mode field: %w", err)
+	}
+	command, err := invocation.OptionalString("command", "")
+	if err != nil {
+		return pluginapi.TaskSpec{}, fmt.Errorf("read go.release command field: %w", err)
+	}
+	module, err := invocation.OptionalString("module", DefaultGoReleaserModule)
+	if err != nil {
+		return pluginapi.TaskSpec{}, fmt.Errorf("read go.release module field: %w", err)
+	}
+	version, err := invocation.OptionalString("version", DefaultGoReleaserVersion)
+	if err != nil {
+		return pluginapi.TaskSpec{}, fmt.Errorf("read go.release version field: %w", err)
+	}
+	preferLocal, err := invocation.OptionalBool("prefer_local", true)
+	if err != nil {
+		return pluginapi.TaskSpec{}, fmt.Errorf("read go.release prefer_local field: %w", err)
+	}
+
+	if len(args) == 0 {
+		args = goReleaserModeArgs(mode)
+	}
+	return pluginapi.TaskSpec{
+		Name:    invocation.Target,
+		Deps:    deps,
+		Inputs:  inputs,
+		Outputs: outputs,
+		Action: pluginAction("release", map[string]any{
+			"config":       config,
+			"args":         args,
+			"command":      command,
+			"module":       module,
+			"version":      version,
+			"prefer_local": preferLocal,
+		}),
+	}, nil
+}
+
 func (p *Plugin) Execute(ctx context.Context, request pluginapi.ExecuteRequest) (pluginapi.ExecuteResult, error) {
 	switch request.Action {
 	case "binary":
@@ -163,15 +251,64 @@ func (p *Plugin) Execute(ctx context.Context, request pluginapi.ExecuteRequest) 
 			return pluginapi.ExecuteResult{}, err
 		}
 		return runGo(ctx, request.WorkDir, append([]string{"test"}, packages...), request.Params)
+	case "release":
+		return runGoReleaser(ctx, request.WorkDir, request.Params)
 	default:
 		return pluginapi.ExecuteResult{}, fmt.Errorf("unknown go action %q", request.Action)
 	}
 }
 
+func runGoReleaser(ctx context.Context, workDir string, params map[string]any) (pluginapi.ExecuteResult, error) {
+	args, err := actionList(params, "args", goReleaserModeArgs(defaultGoReleaserReleaseMode))
+	if err != nil {
+		return pluginapi.ExecuteResult{}, err
+	}
+	config, err := actionString(params, "config", false, defaultGoReleaserConfig)
+	if err != nil {
+		return pluginapi.ExecuteResult{}, err
+	}
+	args = goReleaserArgs(config, args)
+
+	command, err := actionString(params, "command", false, "")
+	if err != nil {
+		return pluginapi.ExecuteResult{}, err
+	}
+	preferLocal, err := actionBool(params, "prefer_local", true)
+	if err != nil {
+		return pluginapi.ExecuteResult{}, err
+	}
+	if command == "" && preferLocal {
+		if path, lookErr := exec.LookPath(DefaultGoReleaserCommand); lookErr == nil {
+			command = path
+		}
+	}
+	if command != "" {
+		return runCommand(ctx, workDir, command, args, os.Environ())
+	}
+
+	module, err := actionString(params, "module", false, DefaultGoReleaserModule)
+	if err != nil {
+		return pluginapi.ExecuteResult{}, err
+	}
+	version, err := actionString(params, "version", false, DefaultGoReleaserVersion)
+	if err != nil {
+		return pluginapi.ExecuteResult{}, err
+	}
+	if strings.TrimSpace(version) != "" {
+		module += "@" + strings.TrimSpace(version)
+	}
+	goArgs := append([]string{"run", module}, args...)
+	return runCommand(ctx, workDir, "go", goArgs, os.Environ())
+}
+
 func runGo(ctx context.Context, workDir string, args []string, params map[string]any) (pluginapi.ExecuteResult, error) {
-	cmd := exec.CommandContext(ctx, "go", args...)
+	return runCommand(ctx, workDir, "go", args, goEnv(params))
+}
+
+func runCommand(ctx context.Context, workDir, name string, args []string, env []string) (pluginapi.ExecuteResult, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = workDir
-	cmd.Env = goEnv(params)
+	cmd.Env = env
 
 	var output bytes.Buffer
 	cmd.Stdout = &output
@@ -179,11 +316,40 @@ func runGo(ctx context.Context, workDir string, args []string, params map[string
 	if err := cmd.Run(); err != nil {
 		text := strings.TrimSpace(output.String())
 		if text == "" {
-			return pluginapi.ExecuteResult{}, fmt.Errorf("go %s: %w", strings.Join(args, " "), err)
+			return pluginapi.ExecuteResult{}, fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
 		}
-		return pluginapi.ExecuteResult{}, fmt.Errorf("go %s: %w\n%s", strings.Join(args, " "), err, text)
+		return pluginapi.ExecuteResult{}, fmt.Errorf("%s %s: %w\n%s", name, strings.Join(args, " "), err, text)
 	}
 	return pluginapi.ExecuteResult{Output: output.String()}, nil
+}
+
+func goReleaserModeArgs(mode string) []string {
+	switch strings.TrimSpace(strings.ToLower(mode)) {
+	case "release":
+		return []string{"release", "--clean"}
+	case "check":
+		return []string{"check"}
+	case "", "snapshot":
+		return []string{"release", "--snapshot", "--clean", "--skip=publish"}
+	default:
+		return []string{mode}
+	}
+}
+
+func goReleaserArgs(config string, args []string) []string {
+	if strings.TrimSpace(config) == "" || hasConfigArg(args) {
+		return args
+	}
+	return append([]string{"--config", strings.TrimSpace(config)}, args...)
+}
+
+func hasConfigArg(args []string) bool {
+	for _, arg := range args {
+		if arg == "-f" || arg == "--config" || strings.HasPrefix(arg, "--config=") {
+			return true
+		}
+	}
+	return false
 }
 
 func goEnv(params map[string]any) []string {
@@ -290,6 +456,18 @@ func actionList(params map[string]any, name string, fallback []string) ([]string
 	default:
 		return nil, fmt.Errorf("go action param %q must be list", name)
 	}
+}
+
+func actionBool(params map[string]any, name string, fallback bool) (bool, error) {
+	value, ok := params[name]
+	if !ok || value == nil {
+		return fallback, nil
+	}
+	enabled, ok := value.(bool)
+	if !ok {
+		return false, fmt.Errorf("go action param %q must be bool", name)
+	}
+	return enabled, nil
 }
 
 func goInputs(invocation pluginapi.Invocation) ([]string, error) {

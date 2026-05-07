@@ -1,0 +1,13 @@
+id = "org.bu1ld.go"
+namespace = "go"
+version = "0.1.0"
+binary = "bu1ld-go-plugin"
+
+[[rules]]
+name = "binary"
+
+[[rules]]
+name = "test"
+
+[[rules]]
+name = "release"

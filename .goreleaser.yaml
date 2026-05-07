@@ -1,0 +1,158 @@
+version: 2
+
+project_name: bu1ld
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: bu1ld
+    main: ./cmd/cli
+    binary: bu1ld
+    env: &build_env
+      - CGO_ENABLED=0
+    flags: &build_flags
+      - -trimpath
+    ldflags: &build_ldflags
+      - -s -w
+    targets: &build_targets
+      - linux_amd64_v1
+      - linux_arm64
+      - darwin_amd64_v1
+      - darwin_arm64
+      - windows_amd64_v1
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+  - id: bu1ld-server
+    main: ./cmd/server
+    binary: bu1ld-server
+    env: *build_env
+    flags: *build_flags
+    ldflags: *build_ldflags
+    targets: *build_targets
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+  - id: bu1ld-daemon
+    main: ./cmd/daemon
+    binary: bu1ld-daemon
+    env: *build_env
+    flags: *build_flags
+    ldflags: *build_ldflags
+    targets: *build_targets
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+  - id: bu1ld-lsp
+    main: ./cmd/lsp
+    binary: bu1ld-lsp
+    env: *build_env
+    flags: *build_flags
+    ldflags: *build_ldflags
+    targets: *build_targets
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+  - id: bu1ld-go-cacheprog
+    main: ./cmd/bu1ld-go-cacheprog
+    binary: bu1ld-go-cacheprog
+    env: *build_env
+    flags: *build_flags
+    ldflags: *build_ldflags
+    targets: *build_targets
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+  - id: bu1ld-go-plugin
+    dir: ./plugins/go
+    main: ./cmd/bu1ld-go-plugin
+    binary: bu1ld-go-plugin
+    env: *build_env
+    flags: *build_flags
+    ldflags: *build_ldflags
+    targets: *build_targets
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: binaries
+    ids:
+      - bu1ld
+      - bu1ld-server
+      - bu1ld-daemon
+      - bu1ld-lsp
+      - bu1ld-go-cacheprog
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - README.md
+    allow_different_binary_count: true
+
+  - id: go-plugin
+    ids:
+      - bu1ld-go-plugin
+    name_template: "bu1ld-go-plugin_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - src: plugins/go/plugin.toml
+        dst: plugin.toml
+
+nfpms:
+  - id: linux-packages
+    package_name: bu1ld
+    file_name_template: "{{ .ConventionalFileName }}"
+    ids:
+      - bu1ld
+      - bu1ld-server
+      - bu1ld-daemon
+      - bu1ld-lsp
+      - bu1ld-go-cacheprog
+    vendor: bu1ld
+    homepage: https://github.com/DaiYuANg/bu1ld
+    maintainer: DaiYuANg
+    description: |-
+      Cross-language build tool prototype with external plugins and remote cache.
+    section: devel
+    priority: optional
+    bindir: /usr/bin
+    formats:
+      - deb
+      - rpm
+
+  - id: go-plugin-linux-packages
+    package_name: bu1ld-go-plugin
+    file_name_template: "{{ .ConventionalFileName }}"
+    ids:
+      - bu1ld-go-plugin
+    vendor: bu1ld
+    homepage: https://github.com/DaiYuANg/bu1ld
+    maintainer: DaiYuANg
+    description: |-
+      First-party external Go plugin for bu1ld.
+    section: devel
+    priority: optional
+    bindir: /usr/bin
+    contents:
+      - src: plugins/go/plugin.toml
+        dst: /usr/share/bu1ld/plugins/org.bu1ld.go/plugin.toml
+    formats:
+      - deb
+      - rpm
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"

@@ -17,10 +17,31 @@ task go_plugin {
   command = ["go", "build", "-C", "plugins/go", "-o", "../../dist/bu1ld-go-plugin" + (os == "windows" ? ".exe" : ""), "./cmd/bu1ld-go-plugin"]
 }
 
+task go_cacheprog {
+  deps = [prepare, test]
+  inputs = ["build.bu1ld", "go.mod", "go.sum", "cmd/bu1ld-go-cacheprog/**/*.go", "internal/cache/**/*.go", "internal/gocacheprog/**/*.go", "internal/snapshot/**/*.go"]
+  outputs = ["dist/bu1ld-go-cacheprog" + (os == "windows" ? ".exe" : "")]
+  command = ["go", "build", "-o", "dist/bu1ld-go-cacheprog" + (os == "windows" ? ".exe" : ""), "./cmd/bu1ld-go-cacheprog"]
+}
+
 task java_plugin_check {
   deps = [prepare]
   inputs = ["plugins/java/settings.gradle.kts", "plugins/java/build.gradle.kts", "plugins/java/gradle/plugin.versions.toml", "plugins/java/gradlew", "plugins/java/gradlew.bat", "plugins/java/gradle/wrapper/gradle-wrapper.jar", "plugins/java/gradle/wrapper/gradle-wrapper.properties", "plugins/java/src/**/*.java"]
   command = os == "windows" ? ["cmd", "/c", "plugins\\java\\gradlew.bat", "-p", "plugins/java", "check"] : ["./plugins/java/gradlew", "-p", "plugins/java", "check"]
+}
+
+task goreleaser_snapshot {
+  deps = [test]
+  inputs = [".goreleaser.yaml", "go.work", "go.mod", "go.sum", "cmd/**/*.go", "internal/**/*.go", "pkg/**/*.go", "plugins/go/.goreleaser.yaml", "plugins/go/go.mod", "plugins/go/plugin.toml", "plugins/go/**/*.go"]
+  outputs = ["dist/**"]
+  command = ["goreleaser", "release", "--snapshot", "--clean", "--skip=publish"]
+}
+
+task go_plugin_goreleaser_snapshot {
+  deps = [test]
+  inputs = ["plugins/go/.goreleaser.yaml", "plugins/go/go.mod", "plugins/go/plugin.toml", "plugins/go/**/*.go"]
+  outputs = ["dist/bu1ld-go-plugin/**"]
+  command = os == "windows" ? ["cmd", "/c", "cd plugins\\go && goreleaser release --snapshot --clean --skip=publish"] : ["sh", "-c", "cd plugins/go && goreleaser release --snapshot --clean --skip=publish"]
 }
 
 task java_plugin {

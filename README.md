@@ -18,6 +18,7 @@ The first version includes:
 - Input fingerprints and a local action cache
 - Cached output blobs for declared outputs
 - Optional remote action cache served by the coordinator over HTTP
+- GoReleaser configuration for cross-platform archives and Linux deb/rpm packages
 - A full `arcgolabs/dix` runtime per subcommand
 - `arcgolabs/collectionx`, `configx`, `eventx`, and `logx` integration
 
@@ -295,6 +296,11 @@ go.binary build {
   main = "./cmd/cli"
   out = "dist/app"
 }
+
+go.release snapshot {
+  deps = [test]
+  mode = "snapshot"
+}
 ```
 
 The Go plugin executes `go.binary` and `go.test` through `plugin.exec`, so it
@@ -312,6 +318,21 @@ That starts `bu1ld-go-cacheprog --remote-cache-url <url>` as Go's
 and stores action/output records in the bu1ld coordinator over HTTP. Set
 `BU1LD_GO__CACHEPROG` or an individual rule's `cacheprog = "..."` field to
 override the generated command.
+
+`go.release` embeds GoReleaser orchestration in the plugin. It prefers a local
+`goreleaser` binary when one is on `PATH`; otherwise it runs the pinned module
+fallback `go run github.com/goreleaser/goreleaser/v2@v2.15.4 ...`. The default
+mode is a local snapshot release:
+
+```text
+go.release snapshot {
+  mode = "snapshot"
+  config = ".goreleaser.yaml"
+}
+```
+
+Set `mode = "release"` for tagged release arguments, or use `args = [...]` for
+full control over the GoReleaser command line.
 
 The first-party Java plugin is written in Java, built with Gradle, uses Jackson
 for protocol JSON, SLF4J and Logback for logging, Avaje Inject for dependency
@@ -491,6 +512,45 @@ BU1LD_REMOTE_CACHE__PUSH=false
 ```
 
 Optional config files are loaded through `configx` from `bu1ld.yaml`, `bu1ld.toml`, `bu1ld.json`, or their `.bu1ld.*` variants.
+
+## Releases
+
+GoReleaser builds the first-party Go executables:
+
+- `bu1ld`
+- `bu1ld-server`
+- `bu1ld-daemon`
+- `bu1ld-lsp`
+- `bu1ld-go-cacheprog`
+- `bu1ld-go-plugin`
+
+The Go plugin is packaged as its own archive and Linux package with
+`plugins/go/plugin.toml` included beside the plugin binary. It also has an
+independent GoReleaser config at `plugins/go/.goreleaser.yaml` for standalone
+plugin releases:
+
+```bash
+cd plugins/go
+goreleaser release --snapshot --clean --skip=publish
+```
+
+Local snapshot release:
+
+```bash
+goreleaser release --snapshot --clean --skip=publish
+```
+
+Tagged releases are handled by `.github/workflows/release.yml`:
+
+```bash
+git tag v0.1.0-alpha.1
+git push origin v0.1.0-alpha.1
+```
+
+The release workflow runs Go tests, Go plugin tests, the Java plugin Gradle
+check, then publishes GoReleaser archives, checksums, and Linux `deb`/`rpm`
+packages. Java plugin packaging remains Gradle/jpackage-based through
+`plugins/java/gradlew -p plugins/java installBu1ldPlugin`.
 
 ## Editor Integrations
 
