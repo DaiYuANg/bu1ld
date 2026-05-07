@@ -1,9 +1,18 @@
-go.test test {
-  packages = ["./..."]
+task test {
+  inputs = ["build.bu1ld", "go.mod", "go.sum", "**/*.go"]
+  command = ["go", "test", "./..."]
 }
 
-go.binary build {
+task build {
   deps = [prepare, test]
-  main = "./cmd/cli"
-  out = "dist/" + "bu1ld"
+  inputs = ["build.bu1ld", "go.mod", "go.sum", "**/*.go"]
+  outputs = ["dist/bu1ld"]
+  command = ["go", "build", "-o", "dist/bu1ld", "./cmd/cli"]
+}
+
+task go_plugin {
+  deps = [prepare, test]
+  inputs = ["go.work", "go.mod", "go.sum", "pkg/pluginapi/**/*.go", "plugins/go/go.mod", "plugins/go/**/*.go"]
+  outputs = ["dist/bu1ld-go-plugin"]
+  command = ["go", "build", "-C", "plugins/go", "-o", "../../dist/bu1ld-go-plugin", "./cmd/bu1ld-go-plugin"]
 }

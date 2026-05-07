@@ -2,30 +2,30 @@ package plugin
 
 import (
 	"cmp"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"slices"
 
 	"github.com/arcgolabs/collectionx/list"
+	"github.com/pelletier/go-toml/v2"
 	"github.com/samber/oops"
 	"github.com/spf13/afero"
 )
 
-const ManifestFileName = "plugin.json"
+const ManifestFileName = "plugin.toml"
 
 type Manifest struct {
-	ID        string         `json:"id"`
-	Namespace string         `json:"namespace,omitempty"`
-	Version   string         `json:"version"`
-	Binary    string         `json:"binary"`
-	Checksum  string         `json:"checksum,omitempty"`
-	Rules     []ManifestRule `json:"rules,omitempty"`
+	ID        string         `toml:"id"`
+	Namespace string         `toml:"namespace,omitempty"`
+	Version   string         `toml:"version"`
+	Binary    string         `toml:"binary"`
+	Checksum  string         `toml:"checksum,omitempty"`
+	Rules     []ManifestRule `toml:"rules,omitempty"`
 }
 
 type ManifestRule struct {
-	Name string `json:"name"`
+	Name string `toml:"name"`
 }
 
 type ManifestFile struct {
@@ -42,7 +42,7 @@ func ReadManifest(path string) (Manifest, error) {
 			Wrapf(err, "read plugin manifest")
 	}
 	var manifest Manifest
-	if err := json.Unmarshal(data, &manifest); err != nil {
+	if err := toml.Unmarshal(data, &manifest); err != nil {
 		return Manifest{}, oops.In("bu1ld.plugins").
 			With("file", path).
 			Wrapf(err, "parse plugin manifest")

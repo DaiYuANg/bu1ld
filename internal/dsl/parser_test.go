@@ -43,12 +43,12 @@ func TestParserParsesDeclarationsAndRules(t *testing.T) {
 	project, err := NewParser().Parse(strings.NewReader(`
 workspace {
   name = "sample"
-  default = build
+  default = package
 }
 
-plugin go {
+plugin archive {
   source = builtin
-  id = "builtin.go"
+  id = "builtin.archive"
 }
 
 toolchain go {
@@ -56,34 +56,37 @@ toolchain go {
   settings = { mode = "module", platform = os + "/" + arch }
 }
 
-go.test test {
-  packages = ["./..."]
+task compile {
+  command = ["go", "build", "./cmd/cli"]
 }
 
-go.binary build {
-  deps = [test]
-  main = "./cmd/cli"
-  out = "dist/bu1ld"
+archive.zip package {
+  deps = [compile]
+  srcs = ["dist/**"]
+  out = "dist/package.zip"
 }
 `))
 	if err != nil {
 		t.Fatalf("Parse() error = %v", err)
 	}
 
-	testTask, ok := project.FindTask("test")
+	compileTask, ok := project.FindTask("compile")
 	if !ok {
-		t.Fatalf("test task not found")
+		t.Fatalf("compile task not found")
 	}
-	if got, want := strings.Join(testTask.Command.Values(), " "), "go test ./..."; got != want {
-		t.Fatalf("test command = %q, want %q", got, want)
+	if got, want := strings.Join(compileTask.Command.Values(), " "), "go build ./cmd/cli"; got != want {
+		t.Fatalf("compile command = %q, want %q", got, want)
 	}
 
-	buildTask, ok := project.FindTask("build")
+	packageTask, ok := project.FindTask("package")
 	if !ok {
-		t.Fatalf("build task not found")
+		t.Fatalf("package task not found")
 	}
-	if got, want := strings.Join(buildTask.Command.Values(), " "), "go build -o dist/bu1ld ./cmd/cli"; got != want {
-		t.Fatalf("build command = %q, want %q", got, want)
+	if got, want := packageTask.Action.Kind, "archive.zip"; got != want {
+		t.Fatalf("package action = %q, want %q", got, want)
+	}
+	if got, want := strings.Join(packageTask.Outputs.Values(), " "), "dist/package.zip"; got != want {
+		t.Fatalf("package outputs = %q, want %q", got, want)
 	}
 }
 
@@ -209,7 +212,7 @@ task pack {
 
 func TestParserRejectsRunOutsideTask(t *testing.T) {
 	_, err := NewParser().Parse(strings.NewReader(`
-plugin go {
+plugin archive {
   source = builtin
   run {
     shell("ignored")

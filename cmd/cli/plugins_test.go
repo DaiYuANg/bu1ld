@@ -17,9 +17,9 @@ func TestPluginsListCommand(t *testing.T) {
 
 	projectDir := t.TempDir()
 	writeBuildFile(t, projectDir, `
-plugin go {
+plugin archive {
   source = builtin
-  id = "builtin.go"
+  id = "builtin.archive"
 }
 `)
 
@@ -32,7 +32,7 @@ plugin go {
 	}
 
 	got := out.String()
-	for _, want := range []string{"SOURCE", "builtin", "go", "builtin.go", "binary,test", "ok"} {
+	for _, want := range []string{"SOURCE", "builtin", "archive", "builtin.archive", "tar,zip", "ok"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("output = %q, want substring %q", got, want)
 		}
@@ -48,13 +48,15 @@ func TestPluginsListIncludesInstalledManifest(t *testing.T) {
 	if err := os.MkdirAll(pluginDir, 0o750); err != nil {
 		t.Fatalf("mkdir plugin dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(pluginDir, "plugin.json"), []byte(`{
-  "id": "org.bu1ld.rust",
-  "namespace": "rust",
-  "version": "0.1.0",
-  "binary": "bu1ld-rust",
-  "rules": [{"name": "binary"}]
-}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(pluginDir, "plugin.toml"), []byte(`
+id = "org.bu1ld.rust"
+namespace = "rust"
+version = "0.1.0"
+binary = "bu1ld-rust"
+
+[[rules]]
+name = "binary"
+`), 0o600); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
 	pluginBinary := filepath.Join(pluginDir, "bu1ld-rust")
@@ -86,9 +88,9 @@ func TestPluginsLockCommand(t *testing.T) {
 
 	projectDir := t.TempDir()
 	writeBuildFile(t, projectDir, `
-plugin go {
+plugin archive {
   source = builtin
-  id = "builtin.go"
+  id = "builtin.archive"
 }
 `)
 
@@ -107,7 +109,7 @@ plugin go {
 	if err != nil {
 		t.Fatalf("read lockfile: %v", err)
 	}
-	for _, want := range []string{`"source": "builtin"`, `"namespace": "go"`, `"id": "builtin.go"`} {
+	for _, want := range []string{`"source": "builtin"`, `"namespace": "archive"`, `"id": "builtin.archive"`} {
 		if !strings.Contains(string(lock), want) {
 			t.Fatalf("lockfile = %s, want substring %q", lock, want)
 		}
@@ -124,12 +126,12 @@ func TestPluginsDoctorReportsLockChecksumMismatch(t *testing.T) {
 		t.Fatalf("mkdir plugin dir: %v", err)
 	}
 	binary := filepath.Join(pluginDir, "bu1ld-rust")
-	if err := os.WriteFile(filepath.Join(pluginDir, "plugin.json"), []byte(`{
-  "id": "org.bu1ld.rust",
-  "namespace": "rust",
-  "version": "0.1.0",
-  "binary": "bu1ld-rust"
-}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(pluginDir, "plugin.toml"), []byte(`
+id = "org.bu1ld.rust"
+namespace = "rust"
+version = "0.1.0"
+binary = "bu1ld-rust"
+`), 0o600); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
 	if err := os.WriteFile(binary, []byte("#!/bin/sh\n"), 0o600); err != nil {

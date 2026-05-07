@@ -188,7 +188,7 @@ func coreFieldDocs(kind string) *mapping.Map[string, string] {
 	case "plugin":
 		return newStringMap(map[string]string{
 			"source":  "Plugin source: builtin, local, or global.",
-			"id":      "Plugin identifier, for example builtin.go.",
+			"id":      "Plugin identifier, for example org.bu1ld.go.",
 			"version": "Plugin version used for local or global process plugins.",
 			"path":    "Development path for a local process plugin binary.",
 		})

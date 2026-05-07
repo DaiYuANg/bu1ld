@@ -3,11 +3,6 @@ workspace {
   default = build
 }
 
-plugin go {
-  source = builtin
-  id = "builtin.go"
-}
-
 toolchain go {
   version = env("GO_VERSION", "1.26.2")
   settings = { mode = "module", platform = os + "/" + arch }

@@ -10,7 +10,8 @@ The first version includes:
 - A small `build.bu1ld` DSL
 - A basic DSL language server with parse diagnostics, semantic diagnostics, and schema completions
 - A plugin registry with builtin, local, and global plugin sources
-- Builtin `go`, `docker`, and `archive` plugins
+- Builtin `docker`, `archive`, and `git` plugins
+- A first-party external Go process plugin
 - Monorepo workspace package discovery and package-scoped task ids
 - Task graph planning with dependency ordering and cycle detection
 - A configuration cache for unchanged build scripts and plugin binaries
@@ -49,10 +50,16 @@ The first version includes:
 │   └── snapshot/
 ├── pkg/
 │   └── pluginapi/
+├── plugins/
+│   └── go/
+│       ├── cmd/
+│       │   └── bu1ld-go-plugin/
+│       └── go.mod
 ├── integration/
 │   └── vscode/
 ├── build.bu1ld
 ├── go.mod
+├── go.work
 └── README.md
 ```
 
@@ -62,11 +69,6 @@ The first version includes:
 workspace {
   name = "bu1ld"
   default = build
-}
-
-plugin go {
-  source = builtin
-  id = "builtin.go"
 }
 
 git.info version {
@@ -110,16 +112,19 @@ Package dependencies automatically add same-name task dependencies, so
 `apps/api:build` depends on `libs/core:build` when both packages define
 `build`.
 
+The repository build uses plain tasks so it can bootstrap plugin binaries
+without requiring any process plugin to be installed first:
+
 ```text
-# tasks/go.bu1ld
-go.test test {
-  packages = ["./..."]
+task test {
+  inputs = ["build.bu1ld", "go.mod", "go.sum", "**/*.go"]
+  command = ["go", "test", "./..."]
 }
 
-go.binary build {
-  deps = [test]
-  main = "./cmd/cli"
-  out = $("dist/" + "bu1ld")
+task build {
+  deps = [prepare, test]
+  outputs = ["dist/bu1ld"]
+  command = ["go", "build", "-o", "dist/bu1ld", "./cmd/cli"]
 }
 ```
 
@@ -205,11 +210,6 @@ argv list directly to the process runner.
 Plugins can come from three sources:
 
 ```text
-plugin go {
-  source = builtin
-  id = "builtin.go"
-}
-
 plugin rust {
   source = local
   id = "org.bu1ld.rust"
@@ -224,7 +224,7 @@ plugin java {
 ```
 
 Builtin plugins are native Go implementations linked into the bu1ld binary.
-The current builtins are `go`, `docker`, `archive`, and `git`. The `git.info`
+The current builtins are `docker`, `archive`, and `git`. The `git.info`
 rule uses go-git to write repository metadata such as HEAD, branch, commit,
 dirty state, and remotes into a JSON output.
 Local plugins are external process plugins resolved under the project
@@ -236,18 +236,63 @@ the exact install path is missing, local and global plugin resolution falls back
 to `go-plugin` discovery under the corresponding plugin directory.
 
 Installed plugins can include a manifest at
-`.bu1ld/plugins/<id>/<version>/plugin.json` or
-`~/.bu1ld/plugins/<id>/<version>/plugin.json`:
+`.bu1ld/plugins/<id>/<version>/plugin.toml` or
+`~/.bu1ld/plugins/<id>/<version>/plugin.toml`:
 
-```json
-{
-  "id": "org.bu1ld.rust",
-  "namespace": "rust",
-  "version": "0.1.0",
-  "binary": "bu1ld-rust",
-  "rules": [{ "name": "binary" }]
+```toml
+id = "org.bu1ld.rust"
+namespace = "rust"
+version = "0.1.0"
+binary = "bu1ld-rust"
+
+[[rules]]
+name = "binary"
+```
+
+The first-party Go plugin is external. Build it with:
+
+```bash
+go build -C plugins/go -o ../../.bu1ld/plugins/org.bu1ld.go/0.1.0/bu1ld-go-plugin ./cmd/bu1ld-go-plugin
+```
+
+Then install a manifest beside the binary:
+
+```toml
+id = "org.bu1ld.go"
+namespace = "go"
+version = "0.1.0"
+binary = "bu1ld-go-plugin"
+
+[[rules]]
+name = "binary"
+
+[[rules]]
+name = "test"
+```
+
+Projects can opt into it with:
+
+```text
+plugin go {
+  source = local
+  id = "org.bu1ld.go"
+  version = "0.1.0"
+}
+
+go.test test {
+  packages = ["./..."]
+}
+
+go.binary build {
+  deps = [test]
+  main = "./cmd/cli"
+  out = "dist/app"
 }
 ```
+
+Additional first-party plugins can live under `plugins/<name>`. They do not
+need to be Go modules; they only need to serve the `pkg/pluginapi` RPC protocol
+and ship a `plugin.toml` manifest.
 
 ## Usage
 
@@ -326,4 +371,5 @@ all supported platform binaries.
 
 ```bash
 go test ./...
+go test ./plugins/go/...
 ```

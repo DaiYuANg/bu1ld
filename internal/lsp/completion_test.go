@@ -25,9 +25,9 @@ func TestCompletionFiltersPluginRulesByPrefix(t *testing.T) {
 	t.Parallel()
 
 	server := New(dsl.NewParser(), &bytes.Buffer{}, &bytes.Buffer{})
-	items := server.completions("go.b", protocol.Position{Line: 0, Character: 4}).Items
+	items := server.completions("archive.z", protocol.Position{Line: 0, Character: 9}).Items
 
-	if got, want := completionLabels(items), []string{"go.binary"}; !equalStrings(got, want) {
+	if got, want := completionLabels(items), []string{"archive.zip"}; !equalStrings(got, want) {
 		t.Fatalf("rule labels = %v, want %v", got, want)
 	}
 }
@@ -36,10 +36,10 @@ func TestCompletionFiltersFieldsInsideBlock(t *testing.T) {
 	t.Parallel()
 
 	server := New(dsl.NewParser(), &bytes.Buffer{}, &bytes.Buffer{})
-	text := "go.binary build {\n  ma\n}\n"
+	text := "archive.zip package {\n  ou\n}\n"
 	items := server.completions(text, protocol.Position{Line: 1, Character: 4}).Items
 
-	if got, want := completionLabels(items), []string{"main"}; !equalStrings(got, want) {
+	if got, want := completionLabels(items), []string{"out"}; !equalStrings(got, want) {
 		t.Fatalf("field labels = %v, want %v", got, want)
 	}
 }

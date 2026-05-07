@@ -18,9 +18,9 @@ func TestLoaderImportsBuildFiles(t *testing.T) {
 
 	projectDir := t.TempDir()
 	writeDSLFile(t, projectDir, "build.bu1ld", `
-plugin go {
+plugin archive {
   source = builtin
-  id = "builtin.go"
+  id = "builtin.archive"
 }
 
 import "tasks/**/*.bu1ld"
@@ -30,8 +30,9 @@ task root {
 }
 `)
 	writeDSLFile(t, projectDir, "tasks/go/test.bu1ld", `
-go.test test {
-  packages = ["./..."]
+archive.zip test {
+  srcs = ["src/**"]
+  out = "dist/test.zip"
 }
 `)
 	writeDSLFile(t, projectDir, "tasks/custom.bu1ld", `

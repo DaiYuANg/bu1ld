@@ -66,12 +66,7 @@ func TestServerCompletesPluginRulesAndFields(t *testing.T) {
 	t.Parallel()
 
 	text := strings.Join([]string{
-		"plugin go {",
-		"  source = builtin",
-		"  id = \"builtin.go\"",
-		"}",
-		"",
-		"go.binary build {",
+		"archive.zip package {",
 		"  ",
 		"}",
 		"",
@@ -100,7 +95,7 @@ func TestServerCompletesPluginRulesAndFields(t *testing.T) {
 		"method":  "textDocument/completion",
 		"params": map[string]any{
 			"textDocument": map[string]any{"uri": "file:///workspace/build.bu1ld"},
-			"position":     map[string]any{"line": 8, "character": 0},
+			"position":     map[string]any{"line": 3, "character": 0},
 		},
 	})
 	writeTestMessage(t, &in, map[string]any{
@@ -109,7 +104,7 @@ func TestServerCompletesPluginRulesAndFields(t *testing.T) {
 		"method":  "textDocument/completion",
 		"params": map[string]any{
 			"textDocument": map[string]any{"uri": "file:///workspace/build.bu1ld"},
-			"position":     map[string]any{"line": 6, "character": 2},
+			"position":     map[string]any{"line": 1, "character": 2},
 		},
 	})
 
@@ -122,9 +117,9 @@ func TestServerCompletesPluginRulesAndFields(t *testing.T) {
 	got := out.String()
 	for _, want := range []string{
 		`"label":"import"`,
-		`"label":"go.binary"`,
-		`"label":"go.test"`,
-		`"label":"main"`,
+		`"label":"archive.zip"`,
+		`"label":"archive.tar"`,
+		`"label":"srcs"`,
 		`"label":"out"`,
 	} {
 		if !strings.Contains(got, want) {

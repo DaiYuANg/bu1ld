@@ -16,13 +16,15 @@ func TestResolveManifestPathUsesManifestBinary(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		t.Fatalf("mkdir plugin dir: %v", err)
 	}
-	writePluginManifest(t, filepath.Join(dir, ManifestFileName), `{
-  "id": "org.bu1ld.rust",
-  "namespace": "rust",
-  "version": "0.1.0",
-  "binary": "bu1ld-rust",
-  "rules": [{"name": "binary"}]
-}`)
+	writePluginManifest(t, filepath.Join(dir, ManifestFileName), `
+id = "org.bu1ld.rust"
+namespace = "rust"
+version = "0.1.0"
+binary = "bu1ld-rust"
+
+[[rules]]
+name = "binary"
+`)
 	binary := filepath.Join(dir, "bu1ld-rust")
 	if err := os.WriteFile(binary, []byte("#!/bin/sh\n"), 0o600); err != nil {
 		t.Fatalf("write plugin binary: %v", err)
@@ -54,12 +56,12 @@ func TestDiscoverManifests(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		t.Fatalf("mkdir plugin dir: %v", err)
 	}
-	writePluginManifest(t, filepath.Join(dir, ManifestFileName), `{
-  "id": "org.bu1ld.rust",
-  "namespace": "rust",
-  "version": "0.1.0",
-  "binary": "bu1ld-rust"
-}`)
+	writePluginManifest(t, filepath.Join(dir, ManifestFileName), `
+id = "org.bu1ld.rust"
+namespace = "rust"
+version = "0.1.0"
+binary = "bu1ld-rust"
+`)
 
 	manifests, err := DiscoverManifests(root)
 	if err != nil {

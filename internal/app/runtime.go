@@ -16,7 +16,6 @@ import (
 	"bu1ld/internal/plugins/archive"
 	"bu1ld/internal/plugins/docker"
 	gitplugin "bu1ld/internal/plugins/git"
-	"bu1ld/internal/plugins/golang"
 	"bu1ld/internal/snapshot"
 
 	"github.com/arcgolabs/dix"
@@ -165,7 +164,6 @@ func newEngine(
 func newPluginRegistry(loader *dsl.Loader) (*buildplugin.Registry, error) {
 	registry, err := buildplugin.NewRegistry(
 		loader.LoadOptions(),
-		golang.New(),
 		docker.New(),
 		archive.New(),
 		gitplugin.New(),

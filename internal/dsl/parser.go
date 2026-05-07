@@ -10,7 +10,6 @@ import (
 	"bu1ld/internal/plugins/archive"
 	"bu1ld/internal/plugins/docker"
 	gitplugin "bu1ld/internal/plugins/git"
-	"bu1ld/internal/plugins/golang"
 
 	planocomp "github.com/arcgolabs/plano/compiler"
 )
@@ -22,7 +21,6 @@ type Parser struct {
 func NewParser() *Parser {
 	registry, err := buildplugin.NewRegistry(
 		buildplugin.LoadOptions{},
-		golang.New(),
 		docker.New(),
 		archive.New(),
 		gitplugin.New(),

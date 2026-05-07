@@ -12,12 +12,23 @@
   "builtin plugin": {
     "prefix": "plugin-builtin",
     "body": [
-      "plugin ${1:go} {",
+      "plugin ${1:archive} {",
       "  source = builtin",
-      "  id = \"builtin.${1:go}\"",
+      "  id = \"builtin.${1:archive}\"",
       "}"
     ],
     "description": "Declare a builtin plugin"
+  },
+  "go plugin": {
+    "prefix": "plugin-go",
+    "body": [
+      "plugin go {",
+      "  source = local",
+      "  id = \"org.bu1ld.go\"",
+      "  version = \"${1:0.1.0}\"",
+      "}"
+    ],
+    "description": "Declare the external Go plugin"
   },
   "task": {
     "prefix": "task",
