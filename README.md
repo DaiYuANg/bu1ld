@@ -302,6 +302,9 @@ name = "binary"
 
 [[rules]]
 name = "test"
+
+[[rules]]
+name = "generate"
 ```
 
 Projects can opt into it with:
@@ -313,7 +316,12 @@ plugin go {
   version = "0.1.0"
 }
 
+go.generate generate {
+  out = "build/generated/go"
+}
+
 go.test test {
+  deps = [generate]
   packages = ["./..."]
 }
 
@@ -329,9 +337,14 @@ go.release snapshot {
 }
 ```
 
-The Go plugin executes `go.binary` and `go.test` through `plugin.exec`, so it
-can inject Go toolchain environment settings. When `BU1LD_REMOTE_CACHE__URL` is
-configured, the plugin derives `GOCACHEPROG` automatically:
+The Go plugin executes `go.generate`, `go.binary`, and `go.test` through
+`plugin.exec`, so it can inject Go toolchain environment settings.
+`go.generate` runs `go generate`, creates `out` before execution, defaults that
+output directory to `build/generated/go`, declares `build/generated/go/**` as
+its output, and exposes the absolute directory as `BU1LD_GO_GENERATE_OUT` plus
+the relative directory as `BU1LD_GO_GENERATE_REL_OUT` for `//go:generate`
+directives. When `BU1LD_REMOTE_CACHE__URL` is configured, the plugin derives
+`GOCACHEPROG` automatically:
 
 ```dotenv
 BU1LD_REMOTE_CACHE__URL=http://192.168.1.10:19876

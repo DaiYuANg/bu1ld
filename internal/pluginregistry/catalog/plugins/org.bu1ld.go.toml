@@ -1,9 +1,9 @@
 id = "org.bu1ld.go"
 namespace = "go"
 owner = "bu1ld"
-description = "First-party Go build plugin with test, binary, release, and remote cache integration."
+description = "First-party Go build plugin with generate, test, binary, release, and remote cache integration."
 homepage = "https://github.com/DaiYuANg/bu1ld"
-tags = ["go", "build", "test", "goreleaser", "cache"]
+tags = ["go", "build", "generate", "test", "goreleaser", "cache"]
 
 [[versions]]
 version = "0.1.0"

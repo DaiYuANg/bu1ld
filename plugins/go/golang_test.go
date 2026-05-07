@@ -22,6 +22,11 @@ func TestMetadataUsesExternalPluginID(t *testing.T) {
 	if got, want := metadata.Namespace, "go"; got != want {
 		t.Fatalf("metadata namespace = %q, want %q", got, want)
 	}
+	for _, want := range []string{"binary", "test", "generate", "release"} {
+		if !metadataHasRule(metadata, want) {
+			t.Fatalf("metadata missing rule %q", want)
+		}
+	}
 }
 
 func TestExpandBinary(t *testing.T) {
@@ -101,6 +106,42 @@ func TestExpandReleaseDefaultsToEmbeddedGoReleaser(t *testing.T) {
 	}
 	if got, want := params["version"], DefaultGoReleaserVersion; got != want {
 		t.Fatalf("version = %q, want %q", got, want)
+	}
+}
+
+func TestExpandGenerateDefaultsToBuildGeneratedGo(t *testing.T) {
+	tasks, err := New().Expand(context.Background(), pluginapi.Invocation{
+		Namespace: "go",
+		Rule:      "generate",
+		Target:    "generate",
+		Fields:    map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("Expand() error = %v", err)
+	}
+	if got, want := len(tasks), 1; got != want {
+		t.Fatalf("task count = %d, want %d", got, want)
+	}
+	task := tasks[0]
+	if got, want := task.Outputs, []string{"build/generated/go/**"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("outputs = %#v, want %#v", got, want)
+	}
+	if got, want := task.Action.Kind, pluginapi.PluginExecActionKind; got != want {
+		t.Fatalf("action kind = %q, want %q", got, want)
+	}
+	params, ok := task.Action.Params["params"].(map[string]any)
+	if !ok {
+		t.Fatalf("action params type = %T, want map[string]any", task.Action.Params["params"])
+	}
+	if got, want := params["out"], "build/generated/go"; got != want {
+		t.Fatalf("out = %q, want %q", got, want)
+	}
+	packages, ok := params["packages"].([]string)
+	if !ok {
+		t.Fatalf("packages type = %T, want []string", params["packages"])
+	}
+	if got, want := strings.Join(packages, " "), "./..."; got != want {
+		t.Fatalf("packages = %q, want %q", got, want)
 	}
 }
 
@@ -202,6 +243,65 @@ func TestExecuteDerivesGOCACHEPROGFromRemoteCacheEnvironment(t *testing.T) {
 	}
 }
 
+func TestExecuteGenerateCreatesOutputDirAndPassesEnv(t *testing.T) {
+	restoreEnv(t, goEnvKeys()...)
+
+	workDir := t.TempDir()
+	binDir := t.TempDir()
+	argsFile := filepath.Join(workDir, "go-generate-args.txt")
+	outFile := filepath.Join(workDir, "go-generate-out.txt")
+	relOutFile := filepath.Join(workDir, "go-generate-rel-out.txt")
+	writeFakeGoGenerate(t, binDir)
+
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("BU1LD_FAKE_GO_ARGS", argsFile)
+	t.Setenv("BU1LD_FAKE_GO_OUT", outFile)
+	t.Setenv("BU1LD_FAKE_GO_REL_OUT", relOutFile)
+
+	_, err := New().Execute(context.Background(), pluginapi.ExecuteRequest{
+		Action:  "generate",
+		WorkDir: workDir,
+		Params: map[string]any{
+			"packages": []any{"./pkg"},
+			"args":     []any{"-x"},
+			"run":      "mock",
+			"out":      "build/generated/go",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	expectedOut := filepath.Join(workDir, "build", "generated", "go")
+	if info, err := os.Stat(expectedOut); err != nil || !info.IsDir() {
+		t.Fatalf("generated output dir missing: info=%v err=%v", info, err)
+	}
+	argsData, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("ReadFile(args) error = %v", err)
+	}
+	gotArgs := strings.TrimSpace(string(argsData))
+	for _, want := range []string{"generate", "-run", "mock", "-x", "./pkg"} {
+		if !strings.Contains(gotArgs, want) {
+			t.Fatalf("go args = %q, want to contain %q", gotArgs, want)
+		}
+	}
+	outData, err := os.ReadFile(outFile)
+	if err != nil {
+		t.Fatalf("ReadFile(out) error = %v", err)
+	}
+	if got, want := filepath.Clean(strings.TrimSpace(string(outData))), expectedOut; got != want {
+		t.Fatalf("BU1LD_GO_GENERATE_OUT = %q, want %q", got, want)
+	}
+	relOutData, err := os.ReadFile(relOutFile)
+	if err != nil {
+		t.Fatalf("ReadFile(rel out) error = %v", err)
+	}
+	if got, want := strings.TrimSpace(string(relOutData)), "build/generated/go"; got != want {
+		t.Fatalf("BU1LD_GO_GENERATE_REL_OUT = %q, want %q", got, want)
+	}
+}
+
 func TestExecuteReleaseFallsBackToGoRunGoReleaser(t *testing.T) {
 	restoreEnv(t, goEnvKeys()...)
 
@@ -257,7 +357,20 @@ func goEnvKeys() []string {
 		"PATH",
 		"BU1LD_FAKE_GO_ENV",
 		"BU1LD_FAKE_GO_ARGS",
+		"BU1LD_FAKE_GO_OUT",
+		"BU1LD_FAKE_GO_REL_OUT",
+		"BU1LD_GO_GENERATE_OUT",
+		"BU1LD_GO_GENERATE_REL_OUT",
 	}
+}
+
+func metadataHasRule(metadata pluginapi.Metadata, name string) bool {
+	for _, rule := range metadata.Rules {
+		if rule.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func writeFakeGo(t *testing.T, dir string) {
@@ -293,6 +406,25 @@ func writeFakeGoArgs(t *testing.T, dir string) {
 
 	path := filepath.Join(dir, "go")
 	content := "#!/bin/sh\nprintf '%s' \"$*\" > \"$BU1LD_FAKE_GO_ARGS\"\n"
+	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
+		t.Fatalf("WriteFile(%s) error = %v", path, err)
+	}
+}
+
+func writeFakeGoGenerate(t *testing.T, dir string) {
+	t.Helper()
+
+	if runtime.GOOS == "windows" {
+		path := filepath.Join(dir, "go.bat")
+		content := "@echo off\r\necho %*> \"%BU1LD_FAKE_GO_ARGS%\"\r\necho %BU1LD_GO_GENERATE_OUT%> \"%BU1LD_FAKE_GO_OUT%\"\r\necho %BU1LD_GO_GENERATE_REL_OUT%> \"%BU1LD_FAKE_GO_REL_OUT%\"\r\n"
+		if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
+			t.Fatalf("WriteFile(%s) error = %v", path, err)
+		}
+		return
+	}
+
+	path := filepath.Join(dir, "go")
+	content := "#!/bin/sh\nprintf '%s' \"$*\" > \"$BU1LD_FAKE_GO_ARGS\"\nprintf '%s' \"$BU1LD_GO_GENERATE_OUT\" > \"$BU1LD_FAKE_GO_OUT\"\nprintf '%s' \"$BU1LD_GO_GENERATE_REL_OUT\" > \"$BU1LD_FAKE_GO_REL_OUT\"\n"
 	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
 		t.Fatalf("WriteFile(%s) error = %v", path, err)
 	}

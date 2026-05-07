@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -21,6 +22,7 @@ const (
 	defaultGoReleaserConfig      = ".goreleaser.yaml"
 	defaultGoReleaserOutput      = "dist/**"
 	defaultGoReleaserReleaseMode = "snapshot"
+	defaultGoGenerateOutput      = "build/generated/go"
 )
 
 type Plugin struct {
@@ -65,6 +67,21 @@ func (p *Plugin) Metadata() (pluginapi.Metadata, error) {
 				},
 			},
 			{
+				Name: "generate",
+				Fields: []pluginapi.FieldSchema{
+					{Name: "deps", Type: pluginapi.FieldList},
+					{Name: "inputs", Type: pluginapi.FieldList},
+					{Name: "outputs", Type: pluginapi.FieldList},
+					{Name: "srcs", Type: pluginapi.FieldList},
+					{Name: "packages", Type: pluginapi.FieldList},
+					{Name: "args", Type: pluginapi.FieldList},
+					{Name: "run", Type: pluginapi.FieldString},
+					{Name: "skip", Type: pluginapi.FieldString},
+					{Name: "out", Type: pluginapi.FieldString},
+					{Name: "cacheprog", Type: pluginapi.FieldString},
+				},
+			},
+			{
 				Name: "release",
 				Fields: []pluginapi.FieldSchema{
 					{Name: "deps", Type: pluginapi.FieldList},
@@ -93,6 +110,12 @@ func (p *Plugin) Expand(_ context.Context, invocation pluginapi.Invocation) ([]p
 		return []pluginapi.TaskSpec{task}, nil
 	case "test":
 		task, err := expandTest(invocation)
+		if err != nil {
+			return nil, err
+		}
+		return []pluginapi.TaskSpec{task}, nil
+	case "generate":
+		task, err := expandGenerate(invocation)
 		if err != nil {
 			return nil, err
 		}
@@ -167,6 +190,61 @@ func expandTest(invocation pluginapi.Invocation) (pluginapi.TaskSpec, error) {
 		Inputs: inputs,
 		Action: pluginAction("test", map[string]any{
 			"packages":  packages,
+			"cacheprog": cacheprog,
+		}),
+	}, nil
+}
+
+func expandGenerate(invocation pluginapi.Invocation) (pluginapi.TaskSpec, error) {
+	deps, err := invocation.OptionalList("deps", nil)
+	if err != nil {
+		return pluginapi.TaskSpec{}, fmt.Errorf("read go.generate deps field: %w", err)
+	}
+	inputs, err := goInputs(invocation)
+	if err != nil {
+		return pluginapi.TaskSpec{}, err
+	}
+	out, err := invocation.OptionalString("out", defaultGoGenerateOutput)
+	if err != nil {
+		return pluginapi.TaskSpec{}, fmt.Errorf("read go.generate out field: %w", err)
+	}
+	out = defaultString(out, defaultGoGenerateOutput)
+	outputs, err := invocation.OptionalList("outputs", []string{goGenerateOutputPattern(out)})
+	if err != nil {
+		return pluginapi.TaskSpec{}, fmt.Errorf("read go.generate outputs field: %w", err)
+	}
+	packages, err := invocation.OptionalList("packages", []string{"./..."})
+	if err != nil {
+		return pluginapi.TaskSpec{}, fmt.Errorf("read go.generate packages field: %w", err)
+	}
+	args, err := invocation.OptionalList("args", nil)
+	if err != nil {
+		return pluginapi.TaskSpec{}, fmt.Errorf("read go.generate args field: %w", err)
+	}
+	run, err := invocation.OptionalString("run", "")
+	if err != nil {
+		return pluginapi.TaskSpec{}, fmt.Errorf("read go.generate run field: %w", err)
+	}
+	skip, err := invocation.OptionalString("skip", "")
+	if err != nil {
+		return pluginapi.TaskSpec{}, fmt.Errorf("read go.generate skip field: %w", err)
+	}
+	cacheprog, err := invocation.OptionalString("cacheprog", "")
+	if err != nil {
+		return pluginapi.TaskSpec{}, fmt.Errorf("read go.generate cacheprog field: %w", err)
+	}
+
+	return pluginapi.TaskSpec{
+		Name:    invocation.Target,
+		Deps:    deps,
+		Inputs:  inputs,
+		Outputs: outputs,
+		Action: pluginAction("generate", map[string]any{
+			"packages":  packages,
+			"args":      args,
+			"run":       run,
+			"skip":      skip,
+			"out":       out,
 			"cacheprog": cacheprog,
 		}),
 	}, nil
@@ -251,11 +329,52 @@ func (p *Plugin) Execute(ctx context.Context, request pluginapi.ExecuteRequest) 
 			return pluginapi.ExecuteResult{}, err
 		}
 		return runGo(ctx, request.WorkDir, append([]string{"test"}, packages...), request.Params)
+	case "generate":
+		return runGoGenerate(ctx, request.WorkDir, request.Params)
 	case "release":
 		return runGoReleaser(ctx, request.WorkDir, request.Params)
 	default:
 		return pluginapi.ExecuteResult{}, fmt.Errorf("unknown go action %q", request.Action)
 	}
+}
+
+func runGoGenerate(ctx context.Context, workDir string, params map[string]any) (pluginapi.ExecuteResult, error) {
+	packages, err := actionList(params, "packages", []string{"./..."})
+	if err != nil {
+		return pluginapi.ExecuteResult{}, err
+	}
+	args, err := actionList(params, "args", nil)
+	if err != nil {
+		return pluginapi.ExecuteResult{}, err
+	}
+	run, err := actionString(params, "run", false, "")
+	if err != nil {
+		return pluginapi.ExecuteResult{}, err
+	}
+	skip, err := actionString(params, "skip", false, "")
+	if err != nil {
+		return pluginapi.ExecuteResult{}, err
+	}
+	out, err := actionString(params, "out", false, defaultGoGenerateOutput)
+	if err != nil {
+		return pluginapi.ExecuteResult{}, err
+	}
+	out = defaultString(out, defaultGoGenerateOutput)
+	env, err := goGenerateEnv(workDir, out, params)
+	if err != nil {
+		return pluginapi.ExecuteResult{}, err
+	}
+
+	goArgs := []string{"generate"}
+	if strings.TrimSpace(run) != "" {
+		goArgs = append(goArgs, "-run", run)
+	}
+	if strings.TrimSpace(skip) != "" {
+		goArgs = append(goArgs, "-skip", skip)
+	}
+	goArgs = append(goArgs, args...)
+	goArgs = append(goArgs, packages...)
+	return runCommand(ctx, workDir, "go", goArgs, env)
 }
 
 func runGoReleaser(ctx context.Context, workDir string, params map[string]any) (pluginapi.ExecuteResult, error) {
@@ -305,6 +424,20 @@ func runGo(ctx context.Context, workDir string, args []string, params map[string
 	return runCommand(ctx, workDir, "go", args, goEnv(params))
 }
 
+func goGenerateEnv(workDir, out string, params map[string]any) ([]string, error) {
+	env := goEnv(params)
+	absOut := out
+	if !filepath.IsAbs(absOut) {
+		absOut = filepath.Join(workDir, filepath.FromSlash(out))
+	}
+	if err := os.MkdirAll(absOut, 0o750); err != nil {
+		return nil, fmt.Errorf("create go.generate output directory %q: %w", absOut, err)
+	}
+	env = appendEnv(env, "BU1LD_GO_GENERATE_OUT", absOut)
+	env = appendEnv(env, "BU1LD_GO_GENERATE_REL_OUT", out)
+	return env, nil
+}
+
 func runCommand(ctx context.Context, workDir, name string, args []string, env []string) (pluginapi.ExecuteResult, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = workDir
@@ -341,6 +474,18 @@ func goReleaserArgs(config string, args []string) []string {
 		return args
 	}
 	return append([]string{"--config", strings.TrimSpace(config)}, args...)
+}
+
+func goGenerateOutputPattern(out string) string {
+	out = strings.TrimRight(defaultString(out, defaultGoGenerateOutput), `/\`)
+	return out + "/**"
+}
+
+func defaultString(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
 }
 
 func hasConfigArg(args []string) bool {

@@ -10,4 +10,7 @@ name = "binary"
 name = "test"
 
 [[rules]]
+name = "generate"
+
+[[rules]]
 name = "release"
