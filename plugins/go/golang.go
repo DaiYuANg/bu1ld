@@ -517,12 +517,21 @@ func cacheprogValue(params map[string]any) string {
 	}
 	if remoteURL := firstEnv("BU1LD_GO__REMOTE_CACHE_URL", "BU1LD_GO_REMOTE_CACHE_URL", "BU1LD_REMOTE_CACHE__URL", "BU1LD_REMOTE_CACHE_URL"); remoteURL != "" {
 		return strings.Join([]string{
-			"bu1ld-go-cacheprog",
+			quoteCacheprogArg(defaultCacheprogCommand()),
+			"cacheprog",
 			"--remote-cache-url",
 			quoteCacheprogArg(remoteURL),
 		}, " ")
 	}
 	return ""
+}
+
+func defaultCacheprogCommand() string {
+	executable, err := os.Executable()
+	if err != nil || strings.TrimSpace(executable) == "" {
+		return "bu1ld-go-plugin"
+	}
+	return executable
 }
 
 func firstEnv(names ...string) string {

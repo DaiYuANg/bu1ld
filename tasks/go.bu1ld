@@ -12,16 +12,9 @@ task build {
 
 task go_plugin {
   deps = [prepare, test]
-  inputs = ["go.work", "go.mod", "go.sum", "pkg/pluginapi/**/*.go", "plugins/go/go.mod", "plugins/go/**/*.go"]
+  inputs = ["go.work", "go.mod", "go.sum", "pkg/pluginapi/**/*.go", "internal/cache/**/*.go", "internal/gocacheprog/**/*.go", "internal/snapshot/**/*.go", "plugins/go/go.mod", "plugins/go/**/*.go"]
   outputs = ["dist/bu1ld-go-plugin" + (os == "windows" ? ".exe" : "")]
   command = ["go", "build", "-C", "plugins/go", "-o", "../../dist/bu1ld-go-plugin" + (os == "windows" ? ".exe" : ""), "./cmd/bu1ld-go-plugin"]
-}
-
-task go_cacheprog {
-  deps = [prepare, test]
-  inputs = ["build.bu1ld", "go.mod", "go.sum", "cmd/bu1ld-go-cacheprog/**/*.go", "internal/cache/**/*.go", "internal/gocacheprog/**/*.go", "internal/snapshot/**/*.go"]
-  outputs = ["dist/bu1ld-go-cacheprog" + (os == "windows" ? ".exe" : "")]
-  command = ["go", "build", "-o", "dist/bu1ld-go-cacheprog" + (os == "windows" ? ".exe" : ""), "./cmd/bu1ld-go-cacheprog"]
 }
 
 task java_plugin_check {

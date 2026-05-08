@@ -106,9 +106,9 @@ dotenv values.
 
 ## Go Cacheprog Adapter
 
-`bu1ld-go-cacheprog` implements Go's stdin/stdout cacheprog protocol. It keeps a
-small local disk cache and optionally pulls/pushes Go cache entries through the
-coordinator.
+`bu1ld-go-plugin cacheprog` implements Go's stdin/stdout cacheprog protocol. It
+keeps a small local disk cache and optionally pulls/pushes Go cache entries
+through the coordinator.
 
 The Go plugin can derive `GOCACHEPROG` automatically from
 `BU1LD_REMOTE_CACHE__URL`, or users can override it with:
@@ -122,6 +122,10 @@ fetches the action record, downloads the output, verifies the output digest, and
 writes the output to local disk before returning a `DiskPath` to the Go
 toolchain. On push it validates the output digest, writes local disk state, then
 uploads output and action metadata when remote push is enabled.
+
+The cacheprog adapter is intentionally shipped as a subcommand of the Go plugin
+binary so installing `bu1ld-go-plugin` is enough for both JSON-RPC plugin
+execution and Go build-cache integration.
 
 ## Current Boundary
 

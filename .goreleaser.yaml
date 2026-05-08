@@ -51,15 +51,6 @@ builds:
     targets: *build_targets
     mod_timestamp: "{{ .CommitTimestamp }}"
 
-  - id: bu1ld-go-cacheprog
-    main: ./cmd/bu1ld-go-cacheprog
-    binary: bu1ld-go-cacheprog
-    env: *build_env
-    flags: *build_flags
-    ldflags: *build_ldflags
-    targets: *build_targets
-    mod_timestamp: "{{ .CommitTimestamp }}"
-
   - id: bu1ld-go-plugin
     dir: ./plugins/go
     main: ./cmd/bu1ld-go-plugin
@@ -77,7 +68,6 @@ archives:
       - bu1ld-server
       - bu1ld-daemon
       - bu1ld-lsp
-      - bu1ld-go-cacheprog
     formats:
       - tar.gz
     format_overrides:
@@ -111,7 +101,6 @@ nfpms:
       - bu1ld-server
       - bu1ld-daemon
       - bu1ld-lsp
-      - bu1ld-go-cacheprog
     vendor: bu1ld
     homepage: https://github.com/DaiYuANg/bu1ld
     maintainer: DaiYuANg

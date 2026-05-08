@@ -51,7 +51,7 @@ func Serve(ctx context.Context, input io.Reader, output io.Writer, options Optio
 func NewServer(options Options) (*Server, func(), error) {
 	cleanup := func() {}
 	if options.CacheDir == "" {
-		dir, err := os.MkdirTemp("", "bu1ld-go-cacheprog-*")
+		dir, err := os.MkdirTemp("", "bu1ld-go-plugin-cacheprog-*")
 		if err != nil {
 			return nil, cleanup, fmt.Errorf("create go cacheprog temp dir: %w", err)
 		}

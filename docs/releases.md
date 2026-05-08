@@ -12,7 +12,6 @@ The root `.goreleaser.yaml` builds:
 - `bu1ld-server`
 - `bu1ld-daemon`
 - `bu1ld-lsp`
-- `bu1ld-go-cacheprog`
 - `bu1ld-go-plugin`
 
 It produces cross-platform archives, checksums, and Linux packages. The Go

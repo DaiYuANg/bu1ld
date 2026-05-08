@@ -154,7 +154,7 @@ func TestExecuteInjectsGOCACHEPROGFromEnvironment(t *testing.T) {
 	writeFakeGo(t, binDir)
 
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("BU1LD_GO__CACHEPROG", "bu1ld-go-cacheprog --remote http://127.0.0.1:19876")
+	t.Setenv("BU1LD_GO__CACHEPROG", "custom-cacheprog --remote http://127.0.0.1:19876")
 	t.Setenv("BU1LD_FAKE_GO_ENV", envFile)
 
 	_, err := New().Execute(context.Background(), pluginapi.ExecuteRequest{
@@ -172,7 +172,7 @@ func TestExecuteInjectsGOCACHEPROGFromEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
-	if got, want := strings.TrimSpace(string(data)), "bu1ld-go-cacheprog --remote http://127.0.0.1:19876"; got != want {
+	if got, want := strings.TrimSpace(string(data)), "custom-cacheprog --remote http://127.0.0.1:19876"; got != want {
 		t.Fatalf("GOCACHEPROG = %q, want %q", got, want)
 	}
 }
@@ -238,7 +238,13 @@ func TestExecuteDerivesGOCACHEPROGFromRemoteCacheEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
-	if got, want := strings.TrimSpace(string(data)), "bu1ld-go-cacheprog --remote-cache-url http://127.0.0.1:19876"; got != want {
+	want := strings.Join([]string{
+		quoteCacheprogArg(defaultCacheprogCommand()),
+		"cacheprog",
+		"--remote-cache-url",
+		"http://127.0.0.1:19876",
+	}, " ")
+	if got := strings.TrimSpace(string(data)); got != want {
 		t.Fatalf("GOCACHEPROG = %q, want %q", got, want)
 	}
 }

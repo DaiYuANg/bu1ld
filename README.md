@@ -425,8 +425,9 @@ the configuration cache and build action cache.
 
 Remote action caching uses the same action records and output blobs as the
 local cache. The coordinator also exposes Go build-cache resources for
-`bu1ld-go-cacheprog`. See [`docs/remote-cache.md`](docs/remote-cache.md) for the
-HTTP API, dotenv-based LAN configuration, and Go cacheprog behavior.
+the `bu1ld-go-plugin cacheprog` adapter. See
+[`docs/remote-cache.md`](docs/remote-cache.md) for the HTTP API, dotenv-based
+LAN configuration, and Go cacheprog behavior.
 
 ```bash
 go run ./cmd/server coordinator --listen 127.0.0.1:19876
@@ -438,11 +439,10 @@ Optional config files are loaded through `configx` from `bu1ld.yaml`, `bu1ld.tom
 
 ## Releases
 
-GoReleaser builds the first-party Go executables, including
-`bu1ld-go-cacheprog` and `bu1ld-go-plugin`. The Go plugin also has an
-independent GoReleaser config for standalone plugin releases. The Java plugin
-is packaged with Gradle/jpackage. See [`docs/releases.md`](docs/releases.md)
-for the release model.
+GoReleaser builds the first-party Go executables, including `bu1ld-go-plugin`.
+The Go plugin also has an independent GoReleaser config for standalone plugin
+releases. The Java plugin is packaged with Gradle/jpackage. See
+[`docs/releases.md`](docs/releases.md) for the release model.
 
 Local snapshot release:
 

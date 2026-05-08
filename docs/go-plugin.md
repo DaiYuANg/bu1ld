@@ -147,11 +147,12 @@ BU1LD_REMOTE_CACHE__PUSH=true
 the plugin injects:
 
 ```text
-GOCACHEPROG=bu1ld-go-cacheprog --remote-cache-url http://192.168.1.10:19876
+GOCACHEPROG=bu1ld-go-plugin cacheprog --remote-cache-url http://192.168.1.10:19876
 ```
 
-`bu1ld-go-cacheprog` speaks Go's stdin/stdout cacheprog protocol locally and
-stores Go action/output records in the bu1ld coordinator.
+In installed plugins the command uses the resolved `bu1ld-go-plugin` executable
+path. The `cacheprog` subcommand speaks Go's stdin/stdout cacheprog protocol
+locally and stores Go action/output records in the bu1ld coordinator.
 
 See [Remote Cache](remote-cache.md) for the coordinator side.
 
