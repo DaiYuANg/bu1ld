@@ -1,0 +1,28 @@
+workspace {
+  name = "java-junit-project"
+}
+
+plugin java {
+  source = local
+  id = "org.bu1ld.java"
+  version = "0.1.0"
+  path = "../../plugins/java/build/plugin/plugin.toml"
+}
+
+java {
+  name = "hello-java-junit"
+  release = "17"
+  dependency_lock = "bu1ld-java.lock"
+  dependency_lock_mode = "write"
+  local_repository = "build/dependency-cache/maven"
+
+  source_sets = {
+    test = {
+      dependencies = [
+        "org.junit.jupiter:junit-jupiter-api:5.11.4",
+        "org.junit.jupiter:junit-jupiter-engine:5.11.4"
+      ],
+      include_engines = ["junit-jupiter"]
+    }
+  }
+}

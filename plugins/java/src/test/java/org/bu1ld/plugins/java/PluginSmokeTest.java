@@ -2,15 +2,19 @@ package org.bu1ld.plugins.java;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.avaje.inject.BeanScope;
+import java.io.File;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
+import java.util.regex.Pattern;
 import javax.tools.ToolProvider;
 
 public final class PluginSmokeTest {
@@ -24,17 +28,32 @@ public final class PluginSmokeTest {
         Files.createDirectories(source.getParent());
         Files.writeString(source, """
             package example;
-            import com.example.Helper;
+            import com.example.GenerateGreeting;
             /** Smoke test app. */
+            @GenerateGreeting("ok")
             public final class App {
                 /** Returns the smoke test message. */
-                public static String message() { return Helper.message(); }
+                public static String message() { return GeneratedGreeting.message(); }
             }
             """);
         Path resource = project.resolve("src/main/resources/app.properties");
         Files.createDirectories(resource.getParent());
         Files.writeString(resource, "message=ok\n");
+        Path testSource = project.resolve("src/test/java/example/AppTest.java");
+        Files.createDirectories(testSource.getParent());
+        Files.writeString(testSource, """
+            package example;
+            import org.junit.jupiter.api.Test;
+            import static org.junit.jupiter.api.Assertions.assertEquals;
+            final class AppTest {
+                @Test
+                void messageUsesGeneratedGreeting() {
+                    assertEquals("ok", App.message());
+                }
+            }
+            """);
 
+        List<String> junitClasspath = junitRuntimeClasspath();
         ObjectMapper mapper = new ObjectMapper();
         try (BeanScope scope = BeanScope.builder().build()) {
             Server server = scope.get(Server.class);
@@ -42,7 +61,13 @@ public final class PluginSmokeTest {
             writeFrame(request, json(mapper, 1, "metadata", null));
             writeFrame(request, json(mapper, 2, "configure", Map.of("config", Map.of(
                     "namespace", "java",
-                    "fields", Map.of("name", "smoke", "release", "17")
+                    "fields", Map.of(
+                        "name", "smoke",
+                        "release", "17",
+                        "dependency_lock", "build/bu1ld-java.lock",
+                        "dependency_lock_mode", "write",
+                        "source_sets", Map.of("test", Map.of())
+                    )
                 ))));
             writeFrame(request, json(mapper, 3, "execute", Map.of("request", Map.of(
                     "namespace", "java",
@@ -51,8 +76,11 @@ public final class PluginSmokeTest {
                     "params", Map.of(
                         "srcs", List.of("src/main/java/**/*.java"),
                         "repositories", List.of(repository.toUri().toString()),
-                        "dependencies", List.of("com.example:helper:1.0.0"),
+                        "dependencies", List.of("com.example:codegen:1.0.0"),
+                        "annotation_processors", List.of("com.example:codegen:1.0.0"),
                         "local_repository", "build/dependency-cache/maven",
+                        "dependency_lock", "build/bu1ld-java.lock",
+                        "dependency_lock_mode", "write",
                         "out", "build/classes/java/main",
                         "release", "17"
                     )
@@ -69,6 +97,29 @@ public final class PluginSmokeTest {
                 ))));
             writeFrame(request, json(mapper, 5, "execute", Map.of("request", Map.of(
                     "namespace", "java",
+                    "action", "compile",
+                    "work_dir", project.toString(),
+                    "params", Map.of(
+                        "srcs", List.of("src/test/java/**/*.java"),
+                        "classpath", concat(List.of("build/classes/java/main", "build/resources/main"), junitClasspath),
+                        "out", "build/classes/java/test",
+                        "release", "17"
+                    )
+                ))));
+            writeFrame(request, json(mapper, 6, "execute", Map.of("request", Map.of(
+                    "namespace", "java",
+                    "action", "test",
+                    "work_dir", project.toString(),
+                    "params", Map.of(
+                        "classes", List.of("build/classes/java/test"),
+                        "classpath", concat(List.of("build/classes/java/main", "build/resources/main"), junitClasspath),
+                        "launcher_dependencies", List.of(),
+                        "reports_dir", "build/test-results/test",
+                        "include_engines", List.of("junit-jupiter")
+                    )
+                ))));
+            writeFrame(request, json(mapper, 7, "execute", Map.of("request", Map.of(
+                    "namespace", "java",
                     "action", "jar",
                     "work_dir", project.toString(),
                     "params", Map.of(
@@ -76,20 +127,23 @@ public final class PluginSmokeTest {
                         "out", "build/libs/smoke.jar"
                     )
                 ))));
-            writeFrame(request, json(mapper, 6, "execute", Map.of("request", Map.of(
+            writeFrame(request, json(mapper, 8, "execute", Map.of("request", Map.of(
                     "namespace", "java",
                     "action", "javadoc",
                     "work_dir", project.toString(),
                     "params", Map.of(
                         "srcs", List.of("src/main/java/**/*.java"),
+                        "classpath", List.of("build/classes/java/main"),
                         "repositories", List.of(repository.toUri().toString()),
-                        "dependencies", List.of("com.example:helper:1.0.0"),
+                        "dependencies", List.of("com.example:codegen:1.0.0"),
                         "local_repository", "build/dependency-cache/maven",
+                        "dependency_lock", "build/bu1ld-java.lock",
+                        "dependency_lock_mode", "read",
                         "out", "build/docs/javadoc",
                         "release", "17"
                     )
                 ))));
-            writeFrame(request, json(mapper, 7, "execute", Map.of("request", Map.of(
+            writeFrame(request, json(mapper, 9, "execute", Map.of("request", Map.of(
                     "namespace", "java",
                     "action", "jar",
                     "work_dir", project.toString(),
@@ -98,7 +152,7 @@ public final class PluginSmokeTest {
                         "out", "build/libs/smoke-sources.jar"
                     )
                 ))));
-            writeFrame(request, json(mapper, 8, "execute", Map.of("request", Map.of(
+            writeFrame(request, json(mapper, 10, "execute", Map.of("request", Map.of(
                     "namespace", "java",
                     "action", "jar",
                     "work_dir", project.toString(),
@@ -123,9 +177,13 @@ public final class PluginSmokeTest {
             requireContains(text, "\"name\":\"javadoc\"");
             requireContains(text, "\"name\":\"sourcesJar\"");
             requireContains(text, "\"name\":\"javadocJar\"");
+            requireContains(text, "\"name\":\"compileTestJava\"");
+            requireContains(text, "\"name\":\"testClasses\"");
+            requireContains(text, "\"name\":\"test\"");
             requireContains(text, "\"kind\":\"plugin.exec\"");
             requireContains(text, "compiled 1 Java source file");
             requireContains(text, "processed 1 Java resource file");
+            requireContains(text, "ran 1 Java test");
             requireContains(text, "created jar build/libs/smoke.jar");
             requireContains(text, "generated javadoc for 1 Java source file");
             requireContains(text, "created jar build/libs/smoke-sources.jar");
@@ -145,20 +203,71 @@ public final class PluginSmokeTest {
             if (!Files.isRegularFile(project.resolve("build/docs/javadoc/example/App.html"))) {
                 throw new AssertionError("javadoc was not generated");
             }
+            if (!Files.isRegularFile(project.resolve("build/test-results/test/summary.txt"))) {
+                throw new AssertionError("test summary was not generated");
+            }
+            requireContains(Files.readString(project.resolve("build/bu1ld-java.lock")), "com.example:codegen:jar:1.0.0");
         }
     }
 
     private static Path createLocalMavenRepository(Path project) throws Exception {
-        Path helperSource = project.resolve("helper-src/com/example/Helper.java");
-        Path helperClasses = project.resolve("helper-classes");
-        Files.createDirectories(helperSource.getParent());
-        Files.createDirectories(helperClasses);
-        Files.writeString(helperSource, """
+        Path annotationSource = project.resolve("codegen-src/com/example/GenerateGreeting.java");
+        Path processorSource = project.resolve("codegen-src/com/example/GenerateGreetingProcessor.java");
+        Path processorClasses = project.resolve("codegen-classes");
+        Files.createDirectories(annotationSource.getParent());
+        Files.createDirectories(processorClasses);
+        Files.writeString(annotationSource, """
             package com.example;
-            /** Smoke test dependency. */
-            public final class Helper {
-                /** Returns the smoke test dependency message. */
-                public static String message() { return "ok"; }
+            import java.lang.annotation.ElementType;
+            import java.lang.annotation.Retention;
+            import java.lang.annotation.RetentionPolicy;
+            import java.lang.annotation.Target;
+            /** Marks a type for smoke-test code generation. */
+            @Retention(RetentionPolicy.SOURCE)
+            @Target(ElementType.TYPE)
+            public @interface GenerateGreeting {
+                String value() default "ok";
+            }
+            """);
+        Files.writeString(processorSource, """
+            package com.example;
+            import java.io.IOException;
+            import java.io.UncheckedIOException;
+            import java.util.Set;
+            import javax.annotation.processing.AbstractProcessor;
+            import javax.annotation.processing.RoundEnvironment;
+            import javax.annotation.processing.SupportedAnnotationTypes;
+            import javax.annotation.processing.SupportedSourceVersion;
+            import javax.lang.model.SourceVersion;
+            import javax.lang.model.element.Element;
+            import javax.lang.model.element.TypeElement;
+
+            @SupportedAnnotationTypes("com.example.GenerateGreeting")
+            @SupportedSourceVersion(SourceVersion.RELEASE_17)
+            public final class GenerateGreetingProcessor extends AbstractProcessor {
+                @Override
+                public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
+                    if (roundEnv.processingOver()) {
+                        return false;
+                    }
+                    for (Element element : roundEnv.getElementsAnnotatedWith(GenerateGreeting.class)) {
+                        GenerateGreeting annotation = element.getAnnotation(GenerateGreeting.class);
+                        try (var writer = processingEnv.getFiler()
+                            .createSourceFile("example.GeneratedGreeting", element)
+                            .openWriter()) {
+                            writer.write("package example;\\n");
+                            writer.write("public final class GeneratedGreeting {\\n");
+                            writer.write("  private GeneratedGreeting() {}\\n");
+                            writer.write("  public static String message() { return \\"");
+                            writer.write(annotation.value());
+                            writer.write("\\"; }\\n");
+                            writer.write("}\\n");
+                        } catch (IOException e) {
+                            throw new UncheckedIOException(e);
+                        }
+                    }
+                    return false;
+                }
             }
             """);
 
@@ -167,31 +276,65 @@ public final class PluginSmokeTest {
             null,
             null,
             "-d",
-            helperClasses.toString(),
-            helperSource.toString()
+            processorClasses.toString(),
+            annotationSource.toString(),
+            processorSource.toString()
         );
         if (compiled != 0) {
-            throw new AssertionError("helper dependency failed to compile");
+            throw new AssertionError("processor dependency failed to compile");
         }
 
-        Path artifactDir = project.resolve("repo/com/example/helper/1.0.0");
+        Path services = processorClasses.resolve("META-INF/services/javax.annotation.processing.Processor");
+        Files.createDirectories(services.getParent());
+        Files.writeString(services, "com.example.GenerateGreetingProcessor\n");
+
+        Path artifactDir = project.resolve("repo/com/example/codegen/1.0.0");
         Files.createDirectories(artifactDir);
-        Path jar = artifactDir.resolve("helper-1.0.0.jar");
+        Path jar = artifactDir.resolve("codegen-1.0.0.jar");
         try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(jar))) {
-            Path helperClass = helperClasses.resolve("com/example/Helper.class");
-            output.putNextEntry(new JarEntry("com/example/Helper.class"));
-            Files.copy(helperClass, output);
-            output.closeEntry();
+            addJarEntry(output, processorClasses, "com/example/GenerateGreeting.class");
+            addJarEntry(output, processorClasses, "com/example/GenerateGreetingProcessor.class");
+            addJarEntry(output, processorClasses, "META-INF/services/javax.annotation.processing.Processor");
         }
-        Files.writeString(artifactDir.resolve("helper-1.0.0.pom"), """
+        Files.writeString(artifactDir.resolve("codegen-1.0.0.pom"), """
             <project xmlns="http://maven.apache.org/POM/4.0.0">
               <modelVersion>4.0.0</modelVersion>
               <groupId>com.example</groupId>
-              <artifactId>helper</artifactId>
+              <artifactId>codegen</artifactId>
               <version>1.0.0</version>
             </project>
             """);
         return project.resolve("repo");
+    }
+
+    private static void addJarEntry(JarOutputStream output, Path root, String name) throws Exception {
+        output.putNextEntry(new JarEntry(name));
+        Files.copy(root.resolve(name), output);
+        output.closeEntry();
+    }
+
+    private static List<String> junitRuntimeClasspath() {
+        List<String> entries = Arrays.stream(System.getProperty("java.class.path").split(Pattern.quote(File.pathSeparator)))
+            .filter(PluginSmokeTest::isJUnitRuntimeEntry)
+            .toList();
+        if (entries.isEmpty()) {
+            throw new AssertionError("JUnit runtime classpath was not available to smoke test");
+        }
+        return entries;
+    }
+
+    private static boolean isJUnitRuntimeEntry(String entry) {
+        String name = Path.of(entry).getFileName().toString();
+        return name.startsWith("junit-")
+            || name.startsWith("opentest4j-")
+            || name.startsWith("apiguardian-api-");
+    }
+
+    private static List<String> concat(List<String> first, List<String> second) {
+        List<String> values = new ArrayList<>(first.size() + second.size());
+        values.addAll(first);
+        values.addAll(second);
+        return values;
     }
 
     private static String json(ObjectMapper mapper, long id, String method, Object params) throws Exception {

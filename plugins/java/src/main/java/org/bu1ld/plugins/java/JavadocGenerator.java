@@ -81,23 +81,48 @@ final class JavadocGenerator {
             options.add("--release");
             options.add(spec.release());
         }
-        val classpath = classpath(workDir, spec);
-        if (!classpath.isEmpty()) {
+        val resolved = resolvedPaths(workDir, spec);
+        if (!resolved.classpath().isEmpty()) {
             options.add("--class-path");
-            options.add(JavaClasspath.join(classpath));
+            options.add(JavaClasspath.join(resolved.classpath()));
+        }
+        if (!resolved.modulePath().isEmpty()) {
+            options.add("--module-path");
+            options.add(JavaClasspath.join(resolved.modulePath()));
+        }
+        if (!spec.addModules().isEmpty()) {
+            options.add("--add-modules");
+            options.add(String.join(",", spec.addModules()));
         }
         return options;
     }
 
-    private List<Path> classpath(Path workDir, JavadocSpec spec) throws Exception {
-        val entries = JavaClasspath.resolve(workDir, spec.classpath());
-        entries.addAll(dependencyResolver.resolve(
+    private ResolvedPaths resolvedPaths(Path workDir, JavadocSpec spec) throws Exception {
+        val classpath = JavaClasspath.resolve(workDir, spec.classpath());
+        val dependencyArtifacts = dependencyResolver.resolveArtifacts(
             workDir,
             spec.repositories(),
             spec.dependencies(),
-            spec.localRepository()
-        ));
-        return entries;
+            spec.localRepository(),
+            spec.offline()
+        );
+        classpath.addAll(dependencyArtifacts.stream().map(ResolvedArtifact::path).toList());
+
+        val modulePath = JavaClasspath.resolve(workDir, spec.modulePath());
+        val moduleArtifacts = dependencyResolver.resolveArtifacts(
+            workDir,
+            spec.repositories(),
+            spec.moduleDependencies(),
+            spec.localRepository(),
+            spec.offline()
+        );
+        modulePath.addAll(moduleArtifacts.stream().map(ResolvedArtifact::path).toList());
+
+        val artifacts = new ArrayList<ResolvedArtifact>(dependencyArtifacts.size() + moduleArtifacts.size());
+        artifacts.addAll(dependencyArtifacts);
+        artifacts.addAll(moduleArtifacts);
+        DependencyLock.apply(workDir, spec.dependencyLock(), spec.dependencyLockMode(), artifacts);
+        return new ResolvedPaths(classpath, modulePath);
     }
 
     private String diagnosticsText(DiagnosticCollector<JavaFileObject> diagnostics) {
@@ -119,23 +144,38 @@ final class JavadocGenerator {
     private record JavadocSpec(
         List<String> srcs,
         List<String> classpath,
+        List<String> modulePath,
         List<String> repositories,
         List<String> dependencies,
+        List<String> moduleDependencies,
+        List<String> addModules,
         String out,
         String release,
-        String localRepository
+        String localRepository,
+        String dependencyLock,
+        String dependencyLockMode,
+        boolean offline
     ) {
         static JavadocSpec from(java.util.Map<String, Object> params) {
             val fields = new FieldMap(params);
             return new JavadocSpec(
                 fields.list("srcs", JavaDefaults.SOURCES),
                 fields.list("classpath", ImmutableList.of()),
+                fields.list("module_path", ImmutableList.of()),
                 fields.list("repositories", JavaDefaults.REPOSITORIES),
                 fields.list("dependencies", ImmutableList.of()),
+                fields.list("module_dependencies", ImmutableList.of()),
+                fields.list("add_modules", ImmutableList.of()),
                 fields.string("out", JavaDefaults.JAVADOC_DIR),
                 fields.string("release", JavaDefaults.RELEASE),
-                fields.string("local_repository", JavaDefaults.LOCAL_REPOSITORY)
+                fields.string("local_repository", JavaDefaults.LOCAL_REPOSITORY),
+                fields.string("dependency_lock", ""),
+                fields.string("dependency_lock_mode", DependencyLock.MODE_OFF),
+                fields.bool("offline", false)
             );
         }
+    }
+
+    private record ResolvedPaths(List<Path> classpath, List<Path> modulePath) {
     }
 }

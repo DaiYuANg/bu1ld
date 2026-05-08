@@ -18,6 +18,8 @@ The plugin build uses:
 - Apache Commons Lang and Commons IO for utilities.
 - Guava for immutable collections and classpath handling.
 - Apache Maven Resolver for Maven-compatible dependency resolution.
+- JUnit Platform Launcher is resolved into the test runtime for Java test
+  execution.
 - FreeFair Lombok Gradle plugin for Lombok wiring.
 - `org.beryx.jlink` for JPMS runtime trimming and `jpackageImage`.
 
@@ -68,7 +70,7 @@ The trimmed runtime uses:
 
 The generated launcher starts
 `org.bu1ld.plugins.java.Bu1ldJavaPlugin`, and the generated `plugin.toml`
-declares the `compile`, `resources`, `jar`, and `javadoc` rules.
+declares the `compile`, `resources`, `jar`, `javadoc`, and `test` rules.
 
 ## Runtime Model
 
@@ -123,7 +125,31 @@ The plugin registers:
 - `javadoc`
 - `sourcesJar`
 - `javadocJar`
+- `test` when a `test` source set exists
 - `build` unless `register_build = false`
+
+Additional source sets can be declared with Gradle-like names. `main` is always
+registered; any extra source set gets `compile<Name>Java`,
+`process<Name>Resources`, and `<name>Classes` tasks. Non-main source sets
+depend on `classes` and automatically see main classes/resources on their
+compile and test runtime classpaths. A source set named `test` registers a
+`test` task by default; other source sets can set `test = true`.
+
+```text
+java {
+  name = "app"
+
+  source_sets = {
+    test = {
+      dependencies = [
+        "org.junit.jupiter:junit-jupiter-api:5.11.4",
+        "org.junit.jupiter:junit-jupiter-engine:5.11.4"
+      ],
+      include_engines = ["junit-jupiter"]
+    }
+  }
+}
+```
 
 Defaults follow Gradle-like paths:
 
@@ -149,13 +175,25 @@ Supported config fields:
 - `resources`
 - `resource_roots`
 - `classpath`
+- `module_path`
 - `repositories`
 - `dependencies`
+- `module_dependencies`
+- `add_modules`
+- `source_sets`
+- `processor_path`
+- `annotation_processors`
+- `processors`
+- `processor_options`
+- `proc`
 - `build_dir`
 - `classes_dir`
 - `resources_dir`
 - `javadoc_dir`
 - `local_repository`
+- `dependency_lock`
+- `dependency_lock_mode`
+- `offline`
 - `jar`
 - `sources_jar`
 - `javadoc_jar`
@@ -163,6 +201,16 @@ Supported config fields:
 
 `sources` and `resources` normally do not need to be declared. The defaults
 match the common Gradle project layout.
+
+`source_sets` is an object keyed by source set name. Each source set supports
+`sources`, `source_roots`, `resources`, `resource_roots`, `classpath`,
+`module_path`, `repositories`, `dependencies`, `module_dependencies`,
+`add_modules`, `processor_path`, `annotation_processors`, `processors`,
+`processor_options`, `proc`, `compile_deps`, `test`, `launcher_dependencies`,
+`reports_dir`, `include_tags`, `exclude_tags`, `include_engines`,
+`exclude_engines`, `fail_if_no_tests`, `classes_dir`, `resources_dir`,
+`local_repository`, `dependency_lock`,
+`dependency_lock_mode`, and `offline`.
 
 ### `java.compile`
 
@@ -179,9 +227,20 @@ Fields:
 
 - `srcs`
 - `classpath`
+- `module_path`
 - `repositories`
 - `dependencies`
+- `module_dependencies`
+- `add_modules`
+- `processor_path`
+- `annotation_processors`
+- `processors`
+- `processor_options`
+- `proc`
 - `local_repository`
+- `dependency_lock`
+- `dependency_lock_mode`
+- `offline`
 - `out`
 - `release`
 - `deps`
@@ -204,6 +263,54 @@ Set `local_repository = "build/dependency-cache/maven"` when a project-local
 cache is preferred. This is only a Maven-layout local repository cache; the
 plugin keeps dependency coordinates in bu1ld config and does not import Maven
 or Gradle project metadata.
+
+JPMS builds put named modules on `module_path` and Maven module coordinates in
+`module_dependencies`. `add_modules` maps to javac's `--add-modules` option:
+
+```text
+java {
+  name = "hello-java-jpms"
+  module_dependencies = [
+    "org.apache.commons:commons-lang3:3.20.0"
+  ]
+}
+```
+
+With a matching `module-info.java`:
+
+```java
+module example.jpms {
+    requires org.apache.commons.lang3;
+}
+```
+
+Annotation processors are resolved separately from the normal classpath:
+
+```text
+java.compile compileJava {
+  srcs = ["src/main/java/**/*.java"]
+  dependencies = ["com.example:annotations:1.0.0"]
+  annotation_processors = ["com.example:processor:1.0.0"]
+  processor_options = { generatedPackage = "example.generated" }
+}
+```
+
+`processor_path` can point at local processor jars/directories. `processors`
+maps to javac's `-processor` option, and `proc` maps to `-proc:<value>`.
+
+Dependency locks are optional. When enabled, resolved artifacts are written as
+a small TOML-like lock file with artifact coordinates and SHA-256 checksums:
+
+```text
+java {
+  dependency_lock = "bu1ld-java.lock"
+  dependency_lock_mode = "write"
+}
+```
+
+Use `dependency_lock_mode = "read"` in CI to verify resolved artifacts against
+the lock file. `offline = true` makes Maven Resolver use only the configured
+local repository.
 
 ### `java.resources`
 
@@ -266,14 +373,64 @@ Fields:
 
 - `srcs`
 - `classpath`
+- `module_path`
 - `repositories`
 - `dependencies`
+- `module_dependencies`
+- `add_modules`
 - `local_repository`
+- `dependency_lock`
+- `dependency_lock_mode`
+- `offline`
 - `out`
 - `release`
 - `deps`
 - `inputs`
 - `outputs`
+
+### `java.test`
+
+Runs compiled tests through JUnit Platform Launcher.
+
+```text
+java.test test {
+  classes = ["build/classes/java/test"]
+  classpath = ["build/classes/java/main", "build/resources/main"]
+  dependencies = [
+    "org.junit.jupiter:junit-jupiter-api:5.11.4",
+    "org.junit.jupiter:junit-jupiter-engine:5.11.4"
+  ]
+  include_engines = ["junit-jupiter"]
+  reports_dir = "build/test-results/test"
+}
+```
+
+Fields:
+
+- `classes`
+- `classpath`
+- `repositories`
+- `dependencies`
+- `launcher_dependencies`
+- `local_repository`
+- `dependency_lock`
+- `dependency_lock_mode`
+- `offline`
+- `reports_dir`
+- `include_tags`
+- `exclude_tags`
+- `include_engines`
+- `exclude_engines`
+- `fail_if_no_tests`
+- `deps`
+- `inputs`
+- `outputs`
+
+The plugin resolves `launcher_dependencies`, which defaults to
+`org.junit.platform:junit-platform-launcher:1.11.4`, into the isolated test
+runtime. Test engines such as JUnit Jupiter Engine are still supplied by project
+dependencies or classpath entries, which keeps the build model aligned with
+external process plugins.
 
 ## Verification
 

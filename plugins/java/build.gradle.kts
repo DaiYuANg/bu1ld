@@ -55,6 +55,9 @@ dependencies {
     runtimeOnly(libs.slf4jNop)
     annotationProcessor(libs.avajeInjectGenerator)
     testImplementation(libs.jacksonDatabind)
+    testImplementation(libs.junitJupiterApi)
+    testRuntimeOnly(libs.junitJupiterEngine)
+    testRuntimeOnly(libs.junitPlatformLauncher)
 }
 
 application {
@@ -148,6 +151,9 @@ val writePluginManifest by tasks.registering {
 
             [[rules]]
             name = "javadoc"
+
+            [[rules]]
+            name = "test"
             """.trimIndent() + "\n",
             Charsets.UTF_8,
         )

@@ -9,6 +9,10 @@ external process plugins, and monorepo package discovery.
   `go.test`, and `go.binary`.
 - `java-project`: first-party external Java plugin compiling with the Java
   Compiler API and writing a jar.
+- `java-junit-project`: Java plugin source set example with JUnit Jupiter
+  tests.
+- `java-jpms-project`: Java plugin JPMS example with Maven dependencies on
+  the module path.
 - `multilang-monorepo`: Go and Java packages in one workspace.
 
 The plugin examples point directly at this repository's local plugin manifests.
@@ -31,5 +35,7 @@ Then run an example with:
 ```bash
 go run ./cmd/cli --project-dir examples/go-project build
 go run ./cmd/cli --project-dir examples/java-project build
+go run ./cmd/cli --project-dir examples/java-junit-project build
+go run ./cmd/cli --project-dir examples/java-jpms-project build
 go run ./cmd/cli --project-dir examples/multilang-monorepo build
 ```

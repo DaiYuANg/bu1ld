@@ -5,6 +5,7 @@ import io.avaje.inject.Component;
 import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import lombok.val;
@@ -15,19 +16,37 @@ final class MavenDependencyResolver {
         Path workDir,
         List<String> repositories,
         List<String> dependencies,
-        String localRepository
+        String localRepository,
+        boolean offline
+    ) throws Exception {
+        val artifacts = resolveArtifacts(workDir, repositories, dependencies, localRepository, offline);
+        val paths = new ArrayList<Path>(artifacts.size());
+        for (val artifact : artifacts) {
+            paths.add(artifact.path());
+        }
+        return ImmutableList.copyOf(paths);
+    }
+
+    List<ResolvedArtifact> resolveArtifacts(
+        Path workDir,
+        List<String> repositories,
+        List<String> dependencies,
+        String localRepository,
+        boolean offline
     ) throws Exception {
         if (dependencies.isEmpty()) {
             return ImmutableList.of();
         }
 
-        val runtime = ResolverRuntime.create(resolveLocalRepository(workDir, localRepository));
+        val runtime = ResolverRuntime.create(resolveLocalRepository(workDir, localRepository), offline);
         try (runtime) {
-            val paths = new LinkedHashSet<Path>();
+            val artifacts = new LinkedHashMap<String, ResolvedArtifact>();
             for (val dependency : dependencies) {
-                paths.addAll(runtime.resolve(dependency, remoteRepositories(repositories)));
+                for (val artifact : runtime.resolve(dependency, remoteRepositories(repositories))) {
+                    artifacts.putIfAbsent(artifact.coordinate(), artifact);
+                }
             }
-            return ImmutableList.copyOf(paths);
+            return ImmutableList.copyOf(artifacts.values());
         }
     }
 
@@ -58,7 +77,7 @@ final class MavenDependencyResolver {
             this.session = session;
         }
 
-        static ResolverRuntime create(Path localRepository) throws Exception {
+        static ResolverRuntime create(Path localRepository, boolean offline) throws Exception {
             val supplier = type("org.eclipse.aether.supplier.RepositorySystemSupplier")
                 .getConstructor()
                 .newInstance();
@@ -69,11 +88,12 @@ final class MavenDependencyResolver {
             val sessionBuilder = method(sessionBuilderSupplier.getClass(), "get").invoke(sessionBuilderSupplier);
             method(sessionBuilder.getClass(), "withLocalRepositoryBaseDirectories", Path[].class)
                 .invoke(sessionBuilder, (Object) new Path[]{localRepository});
+            method(sessionBuilder.getClass(), "setOffline", boolean.class).invoke(sessionBuilder, offline);
             val session = method(sessionBuilder.getClass(), "build").invoke(sessionBuilder);
             return new ResolverRuntime(system, session);
         }
 
-        List<Path> resolve(String dependency, List<String> repositories) throws Exception {
+        List<ResolvedArtifact> resolve(String dependency, List<String> repositories) throws Exception {
             val request = dependencyRequest(dependency, repositories);
             val result = method(system.getClass(), "resolveDependencies",
                 type("org.eclipse.aether.RepositorySystemSession"),
@@ -81,15 +101,16 @@ final class MavenDependencyResolver {
             ).invoke(system, session, request);
 
             val artifactResults = (List<?>) method(result.getClass(), "getArtifactResults").invoke(result);
-            val paths = new ArrayList<Path>(artifactResults.size());
+            val artifacts = new ArrayList<ResolvedArtifact>(artifactResults.size());
+            val seenPaths = new LinkedHashSet<Path>();
             for (val artifactResult : artifactResults) {
                 val artifact = method(artifactResult.getClass(), "getArtifact").invoke(artifactResult);
                 val path = (Path) method(artifact.getClass(), "getPath").invoke(artifact);
-                if (path != null) {
-                    paths.add(path);
+                if (path != null && seenPaths.add(path)) {
+                    artifacts.add(new ResolvedArtifact(artifactCoordinate(artifact), path.normalize()));
                 }
             }
-            return paths;
+            return artifacts;
         }
 
         private Object dependencyRequest(String dependency, List<String> repositories) throws Exception {
@@ -142,5 +163,20 @@ final class MavenDependencyResolver {
         private static Method method(Class<?> type, String name, Class<?>... parameterTypes) throws NoSuchMethodException {
             return type.getMethod(name, parameterTypes);
         }
+
+        private static String artifactCoordinate(Object artifact) throws Exception {
+            val groupId = (String) method(artifact.getClass(), "getGroupId").invoke(artifact);
+            val artifactId = (String) method(artifact.getClass(), "getArtifactId").invoke(artifact);
+            val extension = (String) method(artifact.getClass(), "getExtension").invoke(artifact);
+            val classifier = (String) method(artifact.getClass(), "getClassifier").invoke(artifact);
+            val version = (String) method(artifact.getClass(), "getVersion").invoke(artifact);
+            if (classifier == null || classifier.isBlank()) {
+                return groupId + ":" + artifactId + ":" + extension + ":" + version;
+            }
+            return groupId + ":" + artifactId + ":" + extension + ":" + classifier + ":" + version;
+        }
     }
+}
+
+record ResolvedArtifact(String coordinate, Path path) {
 }

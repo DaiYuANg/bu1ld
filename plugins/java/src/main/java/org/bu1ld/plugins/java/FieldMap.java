@@ -3,6 +3,7 @@ package org.bu1ld.plugins.java;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.val;
@@ -12,6 +13,10 @@ final class FieldMap {
 
     FieldMap(Map<String, Object> fields) {
         this.fields = fields == null ? ImmutableMap.of() : fields;
+    }
+
+    boolean has(String name) {
+        return fields.containsKey(name);
     }
 
     String string(String name, String fallback) {
@@ -56,5 +61,43 @@ final class FieldMap {
             return enabled;
         }
         throw new IllegalArgumentException("field \"" + name + "\" must be bool");
+    }
+
+    Map<String, Object> object(String name, Map<String, Object> fallback) {
+        if (!fields.containsKey(name)) {
+            return fallback;
+        }
+        val value = fields.get(name);
+        if (value instanceof Map<?, ?> items) {
+            val result = new LinkedHashMap<String, Object>(items.size());
+            for (val entry : items.entrySet()) {
+                if (entry.getKey() instanceof String key) {
+                    result.put(key, entry.getValue());
+                    continue;
+                }
+                throw new IllegalArgumentException("field \"" + name + "\" must be object");
+            }
+            return result;
+        }
+        throw new IllegalArgumentException("field \"" + name + "\" must be object");
+    }
+
+    Map<String, String> stringMap(String name, Map<String, String> fallback) {
+        if (!fields.containsKey(name)) {
+            return fallback;
+        }
+        val value = fields.get(name);
+        if (value instanceof Map<?, ?> items) {
+            val result = new LinkedHashMap<String, String>(items.size());
+            for (val entry : items.entrySet()) {
+                if (entry.getKey() instanceof String key && entry.getValue() instanceof String item) {
+                    result.put(key, item);
+                    continue;
+                }
+                throw new IllegalArgumentException("field \"" + name + "\" must be object with string values");
+            }
+            return result;
+        }
+        throw new IllegalArgumentException("field \"" + name + "\" must be object");
     }
 }

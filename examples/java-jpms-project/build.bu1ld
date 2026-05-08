@@ -1,0 +1,22 @@
+workspace {
+  name = "java-jpms-project"
+}
+
+plugin java {
+  source = local
+  id = "org.bu1ld.java"
+  version = "0.1.0"
+  path = "../../plugins/java/build/plugin/plugin.toml"
+}
+
+java {
+  name = "hello-java-jpms"
+  release = "17"
+  dependency_lock = "bu1ld-java.lock"
+  dependency_lock_mode = "write"
+  local_repository = "build/dependency-cache/maven"
+
+  module_dependencies = [
+    "org.apache.commons:commons-lang3:3.20.0"
+  ]
+}
