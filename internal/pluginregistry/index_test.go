@@ -33,7 +33,7 @@ func TestLoadEmbeddedRegistry(t *testing.T) {
 	if !ok {
 		t.Fatalf("org.bu1ld.go has no latest version")
 	}
-	if got, want := latest.Version, "0.1.1"; got != want {
+	if got, want := latest.Version, "0.1.2"; got != want {
 		t.Fatalf("Version = %q, want %q", got, want)
 	}
 }

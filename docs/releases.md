@@ -52,7 +52,7 @@ The Java plugin is packaged by Gradle:
 ```
 
 This builds a JPMS jpackage app image, writes `plugin.toml`, and installs it
-under `.bu1ld/plugins/org.bu1ld.java/0.1.1/`. The Java plugin does not currently
+under `.bu1ld/plugins/org.bu1ld.java/0.1.2/`. The Java plugin does not currently
 publish MSI, DMG, DEB, or RPM installers; the app image is the plugin artifact.
 
 See [Java Plugin](java-plugin.md) for the packaging model.
@@ -62,8 +62,8 @@ See [Java Plugin](java-plugin.md) for the packaging model.
 Tagged releases are handled by `.github/workflows/release.yml`.
 
 ```bash
-git tag v0.1.1
-git push origin v0.1.1
+git tag v0.1.2
+git push origin v0.1.2
 ```
 
 The workflow runs:

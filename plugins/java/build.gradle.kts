@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "org.bu1ld.plugins"
-version = "0.1.1"
+version = "0.1.2"
 
 repositories {
     mavenCentral()
@@ -15,6 +15,7 @@ val javaReleaseVersion = libs.versions.javaRelease.get()
 val bu1ldPluginId = "org.bu1ld.java"
 val bu1ldPluginNamespace = "java"
 val bu1ldPluginVersion = version.toString()
+val bu1ldJpackageAppVersion = jpackageCompatibleAppVersion(bu1ldPluginVersion)
 val bu1ldPluginBinary = providers.systemProperty("os.name")
     .map { name ->
         if (name.lowercase().contains("windows")) {
@@ -24,6 +25,23 @@ val bu1ldPluginBinary = providers.systemProperty("os.name")
         }
     }
     .orElse("bin/bu1ld-java-plugin")
+
+fun jpackageCompatibleAppVersion(value: String): String {
+    val numericParts = value
+        .substringBefore("-")
+        .substringBefore("+")
+        .split(".")
+        .take(3)
+        .map { part -> part.toIntOrNull() ?: 0 }
+        .toMutableList()
+    while (numericParts.size < 3) {
+        numericParts.add(0)
+    }
+    if (numericParts[0] <= 0) {
+        numericParts[0] = 1
+    }
+    return numericParts.take(3).joinToString(".")
+}
 
 fun File.isMavenResolverRuntimeJar(): Boolean {
     val jarName = name
@@ -119,7 +137,7 @@ jlink {
     jpackage {
         setImageOutputDir(pluginPackageRoot.get().asFile)
         imageName = "bu1ld-java-plugin"
-        appVersion = bu1ldPluginVersion
+        appVersion = bu1ldJpackageAppVersion
         skipInstaller = true
         if (providers.systemProperty("os.name").get().lowercase().contains("windows")) {
             imageOptions.set(listOf("--win-console"))

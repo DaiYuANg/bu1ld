@@ -36,7 +36,7 @@ On Windows:
 ```
 
 The task writes the plugin under
-`.bu1ld/plugins/org.bu1ld.java/0.1.1/`.
+`.bu1ld/plugins/org.bu1ld.java/0.1.2/`.
 
 For local development without installing, point a project directly at the
 generated manifest:
@@ -107,7 +107,7 @@ the plugin and an optional `java { ... }` block:
 plugin java {
   source = local
   id = "org.bu1ld.java"
-  version = "0.1.1"
+  version = "0.1.2"
 }
 
 java {

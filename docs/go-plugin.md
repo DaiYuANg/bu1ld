@@ -10,7 +10,7 @@ model as plugins written in other languages.
 For local development:
 
 ```bash
-go build -C plugins/go -o ../../.bu1ld/plugins/org.bu1ld.go/0.1.1/bu1ld-go-plugin ./cmd/bu1ld-go-plugin
+go build -C plugins/go -o ../../.bu1ld/plugins/org.bu1ld.go/0.1.2/bu1ld-go-plugin ./cmd/bu1ld-go-plugin
 ```
 
 On Windows, use `bu1ld-go-plugin.exe` in both the output path and manifest
@@ -23,7 +23,7 @@ Projects opt in with a normal plugin declaration:
 plugin go {
   source = local
   id = "org.bu1ld.go"
-  version = "0.1.1"
+  version = "0.1.2"
 }
 ```
 
