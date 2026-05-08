@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "org.bu1ld.plugins"
-version = "0.1.2"
+version = "0.1.3"
 
 repositories {
     mavenCentral()
@@ -16,15 +16,14 @@ val bu1ldPluginId = "org.bu1ld.java"
 val bu1ldPluginNamespace = "java"
 val bu1ldPluginVersion = version.toString()
 val bu1ldJpackageAppVersion = jpackageCompatibleAppVersion(bu1ldPluginVersion)
-val bu1ldPluginBinary = providers.systemProperty("os.name")
-    .map { name ->
-        if (name.lowercase().contains("windows")) {
-            "bu1ld-java-plugin.exe"
-        } else {
-            "bu1ld-java-plugin"
-        }
-    }
-    .orElse("bin/bu1ld-java-plugin")
+val currentOsName = providers.systemProperty("os.name").get().lowercase()
+val currentOsIsWindows = currentOsName.contains("windows")
+val currentOsIsMac = currentOsName.contains("mac") || currentOsName.contains("darwin")
+val bu1ldPluginBinary = when {
+    currentOsIsWindows -> "bu1ld-java-plugin.exe"
+    currentOsIsMac -> "bu1ld-java-plugin.app/Contents/MacOS/bu1ld-java-plugin"
+    else -> "bin/bu1ld-java-plugin"
+}
 
 fun jpackageCompatibleAppVersion(value: String): String {
     val numericParts = value
@@ -105,7 +104,8 @@ tasks.named<Test>("test") {
 }
 
 val pluginPackageRoot = layout.buildDirectory.dir("jpackage")
-val pluginImageDirectory = pluginPackageRoot.map { directory -> directory.dir("bu1ld-java-plugin") }
+val pluginImageName = if (currentOsIsMac) "bu1ld-java-plugin.app" else "bu1ld-java-plugin"
+val pluginImageDirectory = pluginPackageRoot.map { directory -> directory.dir(pluginImageName) }
 val pluginOutputDirectory = layout.buildDirectory.dir("plugin")
 val generatedPluginManifestFile = layout.buildDirectory.file("generated/plugin/plugin.toml")
 
@@ -139,7 +139,7 @@ jlink {
         imageName = "bu1ld-java-plugin"
         appVersion = bu1ldJpackageAppVersion
         skipInstaller = true
-        if (providers.systemProperty("os.name").get().lowercase().contains("windows")) {
+        if (currentOsIsWindows) {
             imageOptions.set(listOf("--win-console"))
         }
     }
@@ -156,7 +156,7 @@ val writePluginManifest by tasks.registering {
             id = "$bu1ldPluginId"
             namespace = "$bu1ldPluginNamespace"
             version = "$bu1ldPluginVersion"
-            binary = "${bu1ldPluginBinary.get()}"
+            binary = "$bu1ldPluginBinary"
 
             [[rules]]
             name = "compile"
@@ -182,7 +182,13 @@ val jpackageImage = tasks.named("jpackageImage")
 
 val stageBu1ldPlugin by tasks.registering(Sync::class) {
     dependsOn(jpackageImage, writePluginManifest)
-    from(pluginImageDirectory)
+    if (currentOsIsMac) {
+        from(pluginImageDirectory) {
+            into(pluginImageName)
+        }
+    } else {
+        from(pluginImageDirectory)
+    }
     from(generatedPluginManifestFile)
     into(pluginOutputDirectory)
 }
