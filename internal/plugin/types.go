@@ -65,7 +65,7 @@ func TaskSpecToBuild(spec TaskSpec) build.Task {
 	task.Command = list.NewList[string](spec.Command...)
 	task.Action = build.Action{
 		Kind:   spec.Action.Kind,
-		Params: spec.Action.Params,
+		Params: build.NormalizeActionParams(spec.Action.Params),
 	}
 	return task
 }

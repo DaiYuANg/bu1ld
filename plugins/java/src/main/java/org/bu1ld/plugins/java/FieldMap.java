@@ -5,6 +5,7 @@ import com.google.common.collect.ImmutableMap;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import lombok.val;
 
 final class FieldMap {
     private final Map<String, Object> fields;
@@ -17,7 +18,7 @@ final class FieldMap {
         if (!fields.containsKey(name)) {
             return fallback;
         }
-        Object value = fields.get(name);
+        val value = fields.get(name);
         if (value instanceof String text) {
             return text;
         }
@@ -28,13 +29,13 @@ final class FieldMap {
         if (!fields.containsKey(name)) {
             return fallback;
         }
-        Object value = fields.get(name);
+        val value = fields.get(name);
         if (value instanceof String text) {
             return ImmutableList.of(text);
         }
         if (value instanceof List<?> items) {
-            List<String> result = new ArrayList<>(items.size());
-            for (Object item : items) {
+            val result = new ArrayList<String>(items.size());
+            for (val item : items) {
                 if (item instanceof String text) {
                     result.add(text);
                     continue;
@@ -50,7 +51,7 @@ final class FieldMap {
         if (!fields.containsKey(name)) {
             return fallback;
         }
-        Object value = fields.get(name);
+        val value = fields.get(name);
         if (value instanceof Boolean enabled) {
             return enabled;
         }

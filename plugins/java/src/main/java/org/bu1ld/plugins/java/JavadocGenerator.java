@@ -2,6 +2,8 @@ package org.bu1ld.plugins.java;
 
 import com.google.common.collect.ImmutableList;
 import io.avaje.inject.Component;
+import java.io.File;
+import java.io.IOException;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -10,7 +12,7 @@ import java.util.List;
 import java.util.Locale;
 import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
-import javax.tools.JavaCompiler;
+import javax.tools.DocumentationTool;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
@@ -21,55 +23,55 @@ import static org.bu1ld.plugins.java.Protocol.ExecuteRequest;
 import static org.bu1ld.plugins.java.Protocol.ExecuteResult;
 
 @Component
-final class NativeJavaCompiler {
+final class JavadocGenerator {
     private final MavenDependencyResolver dependencyResolver;
 
-    NativeJavaCompiler(MavenDependencyResolver dependencyResolver) {
+    JavadocGenerator(MavenDependencyResolver dependencyResolver) {
         this.dependencyResolver = dependencyResolver;
     }
 
-    ExecuteResult compile(ExecuteRequest request) throws Exception {
-        val spec = CompileSpec.from(request.params());
+    ExecuteResult generate(ExecuteRequest request) throws Exception {
+        val spec = JavadocSpec.from(request.params());
         val workDir = Path.of(request.workDir()).toAbsolutePath().normalize();
         val outputDir = workDir.resolve(spec.out()).normalize();
         val sources = ProjectFiles.expand(workDir, spec.srcs());
         if (sources.isEmpty()) {
             FileUtils.forceMkdir(outputDir.toFile());
-            return new ExecuteResult("no Java source files matched\n");
+            return new ExecuteResult("no Java source files matched for javadoc\n");
         }
 
-        val compiler = ToolProvider.getSystemJavaCompiler();
-        if (compiler == null) {
-            throw new IllegalStateException("JDK compiler is not available in this Java runtime");
+        val tool = ToolProvider.getSystemDocumentationTool();
+        if (tool == null) {
+            throw new IllegalStateException("JDK javadoc tool is not available in this Java runtime");
         }
 
         FileUtils.forceMkdir(outputDir.toFile());
         val diagnostics = new DiagnosticCollector<JavaFileObject>();
-        val compilerOutput = new StringWriter();
-        try (val files = compiler.getStandardFileManager(diagnostics, Locale.ROOT, StandardCharsets.UTF_8)) {
+        val toolOutput = new StringWriter();
+        try (val files = tool.getStandardFileManager(diagnostics, Locale.ROOT, StandardCharsets.UTF_8)) {
             val units = files.getJavaFileObjectsFromFiles(
                 sources.stream().map(Path::toFile).toList()
             );
-            val task = compiler.getTask(
-                compilerOutput,
+            val task = tool.getTask(
+                toolOutput,
                 files,
                 diagnostics,
-                compilerOptions(workDir, outputDir, spec),
                 null,
+                options(workDir, outputDir, spec),
                 units
             );
             if (!Boolean.TRUE.equals(task.call())) {
                 var message = diagnosticsText(diagnostics);
-                if (!compilerOutput.toString().isBlank()) {
-                    message += compilerOutput;
+                if (!toolOutput.toString().isBlank()) {
+                    message += toolOutput;
                 }
-                throw new IllegalStateException("java compile failed\n" + message.stripTrailing());
+                throw new IllegalStateException("javadoc failed\n" + message.stripTrailing());
             }
         }
-        return new ExecuteResult("compiled " + sources.size() + " Java source file(s) to " + spec.out() + "\n");
+        return new ExecuteResult("generated javadoc for " + sources.size() + " Java source file(s) to " + spec.out() + "\n");
     }
 
-    private List<String> compilerOptions(Path workDir, Path outputDir, CompileSpec spec) throws Exception {
+    private List<String> options(Path workDir, Path outputDir, JavadocSpec spec) throws Exception {
         val options = new ArrayList<String>();
         options.add("-encoding");
         options.add(StandardCharsets.UTF_8.name());
@@ -87,7 +89,7 @@ final class NativeJavaCompiler {
         return options;
     }
 
-    private List<Path> classpath(Path workDir, CompileSpec spec) throws Exception {
+    private List<Path> classpath(Path workDir, JavadocSpec spec) throws Exception {
         val entries = JavaClasspath.resolve(workDir, spec.classpath());
         entries.addAll(dependencyResolver.resolve(
             workDir,
@@ -101,9 +103,7 @@ final class NativeJavaCompiler {
     private String diagnosticsText(DiagnosticCollector<JavaFileObject> diagnostics) {
         val builder = new StringBuilder();
         for (val diagnostic : diagnostics.getDiagnostics()) {
-            builder
-                .append(diagnostic.getKind())
-                .append(": ");
+            builder.append(diagnostic.getKind()).append(": ");
             if (diagnostic.getSource() != null) {
                 builder
                     .append(diagnostic.getSource().getName())
@@ -116,7 +116,7 @@ final class NativeJavaCompiler {
         return builder.toString();
     }
 
-    private record CompileSpec(
+    private record JavadocSpec(
         List<String> srcs,
         List<String> classpath,
         List<String> repositories,
@@ -125,14 +125,14 @@ final class NativeJavaCompiler {
         String release,
         String localRepository
     ) {
-        static CompileSpec from(java.util.Map<String, Object> params) {
+        static JavadocSpec from(java.util.Map<String, Object> params) {
             val fields = new FieldMap(params);
-            return new CompileSpec(
+            return new JavadocSpec(
                 fields.list("srcs", JavaDefaults.SOURCES),
                 fields.list("classpath", ImmutableList.of()),
                 fields.list("repositories", JavaDefaults.REPOSITORIES),
                 fields.list("dependencies", ImmutableList.of()),
-                fields.string("out", JavaDefaults.CLASSES_DIR),
+                fields.string("out", JavaDefaults.JAVADOC_DIR),
                 fields.string("release", JavaDefaults.RELEASE),
                 fields.string("local_repository", JavaDefaults.LOCAL_REPOSITORY)
             );

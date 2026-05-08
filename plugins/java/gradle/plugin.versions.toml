@@ -7,7 +7,10 @@ guava = "33.5.0-jre"
 jackson = "2.21.2"
 jlink = "4.0.0"
 javaRelease = "17"
+javaxInject = "1"
 lsp4jJsonrpc = "1.0.0"
+mavenResolver = "2.0.17"
+slf4j = "2.0.17"
 
 [libraries]
 avajeInject = { group = "io.avaje", name = "avaje-inject", version.ref = "avajeInject" }
@@ -16,7 +19,10 @@ commonsIo = { group = "commons-io", name = "commons-io", version.ref = "commonsI
 commonsLang3 = { group = "org.apache.commons", name = "commons-lang3", version.ref = "commonsLang3" }
 guava = { group = "com.google.guava", name = "guava", version.ref = "guava" }
 jacksonDatabind = { group = "com.fasterxml.jackson.core", name = "jackson-databind", version.ref = "jackson" }
+javaxInject = { group = "javax.inject", name = "javax.inject", version.ref = "javaxInject" }
 lsp4jJsonrpc = { group = "org.eclipse.lsp4j", name = "org.eclipse.lsp4j.jsonrpc", version.ref = "lsp4jJsonrpc" }
+mavenResolverSupplierMvn3 = { group = "org.apache.maven.resolver", name = "maven-resolver-supplier-mvn3", version.ref = "mavenResolver" }
+slf4jNop = { group = "org.slf4j", name = "slf4j-nop", version.ref = "slf4j" }
 
 [plugins]
 jlink = { id = "org.beryx.jlink", version.ref = "jlink" }

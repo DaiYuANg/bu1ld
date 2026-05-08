@@ -17,6 +17,7 @@ The plugin build uses:
 - Avaje Inject for dependency injection.
 - Apache Commons Lang and Commons IO for utilities.
 - Guava for immutable collections and classpath handling.
+- Apache Maven Resolver for Maven-compatible dependency resolution.
 - FreeFair Lombok Gradle plugin for Lombok wiring.
 - `org.beryx.jlink` for JPMS runtime trimming and `jpackageImage`.
 
@@ -67,7 +68,7 @@ The trimmed runtime uses:
 
 The generated launcher starts
 `org.bu1ld.plugins.java.Bu1ldJavaPlugin`, and the generated `plugin.toml`
-declares the `compile` and `jar` rules.
+declares the `compile`, `resources`, `jar`, and `javadoc` rules.
 
 ## Runtime Model
 
@@ -116,27 +117,52 @@ java {
 The plugin registers:
 
 - `compileJava`
+- `processResources`
 - `classes`
 - `jar`
+- `javadoc`
+- `sourcesJar`
+- `javadocJar`
 - `build` unless `register_build = false`
 
 Defaults follow Gradle-like paths:
 
 - sources: `src/main/java/**/*.java`
+- source roots: `src/main/java`
+- resources: `src/main/resources/**`
+- resource roots: `src/main/resources`
 - classes: `build/classes/java/main`
+- resources output: `build/resources/main`
+- javadoc: `build/docs/javadoc`
 - jar: `build/libs/<name>.jar`
+- sources jar: `build/libs/<name>-sources.jar`
+- javadoc jar: `build/libs/<name>-javadoc.jar`
+- Maven dependency cache: `~/.m2/repository`
 - release: `17`
 
 Supported config fields:
 
 - `name`
 - `release`
-- `srcs`
+- `sources`
+- `source_roots`
+- `resources`
+- `resource_roots`
 - `classpath`
+- `repositories`
+- `dependencies`
 - `build_dir`
 - `classes_dir`
+- `resources_dir`
+- `javadoc_dir`
+- `local_repository`
 - `jar`
+- `sources_jar`
+- `javadoc_jar`
 - `register_build`
+
+`sources` and `resources` normally do not need to be declared. The defaults
+match the common Gradle project layout.
 
 ### `java.compile`
 
@@ -153,8 +179,50 @@ Fields:
 
 - `srcs`
 - `classpath`
+- `repositories`
+- `dependencies`
+- `local_repository`
 - `out`
 - `release`
+- `deps`
+- `inputs`
+- `outputs`
+
+Maven dependencies use standard coordinates:
+
+```text
+java.compile compileGenerated {
+  srcs = ["generated/**/*.java"]
+  dependencies = ["com.google.guava:guava:33.5.0-jre"]
+}
+```
+
+If `repositories` is omitted, the plugin uses Maven Central. Resolver first
+checks `local_repository`, which defaults to `~/.m2/repository`, so dependencies
+already present in the user's Maven cache are reused without another download.
+Set `local_repository = "build/dependency-cache/maven"` when a project-local
+cache is preferred. This is only a Maven-layout local repository cache; the
+plugin keeps dependency coordinates in bu1ld config and does not import Maven
+or Gradle project metadata.
+
+### `java.resources`
+
+Copies resources into an output directory while preserving paths relative to
+the configured resource roots.
+
+```text
+java.resources processGeneratedResources {
+  resources = ["generated/resources/**"]
+  resource_roots = ["generated/resources"]
+  out = "build/resources/generated"
+}
+```
+
+Fields:
+
+- `resources`
+- `resource_roots`
+- `out`
 - `deps`
 - `inputs`
 - `outputs`
@@ -165,7 +233,7 @@ Writes a jar using Java's jar APIs.
 
 ```text
 java.jar app {
-  classes = "build/classes/java/main"
+  roots = ["build/classes/java/main", "build/resources/main"]
   out = "build/libs/app.jar"
 }
 ```
@@ -173,7 +241,36 @@ java.jar app {
 Fields:
 
 - `classes`
+- `roots`
 - `out`
+- `deps`
+- `inputs`
+- `outputs`
+
+`classes` is retained as a shorthand for a single jar root. New tasks should
+prefer `roots`, because application jars, sources jars, and javadoc jars all use
+the same packaging action.
+
+### `java.javadoc`
+
+Generates javadoc directly through the JDK `DocumentationTool` API.
+
+```text
+java.javadoc apiDocs {
+  srcs = ["src/main/java/**/*.java"]
+  out = "build/docs/javadoc"
+}
+```
+
+Fields:
+
+- `srcs`
+- `classpath`
+- `repositories`
+- `dependencies`
+- `local_repository`
+- `out`
+- `release`
 - `deps`
 - `inputs`
 - `outputs`

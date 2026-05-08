@@ -72,7 +72,7 @@ func taskFromConfigCache(item configCacheTask) build.Task {
 	task.Command = list.NewList[string](item.Command...)
 	task.Action = build.Action{
 		Kind:   item.Action.Kind,
-		Params: item.Action.Params,
+		Params: build.NormalizeActionParams(item.Action.Params),
 	}
 	task.LocalName = item.Local
 	if task.LocalName == "" {

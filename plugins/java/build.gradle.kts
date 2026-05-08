@@ -25,6 +25,21 @@ val bu1ldPluginBinary = providers.systemProperty("os.name")
     }
     .orElse("bin/bu1ld-java-plugin")
 
+fun File.isMavenResolverRuntimeJar(): Boolean {
+    val jarName = name
+    return jarName.startsWith("maven-") ||
+        jarName.startsWith("plexus-") ||
+        jarName.startsWith("httpclient-") ||
+        jarName.startsWith("httpcore-") ||
+        jarName.startsWith("commons-codec-") ||
+        jarName.startsWith("jcl-over-slf4j-") ||
+        jarName.startsWith("javax.inject-") ||
+        jarName.startsWith("slf4j-")
+}
+
+fun File.isMavenResolverSupplierJar(): Boolean =
+    name.startsWith("maven-resolver-supplier")
+
 java {
     modularity.inferModulePath.set(true)
 }
@@ -35,6 +50,9 @@ dependencies {
     implementation(libs.commonsIo)
     implementation(libs.guava)
     implementation(libs.avajeInject)
+    implementation(libs.mavenResolverSupplierMvn3)
+    implementation(libs.javaxInject)
+    runtimeOnly(libs.slf4jNop)
     annotationProcessor(libs.avajeInjectGenerator)
     testImplementation(libs.jacksonDatabind)
 }
@@ -51,8 +69,14 @@ tasks.withType<JavaCompile>().configureEach {
 }
 
 tasks.named<JavaCompile>("compileJava") {
-    options.compilerArgs.addAll(listOf("--module-path", classpath.asPath))
-    classpath = files()
+    val mavenResolverClasspath = classpath.filter {
+        it.isMavenResolverRuntimeJar() && !it.isMavenResolverSupplierJar()
+    }
+    val modulePath = classpath.filter {
+        !it.isMavenResolverRuntimeJar() || it.isMavenResolverSupplierJar()
+    }
+    options.compilerArgs.addAll(listOf("--module-path", modulePath.asPath))
+    classpath = mavenResolverClasspath
 }
 
 tasks.named<Test>("test") {
@@ -65,6 +89,17 @@ val pluginOutputDirectory = layout.buildDirectory.dir("plugin")
 val generatedPluginManifestFile = layout.buildDirectory.file("generated/plugin/plugin.toml")
 
 jlink {
+    forceMerge(
+        "maven-",
+        "plexus-",
+        "httpclient-",
+        "httpcore-",
+        "commons-codec-",
+        "jcl-over-slf4j-",
+        "javax.inject-",
+        "slf4j-"
+    )
+
     addOptions(
         "--strip-debug",
         "--compress",
@@ -106,7 +141,13 @@ val writePluginManifest by tasks.registering {
             name = "compile"
 
             [[rules]]
+            name = "resources"
+
+            [[rules]]
             name = "jar"
+
+            [[rules]]
+            name = "javadoc"
             """.trimIndent() + "\n",
             Charsets.UTF_8,
         )
