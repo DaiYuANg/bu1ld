@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/arcgolabs/collectionx/list"
+	"github.com/arcgolabs/collectionx/mapping"
 	"github.com/arcgolabs/collectionx/set"
-	"github.com/samber/lo"
 )
 
 type Metadata struct {
@@ -108,15 +109,15 @@ func (i Invocation) OptionalList(name string, fallback []string) ([]string, erro
 	case []string:
 		return typed, nil
 	case []any:
-		values := make([]string, 0, len(typed))
+		values := list.NewListWithCapacity[string](len(typed))
 		for _, item := range typed {
 			text, ok := item.(string)
 			if !ok {
 				return nil, fmt.Errorf("%s.%s field %q must be list", i.Namespace, i.Rule, name)
 			}
-			values = append(values, text)
+			values.Add(text)
 		}
-		return values, nil
+		return values.Values(), nil
 	default:
 		return nil, fmt.Errorf("%s.%s field %q must be list", i.Namespace, i.Rule, name)
 	}
@@ -162,7 +163,7 @@ func ValidateInvocation(schema RuleSchema, invocation Invocation) error {
 		}
 	}
 
-	names := lo.Keys[string, any](invocation.Fields)
+	names := mapping.NewMapFrom(invocation.Fields).Keys()
 	slices.Sort(names)
 	for _, name := range names {
 		if !known.Contains(name) {

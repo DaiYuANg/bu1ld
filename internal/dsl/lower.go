@@ -108,27 +108,27 @@ func pluginConfigurations(file *File, registry *buildplugin.Registry) (map[strin
 	if err != nil {
 		return nil, nil, err
 	}
-	configs := map[string]buildplugin.PluginConfig{}
+	configs := mapping.NewMap[string, buildplugin.PluginConfig]()
 	if file == nil || file.Result.HIR == nil {
-		return configs, configNamespaces, nil
+		return configs.All(), configNamespaces, nil
 	}
 	for _, form := range file.Result.HIR.Forms.Values() {
 		if _, ok := configNamespaces[form.Kind]; !ok {
 			continue
 		}
-		if _, exists := configs[form.Kind]; exists {
+		if _, exists := configs.Get(form.Kind); exists {
 			return nil, nil, dslErrorAt(file.Result.FileSet, form.Pos, "duplicate plugin config %q", form.Kind)
 		}
 		fields, err := invocationFields(file.Result.FileSet, form)
 		if err != nil {
 			return nil, nil, err
 		}
-		configs[form.Kind] = buildplugin.PluginConfig{
+		configs.Set(form.Kind, buildplugin.PluginConfig{
 			Namespace: form.Kind,
 			Fields:    fields,
-		}
+		})
 	}
-	return configs, configNamespaces, nil
+	return configs.All(), configNamespaces, nil
 }
 
 func lowerTopLevelForm(
@@ -293,15 +293,15 @@ func lowerPluginRuleForm(
 }
 
 func invocationFields(fset *token.FileSet, form planocomp.HIRForm) (map[string]any, error) {
-	fields := make(map[string]any, form.Fields.Len())
+	fields := mapping.NewMapWithCapacity[string, any](form.Fields.Len())
 	for _, field := range form.Fields.Values() {
 		value, err := invocationFieldValue(fset, field)
 		if err != nil {
 			return nil, err
 		}
-		fields[field.Name] = value
+		fields.Set(field.Name, value)
 	}
-	return fields, nil
+	return fields.All(), nil
 }
 
 func invocationFieldValue(fset *token.FileSet, field planocomp.HIRField) (any, error) {
@@ -376,40 +376,41 @@ func anyValue(fset *token.FileSet, pos token.Pos, value any) (any, error) {
 	case planschema.Ref:
 		return typed.Name, nil
 	case []any:
-		values := make([]any, 0, len(typed))
+		values := list.NewListWithCapacity[any](len(typed))
 		for _, item := range typed {
 			next, err := anyValue(fset, pos, item)
 			if err != nil {
 				return nil, err
 			}
-			values = append(values, next)
+			values.Add(next)
 		}
-		return values, nil
+		return values.Values(), nil
 	case map[string]any:
-		out := make(map[string]any, len(typed))
+		out := mapping.NewMapWithCapacity[string, any](len(typed))
 		for key, item := range typed {
 			next, err := anyValue(fset, pos, item)
 			if err != nil {
 				return nil, err
 			}
-			out[key] = next
+			out.Set(key, next)
 		}
-		return out, nil
+		return out.All(), nil
 	case *mapping.OrderedMap[string, any]:
-		out := make(map[string]any, typed.Len())
+		out := mapping.NewMapWithCapacity[string, any](typed.Len())
+		var rangeErr error
 		typed.Range(func(key string, item any) bool {
 			next, err := anyValue(fset, pos, item)
 			if err != nil {
-				out = nil
+				rangeErr = err
 				return false
 			}
-			out[key] = next
+			out.Set(key, next)
 			return true
 		})
-		if out == nil {
-			return nil, dslErrorAt(fset, pos, "expected object value")
+		if rangeErr != nil {
+			return nil, rangeErr
 		}
-		return out, nil
+		return out.All(), nil
 	default:
 		return nil, dslErrorAt(fset, pos, "unsupported value %T", value)
 	}
@@ -418,17 +419,17 @@ func anyValue(fset *token.FileSet, pos token.Pos, value any) (any, error) {
 func anyMapValue(fset *token.FileSet, pos token.Pos, value any) (map[string]any, error) {
 	switch typed := value.(type) {
 	case map[string]any:
-		out := make(map[string]any, len(typed))
+		out := mapping.NewMapWithCapacity[string, any](len(typed))
 		for key, item := range typed {
 			next, err := anyValue(fset, pos, item)
 			if err != nil {
 				return nil, err
 			}
-			out[key] = next
+			out.Set(key, next)
 		}
-		return out, nil
+		return out.All(), nil
 	case *mapping.OrderedMap[string, any]:
-		out := make(map[string]any, typed.Len())
+		out := mapping.NewMapWithCapacity[string, any](typed.Len())
 		var rangeErr error
 		typed.Range(func(key string, item any) bool {
 			next, err := anyValue(fset, pos, item)
@@ -436,13 +437,13 @@ func anyMapValue(fset *token.FileSet, pos token.Pos, value any) (map[string]any,
 				rangeErr = err
 				return false
 			}
-			out[key] = next
+			out.Set(key, next)
 			return true
 		})
 		if rangeErr != nil {
 			return nil, rangeErr
 		}
-		return out, nil
+		return out.All(), nil
 	default:
 		return nil, dslErrorAt(fset, pos, "expected object value, got %T", value)
 	}

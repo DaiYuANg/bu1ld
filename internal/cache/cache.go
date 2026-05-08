@@ -13,6 +13,7 @@ import (
 	"bu1ld/internal/snapshot"
 
 	"github.com/arcgolabs/collectionx/list"
+	"github.com/arcgolabs/collectionx/set"
 	"github.com/samber/oops"
 	"github.com/spf13/afero"
 )
@@ -75,6 +76,7 @@ func (s *Store) Save(task build.Task, actionKey string) error {
 		ActionKey: actionKey,
 	}
 
+	outputs := list.NewList[OutputRecord]()
 	for _, output := range build.Values(task.Outputs) {
 		entry, err := s.captureOutput(task, output)
 		if err != nil {
@@ -84,8 +86,9 @@ func (s *Store) Save(task build.Task, actionKey string) error {
 				With("output", output).
 				Wrapf(err, "capture task output")
 		}
-		record.Outputs = append(record.Outputs, entry)
+		outputs.Add(entry)
 	}
+	record.Outputs = outputs.Values()
 	path := s.recordPath(actionKey)
 	if err := cachefile.Write(s.fs, path, record); err != nil {
 		return oops.In("bu1ld.cache").
@@ -314,23 +317,20 @@ func (s *Store) writeBlobBytes(digest string, data []byte) error {
 }
 
 func recordDigests(record Record) []string {
-	seen := map[string]struct{}{}
+	seen := set.NewSet[string]()
 	for _, output := range record.Outputs {
 		if output.Kind == "file" && output.Digest != "" {
-			seen[output.Digest] = struct{}{}
+			seen.Add(output.Digest)
 			continue
 		}
 		for _, file := range output.Files {
 			if file.Digest != "" {
-				seen[file.Digest] = struct{}{}
+				seen.Add(file.Digest)
 			}
 		}
 	}
 
-	digests := make([]string, 0, len(seen))
-	for digest := range seen {
-		digests = append(digests, digest)
-	}
+	digests := seen.Values()
 	slices.Sort(digests)
 	return digests
 }

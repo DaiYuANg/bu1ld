@@ -4,17 +4,18 @@ package docker
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"path/filepath"
 	"slices"
 	"strings"
 
+	pluginparams "bu1ld/internal/plugins/params"
+
+	"github.com/arcgolabs/collectionx/mapping"
 	dockerbuild "github.com/docker/docker/api/types/build"
 	dockerimage "github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
 	dockerarchive "github.com/moby/go-archive"
-	"github.com/samber/lo"
 	"github.com/samber/oops"
 )
 
@@ -126,15 +127,15 @@ type imageSpec struct {
 
 func imageSpecFromParams(params map[string]any) (imageSpec, error) {
 	spec := imageSpec{
-		Context:    stringParam(params, "context"),
-		Dockerfile: stringParam(params, "dockerfile"),
-		Tags:       stringSliceParam(params, "tags"),
-		BuildArgs:  stringMapParam(params, "build_args"),
-		Platforms:  stringSliceParam(params, "platforms"),
-		Target:     stringParam(params, "target"),
-		Output:     stringParam(params, "output"),
-		Push:       boolParam(params, "push"),
-		Load:       boolParam(params, "load"),
+		Context:    pluginparams.String(params, "context"),
+		Dockerfile: pluginparams.String(params, "dockerfile"),
+		Tags:       pluginparams.StringSlice(params, "tags"),
+		BuildArgs:  pluginparams.StringMap(params, "build_args"),
+		Platforms:  pluginparams.StringSlice(params, "platforms"),
+		Target:     pluginparams.String(params, "target"),
+		Output:     pluginparams.String(params, "output"),
+		Push:       pluginparams.Bool(params, "push"),
+		Load:       pluginparams.Bool(params, "load"),
 	}
 	if spec.Context == "" {
 		spec.Context = "."
@@ -159,16 +160,16 @@ func imageSpecFromParams(params map[string]any) (imageSpec, error) {
 }
 
 func (s imageSpec) buildOptions(workDir string) dockerbuild.ImageBuildOptions {
-	buildArgs := map[string]*string{}
+	buildArgs := mapping.NewMapWithCapacity[string, *string](len(s.BuildArgs))
 	for _, key := range sortedKeys(s.BuildArgs) {
 		value := s.BuildArgs[key]
-		buildArgs[key] = &value
+		buildArgs.Set(key, &value)
 	}
 	options := dockerbuild.ImageBuildOptions{
 		Tags:       s.Tags,
 		Remove:     true,
 		Dockerfile: dockerfileInContext(workDir, s.Context, s.Dockerfile),
-		BuildArgs:  buildArgs,
+		BuildArgs:  buildArgs.All(),
 		Target:     s.Target,
 		Version:    dockerbuild.BuilderBuildKit,
 	}
@@ -188,51 +189,8 @@ func dockerfileInContext(workDir, contextDir, dockerfile string) string {
 	return filepath.ToSlash(rel)
 }
 
-func stringParam(params map[string]any, key string) string {
-	value, ok := params[key].(string)
-	if !ok {
-		return ""
-	}
-	return value
-}
-
-func stringSliceParam(params map[string]any, key string) []string {
-	switch value := params[key].(type) {
-	case []string:
-		return value
-	case []any:
-		items := make([]string, 0, len(value))
-		for _, item := range value {
-			items = append(items, fmt.Sprint(item))
-		}
-		return items
-	default:
-		return nil
-	}
-}
-
-func stringMapParam(params map[string]any, key string) map[string]string {
-	values := map[string]string{}
-	raw, ok := params[key].(map[string]any)
-	if !ok {
-		return values
-	}
-	for name, value := range raw {
-		values[name] = fmt.Sprint(value)
-	}
-	return values
-}
-
-func boolParam(params map[string]any, key string) bool {
-	value, ok := params[key].(bool)
-	if !ok {
-		return false
-	}
-	return value
-}
-
 func sortedKeys(values map[string]string) []string {
-	keys := lo.Keys[string, string](values)
+	keys := mapping.NewMapFrom(values).Keys()
 	slices.Sort(keys)
 	return keys
 }

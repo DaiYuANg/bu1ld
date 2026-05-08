@@ -11,6 +11,8 @@ import (
 	buildplugin "bu1ld/internal/plugin"
 
 	"github.com/arcgolabs/collectionx/list"
+	"github.com/arcgolabs/collectionx/mapping"
+	"github.com/arcgolabs/collectionx/set"
 	"github.com/samber/oops"
 	"github.com/spf13/afero"
 )
@@ -93,23 +95,30 @@ func (l *Loader) loadWorkspacePackages(
 	if err != nil {
 		return nil, err
 	}
+	filePathItems := list.NewList(*filePaths...)
+	importItems := list.NewList(*imports...)
+	compiledFileItems := list.NewList(*compiledFiles...)
+	envItems := list.NewList(*envs...)
 	for _, path := range packageFiles {
 		packageFilePaths, packageImports, scanErr := scanPackageImportGraph(l.fs, path)
 		if scanErr != nil {
 			return nil, scanErr
 		}
-		*filePaths = append(*filePaths, packageFilePaths...)
-		*imports = append(*imports, packageImports...)
+		filePathItems.Add(packageFilePaths...)
+		importItems.Add(packageImports...)
 
 		result, loadErr := l.loadPackageProject(ctx, path)
 		if loadErr != nil {
 			return nil, loadErr
 		}
-		*compiledFiles = append(*compiledFiles, result.file)
+		compiledFileItems.Add(result.file)
 		mergePackageProject(project, result.project, result.pkg)
-		*envs = append(*envs, result.envs...)
+		envItems.Add(result.envs...)
 	}
-	*filePaths = sortedUniqueStrings(*filePaths)
+	*filePaths = sortedUniqueStrings(filePathItems.Values())
+	*imports = importItems.Values()
+	*compiledFiles = compiledFileItems.Values()
+	*envs = envItems.Values()
 	return packageDiscoveries, nil
 }
 
@@ -218,7 +227,7 @@ func (l *Loader) packageMetadata(file *File, buildFilePath string) (build.Packag
 
 func scanPackageImportGraph(fs afero.Fs, path string) ([]string, []importDependency, error) {
 	collector := newLoadCollector()
-	if err := scanImports(fs, path, map[string]bool{}, map[string]bool{}, collector); err != nil {
+	if err := scanImports(fs, path, set.NewSet[string](), set.NewSet[string](), collector); err != nil {
 		return nil, nil, oops.In("bu1ld.dsl").
 			With("file", path).
 			Wrapf(err, "scan package imported build files")
@@ -265,25 +274,25 @@ func qualifyPackageDeps(deps *list.List[string], packageName string) *list.List[
 }
 
 func applyPackageDependencies(project build.Project) build.Project {
-	tasks := map[string]build.Task{}
+	tasks := mapping.NewMap[string, build.Task]()
 	if project.Tasks != nil {
 		project.Tasks.Range(func(_ int, task build.Task) bool {
-			tasks[task.Name] = task
+			tasks.Set(task.Name, task)
 			return true
 		})
 	}
 	if project.Tasks == nil || project.Packages == nil {
 		return project
 	}
-	packageDeps := map[string][]string{}
+	packageDeps := mapping.NewMultiMap[string, string]()
 	project.Packages.Range(func(_ int, pkg build.Package) bool {
-		packageDeps[pkg.Name] = build.Values(pkg.Deps)
+		packageDeps.Set(pkg.Name, build.Values(pkg.Deps)...)
 		return true
 	})
 	project.Tasks.Range(func(index int, task build.Task) bool {
-		for _, depPackage := range packageDeps[task.Package] {
+		for _, depPackage := range packageDeps.Get(task.Package) {
 			depTask := build.QualifyTaskName(depPackage, task.LocalName)
-			if _, ok := tasks[depTask]; ok {
+			if _, ok := tasks.Get(depTask); ok {
 				task.Deps.Add(depTask)
 			}
 		}

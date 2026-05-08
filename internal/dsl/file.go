@@ -40,12 +40,12 @@ func (e *DiagnosticsError) Error() string {
 	if e == nil || len(e.Diagnostics) == 0 {
 		return "plano diagnostics"
 	}
-	lines := make([]string, 0, len(e.Diagnostics))
+	lines := list.NewListWithCapacity[string](len(e.Diagnostics))
 	for i := range e.Diagnostics {
 		item := e.Diagnostics[i]
-		lines = append(lines, item.Format(e.FileSet))
+		lines.Add(item.Format(e.FileSet))
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(lines.Values(), "\n")
 }
 
 func diagnosticsError(fset *token.FileSet, diagnostics planodiag.Diagnostics) error {
@@ -59,15 +59,15 @@ func diagnosticsError(fset *token.FileSet, diagnostics planodiag.Diagnostics) er
 }
 
 func firstPassDiagnosticsError(fset *token.FileSet, diagnostics planodiag.Diagnostics) error {
-	filtered := make(planodiag.Diagnostics, 0, len(diagnostics))
+	filtered := list.NewListWithCapacity[planodiag.Diagnostic](len(diagnostics))
 	for i := range diagnostics {
 		item := diagnostics[i]
 		if shouldIgnoreFirstPassDiagnostic(item) {
 			continue
 		}
-		filtered = append(filtered, item)
+		filtered.Add(item)
 	}
-	return diagnosticsError(fset, filtered)
+	return diagnosticsError(fset, planodiag.Diagnostics(filtered.Values()))
 }
 
 func shouldIgnoreFirstPassDiagnostic(item planodiag.Diagnostic) bool {

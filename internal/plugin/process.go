@@ -15,17 +15,22 @@ import (
 
 	"bu1ld/pkg/pluginapi"
 
+	"github.com/arcgolabs/collectionx/list"
+	"github.com/arcgolabs/collectionx/mapping"
 	"github.com/samber/oops"
 	"go.lsp.dev/jsonrpc2"
 )
 
 type ProcessLoader struct {
 	options LoadOptions
-	clients []*processClient
+	clients *list.List[*processClient]
 }
 
 func NewProcessLoader(options LoadOptions) *ProcessLoader {
-	return &ProcessLoader{options: options}
+	return &ProcessLoader{
+		options: options,
+		clients: list.NewList[*processClient](),
+	}
 }
 
 func (l *ProcessLoader) Load(_ context.Context, declaration Declaration) (Plugin, error) {
@@ -42,7 +47,10 @@ func (l *ProcessLoader) Load(_ context.Context, declaration Declaration) (Plugin
 			With("path", path).
 			Wrapf(err, "start plugin process")
 	}
-	l.clients = append(l.clients, client)
+	if l.clients == nil {
+		l.clients = list.NewList[*processClient]()
+	}
+	l.clients.Add(client)
 	return client, nil
 }
 
@@ -186,11 +194,11 @@ func processCommand(path string) *exec.Cmd {
 }
 
 func mergeEnv(base []string, overrides []string) []string {
-	positions := map[string]int{}
-	merged := append([]string{}, base...)
-	for i, item := range merged {
+	positions := mapping.NewMap[string, int]()
+	merged := list.NewListWithCapacity[string](len(base)+len(overrides), base...)
+	for i, item := range base {
 		if key, _, ok := strings.Cut(item, "="); ok {
-			positions[key] = i
+			positions.Set(key, i)
 		}
 	}
 	for _, item := range overrides {
@@ -198,21 +206,21 @@ func mergeEnv(base []string, overrides []string) []string {
 		if !ok || key == "" {
 			continue
 		}
-		if index, exists := positions[key]; exists {
-			merged[index] = item
+		if index, exists := positions.Get(key); exists {
+			merged.Set(index, item)
 			continue
 		}
-		positions[key] = len(merged)
-		merged = append(merged, item)
+		positions.Set(key, merged.Len())
+		merged.Add(item)
 	}
-	return merged
+	return merged.Values()
 }
 
 func (l *ProcessLoader) Close() {
-	for _, client := range l.clients {
+	for _, client := range l.clients.Values() {
 		client.Close()
 	}
-	l.clients = nil
+	l.clients = list.NewList[*processClient]()
 }
 
 func (l *ProcessLoader) ResolvePath(declaration Declaration) (string, error) {
@@ -309,12 +317,12 @@ func (l *ProcessLoader) resolveInstalledPath(root string, declaration Declaratio
 
 func pluginInstallPath(root string, declaration Declaration) string {
 	id := pluginID(declaration)
-	parts := []string{root, id}
+	parts := list.NewList[string](root, id)
 	if declaration.Version != "" {
-		parts = append(parts, declaration.Version)
+		parts.Add(declaration.Version)
 	}
-	parts = append(parts, id)
-	return filepath.Join(parts...)
+	parts.Add(id)
+	return filepath.Join(parts.Values()...)
 }
 
 func discoverInstalledPlugin(root string, declaration Declaration) (string, bool, error) {

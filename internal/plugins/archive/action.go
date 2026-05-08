@@ -4,12 +4,15 @@ package archive
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
+	pluginparams "bu1ld/internal/plugins/params"
+
+	"github.com/arcgolabs/collectionx/list"
+	"github.com/arcgolabs/collectionx/set"
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/mholt/archives"
 	"github.com/samber/oops"
@@ -58,15 +61,14 @@ type archiveSpec struct {
 
 func archiveSpecFromParams(params map[string]any) archiveSpec {
 	return archiveSpec{
-		Srcs: stringSliceParam(params, "srcs"),
-		Out:  stringParam(params, "out"),
-		Gzip: boolParam(params, "gzip"),
+		Srcs: pluginparams.StringSlice(params, "srcs"),
+		Out:  pluginparams.String(params, "out"),
+		Gzip: pluginparams.Bool(params, "gzip"),
 	}
 }
 
 func expandSourceFiles(workDir string, srcs []string) ([]string, error) {
-	seen := map[string]struct{}{}
-	files := []string{}
+	files := set.NewOrderedSet[string]()
 	for _, src := range srcs {
 		matches, err := matchSource(workDir, src)
 		if err != nil {
@@ -74,14 +76,10 @@ func expandSourceFiles(workDir string, srcs []string) ([]string, error) {
 		}
 		for _, match := range matches {
 			rel := filepath.ToSlash(match)
-			if _, ok := seen[rel]; ok {
-				continue
-			}
-			seen[rel] = struct{}{}
-			files = append(files, rel)
+			files.Add(rel)
 		}
 	}
-	return files, nil
+	return files.Values(), nil
 }
 
 func matchSource(workDir, src string) ([]string, error) {
@@ -106,7 +104,7 @@ func matchSource(workDir, src string) ([]string, error) {
 		return []string{src}, nil
 	}
 
-	files := []string{}
+	files := list.NewList[string]()
 	err = filepath.WalkDir(path, func(filePath string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -121,7 +119,7 @@ func matchSource(workDir, src string) ([]string, error) {
 				With("path", filePath).
 				Wrapf(relErr, "relativize archive source")
 		}
-		files = append(files, rel)
+		files.Add(rel)
 		return nil
 	})
 	if err != nil {
@@ -129,7 +127,7 @@ func matchSource(workDir, src string) ([]string, error) {
 			With("src", src).
 			Wrapf(err, "walk archive source directory")
 	}
-	return files, nil
+	return files.Values(), nil
 }
 
 func writeZip(ctx context.Context, workDir, out string, files []string) error {
@@ -164,7 +162,7 @@ func writeArchive(ctx context.Context, workDir, out string, files []string, form
 }
 
 func archiveFilesFromDisk(ctx context.Context, workDir string, files []string) ([]archives.FileInfo, error) {
-	archiveFiles := make([]archives.FileInfo, 0, len(files))
+	archiveFiles := list.NewListWithCapacity[archives.FileInfo](len(files))
 	for _, file := range files {
 		source := filepath.Join(workDir, filepath.FromSlash(file))
 		items, err := archives.FilesFromDisk(ctx, nil, map[string]string{
@@ -175,9 +173,9 @@ func archiveFilesFromDisk(ctx context.Context, workDir string, files []string) (
 				With("file", file).
 				Wrapf(err, "read archive source")
 		}
-		archiveFiles = append(archiveFiles, items...)
+		archiveFiles.Add(items...)
 	}
-	return archiveFiles, nil
+	return archiveFiles.Values(), nil
 }
 
 func createOutput(workDir, out string) (afero.File, error) {
@@ -206,35 +204,4 @@ func closeArchive(err, closeErr error, message string) error {
 
 func hasGlob(pattern string) bool {
 	return strings.ContainsAny(pattern, "*?[")
-}
-
-func stringParam(params map[string]any, key string) string {
-	value, ok := params[key].(string)
-	if !ok {
-		return ""
-	}
-	return value
-}
-
-func stringSliceParam(params map[string]any, key string) []string {
-	switch value := params[key].(type) {
-	case []string:
-		return value
-	case []any:
-		items := make([]string, 0, len(value))
-		for _, item := range value {
-			items = append(items, fmt.Sprint(item))
-		}
-		return items
-	default:
-		return nil
-	}
-}
-
-func boolParam(params map[string]any, key string) bool {
-	value, ok := params[key].(bool)
-	if !ok {
-		return false
-	}
-	return value
 }

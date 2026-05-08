@@ -9,6 +9,7 @@ import (
 
 	"github.com/arcgolabs/collectionx/list"
 	"github.com/arcgolabs/collectionx/mapping"
+	"github.com/samber/mo"
 	"github.com/samber/oops"
 )
 
@@ -228,7 +229,7 @@ func (r *Registry) Schemas() ([]Metadata, error) {
 }
 
 func (r *Registry) ConfigNamespaces() (map[string]Metadata, error) {
-	items := map[string]Metadata{}
+	items := mapping.NewMap[string, Metadata]()
 	schemas, err := r.Schemas()
 	if err != nil {
 		return nil, err
@@ -238,10 +239,10 @@ func (r *Registry) ConfigNamespaces() (map[string]Metadata, error) {
 			continue
 		}
 		if metadata.AutoConfigure || len(metadata.ConfigFields) > 0 {
-			items[metadata.Namespace] = metadata
+			items.Set(metadata.Namespace, metadata)
 		}
 	}
-	return items, nil
+	return items.All(), nil
 }
 
 func (r *Registry) Metadata(namespace string) (Metadata, error) {
@@ -321,11 +322,11 @@ func (r *Registry) decoratePluginAction(namespace string, spec TaskSpec) TaskSpe
 }
 
 func (r *Registry) resolveBuiltin(declaration Declaration) (Plugin, error) {
-	candidates := []string{declaration.ID}
+	candidates := list.NewList[string](declaration.ID)
 	if declaration.ID == "" {
-		candidates = append(candidates, "builtin."+declaration.Namespace)
+		candidates.Add("builtin." + declaration.Namespace)
 	}
-	for _, candidate := range candidates {
+	for _, candidate := range candidates.Values() {
 		if candidate == "" {
 			continue
 		}
@@ -363,10 +364,14 @@ func NormalizeDeclaration(declaration Declaration) Declaration {
 }
 
 func findRule(metadata Metadata, name string) (RuleSchema, bool) {
-	for _, rule := range metadata.Rules {
+	return findRuleOption(metadata, name).Get()
+}
+
+func findRuleOption(metadata Metadata, name string) mo.Option[RuleSchema] {
+	return list.NewList(metadata.Rules...).FirstWhere(func(_ int, rule RuleSchema) bool {
 		if rule.Name == name {
-			return rule, true
+			return true
 		}
-	}
-	return RuleSchema{}, false
+		return false
+	})
 }

@@ -6,6 +6,7 @@ import (
 
 	buildplugin "bu1ld/internal/plugin"
 
+	"github.com/arcgolabs/collectionx/list"
 	"github.com/arcgolabs/plano/ast"
 	planofrontend "github.com/arcgolabs/plano/frontend/plano"
 	"github.com/spf13/afero"
@@ -21,7 +22,7 @@ func RawPluginDeclarations(fs afero.Fs, path string) ([]PluginDeclaration, error
 	if err := diagnosticsError(fset, diagnostics); err != nil {
 		return nil, err
 	}
-	declarations := make([]PluginDeclaration, 0)
+	declarations := list.NewList[PluginDeclaration]()
 	for _, stmt := range file.Statements {
 		form, ok := stmt.(*ast.FormDecl)
 		if !ok || form == nil || form.Head == nil || form.Head.String() != "plugin" || form.Body == nil {
@@ -52,12 +53,12 @@ func RawPluginDeclarations(fs afero.Fs, path string) ([]PluginDeclaration, error
 				declaration.Path = value
 			}
 		}
-		declarations = append(declarations, PluginDeclaration{
+		declarations.Add(PluginDeclaration{
 			Declaration: declaration,
 			Pos:         form.Pos(),
 		})
 	}
-	return declarations, nil
+	return declarations.Values(), nil
 }
 
 func pluginDeclarationStringValue(expr ast.Expr) (string, bool) {

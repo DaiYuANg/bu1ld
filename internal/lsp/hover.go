@@ -9,6 +9,7 @@ import (
 
 	"github.com/arcgolabs/collectionx/list"
 	"github.com/arcgolabs/collectionx/mapping"
+	"github.com/samber/mo"
 	"go.lsp.dev/protocol"
 )
 
@@ -36,23 +37,32 @@ func (s *Server) hover(text string, pos protocol.Position) *protocol.Hover {
 }
 
 func (i *completionIndex) topLevelHover(label string) (hoverEntry, bool) {
-	return i.topLevelHovers.Get(label)
+	return i.topLevelHoverOption(label).Get()
+}
+
+func (i *completionIndex) topLevelHoverOption(label string) mo.Option[hoverEntry] {
+	return i.topLevelHovers.GetOption(label)
 }
 
 func (i *completionIndex) fieldHover(kind, label string) (hoverEntry, bool) {
+	return i.fieldHoverOption(kind, label).Get()
+}
+
+func (i *completionIndex) fieldHoverOption(kind, label string) mo.Option[hoverEntry] {
 	if inside, parent := runContext(kind); inside && parent != "task" {
-		return hoverEntry{}, false
+		return mo.None[hoverEntry]()
 	}
-	entries, ok := i.fieldHoversByKind.Get(kind)
-	if !ok {
-		schema, found := i.ruleSchema(kind)
+	if entry := i.fieldHoversByKind.GetOption(kind, label); entry.IsPresent() {
+		return entry
+	}
+	if !i.fieldHoversByKind.HasRow(kind) {
+		schema, found := i.ruleSchemaOption(kind).Get()
 		if !found {
-			return hoverEntry{}, false
+			return mo.None[hoverEntry]()
 		}
 		i.registerFieldHovers(kind, hoverEntriesForFields(kind, schema.Fields))
-		entries, _ = i.fieldHoversByKind.Get(kind)
 	}
-	return entries.Get(label)
+	return i.fieldHoversByKind.GetOption(kind, label)
 }
 
 func newHover(entry hoverEntry, tokenRange protocol.Range) *protocol.Hover {
@@ -111,19 +121,19 @@ func coreTopLevelHoverEntries() map[string]hoverEntry {
 }
 
 func hoverEntriesForFields(kind string, fields []buildplugin.FieldSchema) map[string]hoverEntry {
-	entries := make(map[string]hoverEntry, len(fields))
+	entries := mapping.NewMapWithCapacity[string, hoverEntry](len(fields))
 	for _, field := range fields {
 		detail := fieldTypeLabel(field.Type)
 		if field.Required {
 			detail += " required"
 		}
-		entries[field.Name] = hoverEntry{
+		entries.Set(field.Name, hoverEntry{
 			Signature: field.Name + " = " + fieldValueShape(field.Type),
 			Detail:    detail,
 			Docs:      fieldDocs(kind, field),
-		}
+		})
 	}
-	return entries
+	return entries.All()
 }
 
 func actionHoverEntries() map[string]hoverEntry {
@@ -172,10 +182,7 @@ func fieldValueShape(fieldType buildplugin.FieldType) string {
 }
 
 func fieldDocs(kind string, field buildplugin.FieldSchema) string {
-	if docs, ok := coreFieldDocs(kind).Get(field.Name); ok {
-		return docs
-	}
-	return "Field for " + kind + "."
+	return coreFieldDocs(kind).GetOption(field.Name).OrElse("Field for " + kind + ".")
 }
 
 func coreFieldDocs(kind string) *mapping.Map[string, string] {
@@ -210,11 +217,7 @@ func coreFieldDocs(kind string) *mapping.Map[string, string] {
 }
 
 func newStringMap(entries map[string]string) *mapping.Map[string, string] {
-	items := mapping.NewMap[string, string]()
-	for key, value := range entries {
-		items.Set(key, value)
-	}
-	return items
+	return mapping.NewMapFrom(entries)
 }
 
 func hoverTokenAt(text string, pos protocol.Position) (string, protocol.Range, bool) {

@@ -7,6 +7,7 @@ import (
 
 	"bu1ld/internal/dsl"
 
+	"github.com/arcgolabs/collectionx/list"
 	"go.lsp.dev/protocol"
 )
 
@@ -45,12 +46,12 @@ func TestCompletionFiltersFieldsInsideBlock(t *testing.T) {
 }
 
 func completionLabels(items []protocol.CompletionItem) []string {
-	labels := make([]string, 0, len(items))
+	labels := list.NewListWithCapacity[string](len(items))
 	for i := range items {
 		item := items[i]
-		labels = append(labels, item.Label)
+		labels.Add(item.Label)
 	}
-	return labels
+	return labels.Values()
 }
 
 func equalStrings(left, right []string) bool {

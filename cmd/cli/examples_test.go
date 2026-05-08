@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/arcgolabs/collectionx/list"
 	"github.com/samber/oops"
 	"github.com/spf13/afero"
 )
@@ -102,7 +103,9 @@ func executeCLI(t *testing.T, projectDir string, args ...string) string {
 
 	var out bytes.Buffer
 	cmd := NewRootCommand(&out)
-	cmd.SetArgs(append([]string{"--project-dir", projectDir}, args...))
+	values := list.NewList("--project-dir", projectDir)
+	values.Add(args...)
+	cmd.SetArgs(values.Values())
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute(%v) error = %v\noutput:\n%s", args, err, out.String())
 	}

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/arcgolabs/collectionx/list"
 	"github.com/spf13/afero"
 )
 
@@ -43,14 +44,15 @@ func TestMarshalRoundTripWithoutCompression(t *testing.T) {
 func TestMarshalRoundTripWithCompression(t *testing.T) {
 	t.Parallel()
 
-	items := make([]string, 0, 256)
+	items := list.NewListWithCapacity[string](256)
 	for index := range 256 {
-		items = append(items, fmt.Sprintf("very/long/path/%03d/%s", index, strings.Repeat("segment/", 8)))
+		items.Add(fmt.Sprintf("very/long/path/%03d/%s", index, strings.Repeat("segment/", 8)))
 	}
+	values := items.Values()
 
 	encoded, err := Marshal(testPayload{
 		Name:  "large",
-		Items: items,
+		Items: values,
 	})
 	if err != nil {
 		t.Fatalf("Marshal() error = %v", err)
@@ -65,7 +67,7 @@ func TestMarshalRoundTripWithCompression(t *testing.T) {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
-	want := testPayload{Name: "large", Items: items}
+	want := testPayload{Name: "large", Items: values}
 	if !reflect.DeepEqual(decoded, want) {
 		t.Fatalf("decoded = %#v, want %#v", decoded, want)
 	}

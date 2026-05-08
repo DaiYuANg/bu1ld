@@ -73,7 +73,7 @@ func (l *Loader) scanImportGraph() ([]string, []importDependency, error) {
 		return nil, nil, err
 	}
 	collector := newLoadCollector()
-	if err := scanImports(l.fs, root, map[string]bool{}, map[string]bool{}, collector); err != nil {
+	if err := scanImports(l.fs, root, set.NewSet[string](), set.NewSet[string](), collector); err != nil {
 		return nil, nil, oops.In("bu1ld.dsl").
 			With("file", root).
 			Wrapf(err, "scan imported build files")
@@ -84,24 +84,24 @@ func (l *Loader) scanImportGraph() ([]string, []importDependency, error) {
 func scanImports(
 	fs afero.Fs,
 	path string,
-	stack map[string]bool,
-	seen map[string]bool,
+	stack *set.Set[string],
+	seen *set.Set[string],
 	collector *loadCollector,
 ) error {
 	absPath, err := cleanAbsPath(path)
 	if err != nil {
 		return err
 	}
-	if stack[absPath] {
+	if stack.Contains(absPath) {
 		return oops.In("bu1ld.dsl").
 			With("file", absPath).
 			New("import cycle detected")
 	}
-	if seen[absPath] {
+	if seen.Contains(absPath) {
 		return nil
 	}
-	stack[absPath] = true
-	defer delete(stack, absPath)
+	stack.Add(absPath)
+	defer stack.Remove(absPath)
 
 	data, err := afero.ReadFile(fs, absPath)
 	if err != nil {
@@ -116,7 +116,7 @@ func scanImports(
 	if err := diagnosticsError(fset, diagnostics); err != nil {
 		return err
 	}
-	seen[absPath] = true
+	seen.Add(absPath)
 
 	for _, stmt := range file.Statements {
 		importDecl, ok := stmt.(*ast.ImportDecl)

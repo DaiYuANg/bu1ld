@@ -51,7 +51,7 @@ func Install(ctx context.Context, index *Index, options InstallOptions) (Install
 	if err != nil {
 		return InstallResult{}, err
 	}
-	asset, ok := version.Asset(options.GOOS, options.GOARCH)
+	asset, ok := version.AssetOption(options.GOOS, options.GOARCH).Get()
 	if !ok {
 		return InstallResult{}, fmt.Errorf("plugin %s@%s has no asset for %s/%s", plugin.ID, version.Version, options.GOOS, options.GOARCH)
 	}

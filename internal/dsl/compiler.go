@@ -221,15 +221,13 @@ func pluginRuleFields(rule buildplugin.RuleSchema) *mapping.OrderedMap[string, p
 }
 
 func pluginFieldSpecs(fields []buildplugin.FieldSchema) []planschema.FieldSpec {
-	items := make([]planschema.FieldSpec, 0, len(fields))
-	for _, field := range fields {
-		items = append(items, planschema.FieldSpec{
+	return list.MapList[buildplugin.FieldSchema, planschema.FieldSpec](list.NewList(fields...), func(_ int, field buildplugin.FieldSchema) planschema.FieldSpec {
+		return planschema.FieldSpec{
 			Name:     field.Name,
 			Type:     pluginFieldType(field),
 			Required: field.Required,
-		})
-	}
-	return items
+		}
+	}).Values()
 }
 
 func pluginFieldType(field buildplugin.FieldSchema) planschema.Type {

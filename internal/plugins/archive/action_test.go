@@ -8,9 +8,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"slices"
 	"testing"
 
+	"github.com/arcgolabs/collectionx/set"
 	"github.com/spf13/afero"
 )
 
@@ -39,12 +39,12 @@ func TestZipHandlerWritesArchive(t *testing.T) {
 		}
 	}()
 
-	names := make([]string, 0, len(reader.File))
+	names := set.NewSetWithCapacity[string](len(reader.File))
 	for _, file := range reader.File {
-		names = append(names, file.Name)
+		names.Add(file.Name)
 	}
-	if !slices.Contains(names, "dist/app.txt") {
-		t.Fatalf("zip names = %v, want dist/app.txt", names)
+	if !names.Contains("dist/app.txt") {
+		t.Fatalf("zip names = %v, want dist/app.txt", names.Values())
 	}
 }
 

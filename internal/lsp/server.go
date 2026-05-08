@@ -12,6 +12,7 @@ import (
 
 	"bu1ld/internal/dsl"
 
+	"github.com/arcgolabs/collectionx/list"
 	"github.com/arcgolabs/collectionx/mapping"
 	"github.com/arcgolabs/dix"
 	"github.com/samber/oops"
@@ -210,13 +211,17 @@ func (s *Server) hoverRequest(ctx context.Context, reply jsonrpc2.Replier, reque
 
 func (s *Server) publishDiagnostics(ctx context.Context, uri protocol.DocumentURI, text string) error {
 	_, err := s.parser.ParseContext(ctx, strings.NewReader(text))
-	diagnostics := []protocol.Diagnostic{}
+	diagnostics := list.NewList[protocol.Diagnostic]()
 	if err != nil {
-		diagnostics = append(diagnostics, diagnosticFromError(err))
+		diagnostics.Add(diagnosticFromError(err))
+	}
+	values := diagnostics.Values()
+	if values == nil {
+		values = []protocol.Diagnostic{}
 	}
 	return s.notify(ctx, "textDocument/publishDiagnostics", protocol.PublishDiagnosticsParams{
 		URI:         uri,
-		Diagnostics: diagnostics,
+		Diagnostics: values,
 	})
 }
 

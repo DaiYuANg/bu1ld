@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"time"
 
+	pluginparams "bu1ld/internal/plugins/params"
+
+	"github.com/arcgolabs/collectionx/list"
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -65,14 +68,14 @@ type Remote struct {
 }
 
 func infoSpecFromParams(params map[string]any) infoSpec {
-	repo := stringParam(params, "repo")
+	repo := pluginparams.String(params, "repo")
 	if repo == "" {
 		repo = "."
 	}
 	return infoSpec{
 		Repo:         repo,
-		Out:          stringParam(params, "out"),
-		IncludeDirty: boolParam(params, "include_dirty"),
+		Out:          pluginparams.String(params, "out"),
+		IncludeDirty: pluginparams.Bool(params, "include_dirty"),
 	}
 }
 
@@ -156,11 +159,9 @@ func remotes(repository *gogit.Repository) []Remote {
 	if err != nil {
 		return nil
 	}
-	result := make([]Remote, 0, len(items))
-	for _, item := range items {
-		result = append(result, Remote{Name: item.Config().Name, URLs: item.Config().URLs})
-	}
-	return result
+	return list.MapList[*gogit.Remote, Remote](list.NewList(items...), func(_ int, item *gogit.Remote) Remote {
+		return Remote{Name: item.Config().Name, URLs: item.Config().URLs}
+	}).Values()
 }
 
 func writeInfo(workDir, out string, info Info) error {
@@ -177,22 +178,6 @@ func writeInfo(workDir, out string, info Info) error {
 		return oops.In("bu1ld.git").With("out", out).Wrapf(err, "write git info")
 	}
 	return nil
-}
-
-func stringParam(params map[string]any, key string) string {
-	value, ok := params[key].(string)
-	if !ok {
-		return ""
-	}
-	return value
-}
-
-func boolParam(params map[string]any, key string) bool {
-	value, ok := params[key].(bool)
-	if !ok {
-		return false
-	}
-	return value
 }
 
 func absolutePath(workDir, path string) string {

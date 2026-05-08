@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 
+	"github.com/arcgolabs/collectionx/list"
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/spf13/afero"
 )
@@ -27,10 +28,9 @@ func Glob(fs afero.Fs, pattern string, opts ...doublestar.GlobOption) ([]string,
 		return nil, fmt.Errorf("glob %q: %w", pattern, err)
 	}
 
-	values := make([]string, 0, len(matches))
-	for _, match := range matches {
-		values = append(values, filepath.Join(filepath.FromSlash(base), filepath.FromSlash(match)))
-	}
+	values := list.MapList[string, string](list.NewList(matches...), func(_ int, match string) string {
+		return filepath.Join(filepath.FromSlash(base), filepath.FromSlash(match))
+	}).Values()
 	slices.Sort(values)
 
 	return values, nil

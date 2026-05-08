@@ -16,7 +16,7 @@ import (
 
 	"github.com/arcgolabs/collectionx/list"
 	"github.com/arcgolabs/collectionx/set"
-	"github.com/samber/lo"
+	"github.com/samber/mo"
 	"github.com/samber/oops"
 )
 
@@ -290,26 +290,26 @@ func lockedPluginFromEntry(entry pluginEntry) (buildplugin.LockedPlugin, error) 
 }
 
 func applyLockDiagnostics(entries []pluginEntry, lock buildplugin.LockFile) []pluginEntry {
-	values := append([]pluginEntry(nil), entries...)
+	values := list.NewList(entries...)
 	matched := set.NewSet[string]()
-	for index := range values {
-		entry := values[index]
-		locked, ok := lock.Find(entry.Source, entry.Namespace, entry.ID)
+	for index := 0; index < values.Len(); index++ {
+		entry, _ := values.Get(index)
+		locked, ok := lock.FindOption(entry.Source, entry.Namespace, entry.ID).Get()
 		if !ok {
 			if entry.Declared && isProcessPluginSource(entry.Source) {
-				values[index] = withPluginIssue(entry, "unlocked", fmt.Errorf("plugin is not in %s", buildplugin.LockFileName))
+				values.Set(index, withPluginIssue(entry, "unlocked", fmt.Errorf("plugin is not in %s", buildplugin.LockFileName)))
 			}
 			continue
 		}
 		matched.Add(lockDiagnosticKey(locked.Source, locked.Namespace, locked.ID))
-		values[index] = withLockDiagnostic(entry, locked)
+		values.Set(index, withLockDiagnostic(entry, locked))
 	}
 	for i := range lock.Plugins {
 		locked := lock.Plugins[i]
 		if matched.Contains(lockDiagnosticKey(locked.Source, locked.Namespace, locked.ID)) {
 			continue
 		}
-		values = append(values, pluginEntry{
+		values.Add(pluginEntry{
 			Source:    locked.Source,
 			Namespace: locked.Namespace,
 			ID:        locked.ID,
@@ -320,7 +320,7 @@ func applyLockDiagnostics(entries []pluginEntry, lock buildplugin.LockFile) []pl
 			Err:       errors.New("locked plugin is not present in current plugin graph"),
 		})
 	}
-	return sortPluginEntries(values)
+	return sortPluginEntries(values.Values())
 }
 
 func withLockDiagnostic(entry pluginEntry, locked buildplugin.LockedPlugin) pluginEntry {
@@ -414,17 +414,17 @@ func (a *App) writePluginReport(entries []pluginEntry, failOnIssue bool) error {
 }
 
 func ruleNames(rules []buildplugin.RuleSchema) []string {
-	names := lo.Map[buildplugin.RuleSchema, string](rules, func(rule buildplugin.RuleSchema, _ int) string {
+	names := list.MapList[buildplugin.RuleSchema, string](list.NewList(rules...), func(_ int, rule buildplugin.RuleSchema) string {
 		return rule.Name
-	})
+	}).Values()
 	slices.Sort(names)
 	return names
 }
 
 func manifestRuleNames(rules []buildplugin.ManifestRule) []string {
-	names := lo.Map[buildplugin.ManifestRule, string](rules, func(rule buildplugin.ManifestRule, _ int) string {
+	names := list.MapList[buildplugin.ManifestRule, string](list.NewList(rules...), func(_ int, rule buildplugin.ManifestRule) string {
 		return rule.Name
-	})
+	}).Values()
 	slices.Sort(names)
 	return names
 }
@@ -456,10 +456,7 @@ func pluginEntryKey(entry pluginEntry) string {
 }
 
 func emptyDash(value string) string {
-	if value == "" {
-		return "-"
-	}
-	return value
+	return mo.EmptyableToOption(value).OrElse("-")
 }
 
 func pathStatus(path string) string {

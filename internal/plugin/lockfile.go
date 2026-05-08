@@ -10,6 +10,8 @@ import (
 	iofs "io/fs"
 	"slices"
 
+	"github.com/arcgolabs/collectionx/list"
+	"github.com/samber/mo"
 	"github.com/samber/oops"
 	"github.com/spf13/afero"
 )
@@ -83,12 +85,16 @@ func WriteLockFile(path string, lock LockFile) error {
 }
 
 func (l LockFile) Find(source Source, namespace, id string) (LockedPlugin, bool) {
-	for _, plugin := range l.Plugins {
+	return l.FindOption(source, namespace, id).Get()
+}
+
+func (l LockFile) FindOption(source Source, namespace, id string) mo.Option[LockedPlugin] {
+	return list.NewList(l.Plugins...).FirstWhere(func(_ int, plugin LockedPlugin) bool {
 		if plugin.Source == source && plugin.Namespace == namespace && plugin.ID == id {
-			return plugin, true
+			return true
 		}
-	}
-	return LockedPlugin{}, false
+		return false
+	})
 }
 
 func ChecksumFile(path string) (result string, err error) {

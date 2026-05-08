@@ -12,6 +12,8 @@ import (
 	buildplugin "bu1ld/internal/plugin"
 	"bu1ld/internal/pluginregistry"
 
+	"github.com/arcgolabs/collectionx/list"
+	"github.com/samber/lo"
 	"github.com/samber/oops"
 )
 
@@ -26,10 +28,7 @@ func (a *App) printPluginRegistrySearch(ctx context.Context) error {
 		return oops.In("bu1ld.plugin_registry").Wrapf(err, "write plugin registry search")
 	}
 	for _, plugin := range plugins {
-		version := "-"
-		if latest, ok := plugin.LatestVersion(); ok {
-			version = latest.Version
-		}
+		version := plugin.LatestVersionOption().OrElse(pluginregistry.PluginVersion{Version: "-"}).Version
 		if _, err := fmt.Fprintf(
 			writer,
 			"%s\t%s\t%s\t%s\n",
@@ -56,7 +55,7 @@ func (a *App) printPluginRegistryInfo(ctx context.Context) error {
 	if err != nil {
 		return oops.In("bu1ld.plugin_registry").Wrapf(err, "parse plugin reference")
 	}
-	plugin, ok := index.Find(id)
+	plugin, ok := index.FindOption(id).Get()
 	if !ok {
 		return oops.In("bu1ld.plugin_registry").
 			With("plugin", id).
@@ -92,14 +91,14 @@ func (a *App) printPluginRegistryInfo(ctx context.Context) error {
 
 	versions := plugin.Versions
 	if version != "" {
-		item, ok := plugin.Version(version)
+		item, ok := plugin.VersionOption(version).Get()
 		if !ok {
 			return oops.In("bu1ld.plugin_registry").
 				With("plugin", id).
 				With("version", version).
 				Errorf("plugin %q version %q was not found in the registry", id, version)
 		}
-		versions = []pluginregistry.PluginVersion{item}
+		versions = list.NewList(item).Values()
 	}
 	return writePluginRegistryVersions(a.output, versions)
 }
@@ -163,10 +162,7 @@ func writePluginRegistryVersions(output io.Writer, versions []pluginregistry.Plu
 			return err
 		}
 		for _, asset := range version.Assets {
-			target := "any"
-			if asset.OS != "" || asset.Arch != "" {
-				target = asset.OS + "/" + asset.Arch
-			}
+			target := lo.Ternary(asset.OS != "" || asset.Arch != "", asset.OS+"/"+asset.Arch, "any")
 			detail := "    asset " + target
 			if asset.Format != "" {
 				detail += " " + asset.Format

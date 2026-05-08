@@ -101,7 +101,9 @@ func includeDependentPackages(project build.Project, direct *set.Set[string]) *s
 			if affected.Contains(pkg.Name) {
 				return true
 			}
-			if slices.ContainsFunc(build.Values(pkg.Deps), affected.Contains) {
+			if list.NewList(build.Values(pkg.Deps)...).AnyMatch(func(_ int, dep string) bool {
+				return affected.Contains(dep)
+			}) {
 				affected.Add(pkg.Name)
 				changed = true
 				return true

@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/arcgolabs/collectionx/list"
 	"github.com/samber/oops"
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
@@ -44,10 +45,9 @@ func (r *ExecRunner) Run(ctx context.Context, workDir string, command []string, 
 }
 
 func shellCommand(command []string) string {
-	parts := make([]string, 0, len(command))
-	for _, arg := range command {
-		parts = append(parts, shellQuote(arg))
-	}
+	parts := list.MapList[string, string](list.NewList(command...), func(_ int, arg string) string {
+		return shellQuote(arg)
+	}).Values()
 	return strings.Join(parts, " ")
 }
 

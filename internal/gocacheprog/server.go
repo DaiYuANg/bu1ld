@@ -15,6 +15,9 @@ import (
 
 	"bu1ld/internal/cache"
 	"bu1ld/internal/snapshot"
+
+	"github.com/arcgolabs/collectionx/mapping"
+	"github.com/samber/mo"
 )
 
 type Options struct {
@@ -28,7 +31,7 @@ type Server struct {
 	options Options
 	client  *cache.RemoteClient
 	mu      sync.Mutex
-	entries map[string]localEntry
+	entries *mapping.Map[string, localEntry]
 }
 
 type localEntry struct {
@@ -67,7 +70,7 @@ func NewServer(options Options) (*Server, func(), error) {
 	return &Server{
 		options: options,
 		client:  client,
-		entries: map[string]localEntry{},
+		entries: mapping.NewMap[string, localEntry](),
 	}, cleanup, nil
 }
 
@@ -231,23 +234,27 @@ func (s *Server) handlePut(request Request, body []byte) Response {
 }
 
 func (s *Server) localEntry(actionID string) (localEntry, bool) {
+	return s.localEntryOption(actionID).Get()
+}
+
+func (s *Server) localEntryOption(actionID string) mo.Option[localEntry] {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	entry, ok := s.entries[actionID]
+	entry, ok := s.entries.Get(actionID)
 	if !ok || entry.diskPath == "" {
-		return localEntry{}, false
+		return mo.None[localEntry]()
 	}
 	if _, err := os.Stat(entry.diskPath); err != nil {
-		delete(s.entries, actionID)
-		return localEntry{}, false
+		s.entries.Delete(actionID)
+		return mo.None[localEntry]()
 	}
-	return entry, true
+	return mo.Some(entry)
 }
 
 func (s *Server) setLocalEntry(actionID string, entry cache.GoCacheEntry, diskPath string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.entries[actionID] = localEntry{entry: entry, diskPath: diskPath}
+	s.entries.Set(actionID, localEntry{entry: entry, diskPath: diskPath})
 }
 
 func (s *Server) writeLocalOutput(outputID string, body []byte) (string, error) {

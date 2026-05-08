@@ -5,15 +5,15 @@ go 1.26.2
 require github.com/spf13/cobra v1.10.2
 
 require (
-	github.com/arcgolabs/collectionx/list v0.7.0
-	github.com/arcgolabs/collectionx/mapping v0.7.0
-	github.com/arcgolabs/collectionx/prefix v0.7.0
-	github.com/arcgolabs/collectionx/set v0.7.0
+	github.com/arcgolabs/collectionx/list v0.8.0
+	github.com/arcgolabs/collectionx/mapping v0.8.0
+	github.com/arcgolabs/collectionx/prefix v0.8.0
+	github.com/arcgolabs/collectionx/set v0.8.0
 	github.com/arcgolabs/httpx v0.1.4
 	github.com/arcgolabs/httpx/adapter/std v0.1.4
 	github.com/arcgolabs/plano v0.7.0
-	github.com/docker/docker v28.5.2+incompatible
 	github.com/cyphar/filepath-securejoin v0.4.1
+	github.com/docker/docker v28.5.2+incompatible
 	github.com/fxamacker/cbor/v2 v2.9.2
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/go-git/go-git/v5 v5.18.0
@@ -32,7 +32,7 @@ require (
 	github.com/ProtonMail/go-crypto v1.1.6 // indirect
 	github.com/STARRY-S/zip v0.2.3 // indirect
 	github.com/andybalholm/brotli v1.2.1 // indirect
-	github.com/arcgolabs/collectionx/graph v0.7.0 // indirect
+	github.com/arcgolabs/collectionx/graph v0.8.0 // indirect
 	github.com/arcgolabs/httpx/adapter/echo v0.1.4 // indirect
 	github.com/arcgolabs/httpx/adapter/fiber v0.1.4 // indirect
 	github.com/arcgolabs/httpx/adapter/gin v0.1.4 // indirect
@@ -141,7 +141,7 @@ require (
 	github.com/samber/do/v2 v2.0.0 // indirect
 	github.com/samber/go-type-to-string v1.8.0 // indirect
 	github.com/samber/lo v1.53.0
-	github.com/samber/mo v1.16.0 // indirect
+	github.com/samber/mo v1.16.0
 	github.com/samber/oops v1.21.0
 	github.com/samber/oops/loggers/zerolog v0.0.0-20260504184729-457cdc1d7809 // indirect
 	github.com/samber/slog-common v0.22.0 // indirect

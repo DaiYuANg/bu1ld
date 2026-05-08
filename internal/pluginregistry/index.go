@@ -13,7 +13,9 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/arcgolabs/collectionx/list"
 	"github.com/pelletier/go-toml/v2"
+	"github.com/samber/mo"
 	"github.com/samber/oops"
 )
 
@@ -103,7 +105,7 @@ func LoadEmbedded() (*Index, error) {
 		return nil, err
 	}
 
-	plugins := make([]Plugin, 0, len(indexFile.Plugins))
+	plugins := list.NewListWithCapacity[Plugin](len(indexFile.Plugins))
 	for _, ref := range indexFile.Plugins {
 		path := filepath.ToSlash(filepath.Join(embeddedRoot, ref.File))
 		data, err := embeddedCatalog.ReadFile(path)
@@ -123,63 +125,77 @@ func LoadEmbedded() (*Index, error) {
 				With("index_plugin", ref.ID).
 				Errorf("registry plugin id %q does not match index id %q", plugin.ID, ref.ID)
 		}
-		plugins = append(plugins, plugin)
+		plugins.Add(plugin)
 	}
-	return newIndex(indexFile.Version, plugins)
+	return newIndex(indexFile.Version, plugins.Values())
 }
 
 func (i *Index) Search(query string) []Plugin {
 	query = strings.ToLower(strings.TrimSpace(query))
-	items := slices.Clone(i.Items)
+	items := list.NewList(i.Items...)
 	if query == "" {
-		return items
+		return items.Values()
 	}
-	values := make([]Plugin, 0, len(items))
-	for _, item := range items {
-		if item.matches(query) {
-			values = append(values, item)
-		}
-	}
-	return values
+	return items.Where(func(_ int, item Plugin) bool {
+		return item.matches(query)
+	}).Values()
 }
 
 func (i *Index) Find(id string) (Plugin, bool) {
-	for _, item := range i.Items {
+	return i.FindOption(id).Get()
+}
+
+func (i *Index) FindOption(id string) mo.Option[Plugin] {
+	return list.NewList(i.Items...).FirstWhere(func(_ int, item Plugin) bool {
 		if item.ID == id {
-			return item, true
+			return true
 		}
-	}
-	return Plugin{}, false
+		return false
+	})
 }
 
 func (p Plugin) LatestVersion() (PluginVersion, bool) {
-	if len(p.Versions) == 0 {
-		return PluginVersion{}, false
-	}
-	return p.Versions[0], true
+	return p.LatestVersionOption().Get()
+}
+
+func (p Plugin) LatestVersionOption() mo.Option[PluginVersion] {
+	return list.NewList(p.Versions...).GetFirstOption()
 }
 
 func (p Plugin) Version(version string) (PluginVersion, bool) {
-	for _, item := range p.Versions {
+	return p.VersionOption(version).Get()
+}
+
+func (p Plugin) VersionOption(version string) mo.Option[PluginVersion] {
+	return list.NewList(p.Versions...).FirstWhere(func(_ int, item PluginVersion) bool {
 		if item.Version == version {
-			return item, true
+			return true
 		}
-	}
-	return PluginVersion{}, false
+		return false
+	})
 }
 
 func (v PluginVersion) Asset(goos, goarch string) (PluginAsset, bool) {
-	for _, asset := range v.Assets {
+	return v.AssetOption(goos, goarch).Get()
+}
+
+func (v PluginVersion) AssetOption(goos, goarch string) mo.Option[PluginAsset] {
+	assets := list.NewList(v.Assets...)
+	exact := assets.FirstWhere(func(_ int, asset PluginAsset) bool {
 		if asset.OS == goos && asset.Arch == goarch {
-			return asset, true
+			return true
 		}
+		return false
+	})
+	if exact.IsPresent() {
+		return exact
 	}
-	for _, asset := range v.Assets {
+	return assets.FirstWhere(func(_ int, asset PluginAsset) bool {
 		if asset.OS == "" && asset.Arch == "" {
-			return asset, true
+			return true
 		}
-	}
-	return PluginAsset{}, false
+		return false
+	})
 }
 
 func ParseRef(ref string) (id string, version string, err error) {
@@ -201,18 +217,18 @@ func Select(index *Index, ref string) (Plugin, PluginVersion, error) {
 	if err != nil {
 		return Plugin{}, PluginVersion{}, err
 	}
-	plugin, ok := index.Find(id)
+	plugin, ok := index.FindOption(id).Get()
 	if !ok {
 		return Plugin{}, PluginVersion{}, fmt.Errorf("plugin %q was not found in the registry", id)
 	}
 	if version != "" {
-		item, ok := plugin.Version(version)
+		item, ok := plugin.VersionOption(version).Get()
 		if !ok {
 			return Plugin{}, PluginVersion{}, fmt.Errorf("plugin %q version %q was not found in the registry", id, version)
 		}
 		return plugin, item, nil
 	}
-	item, ok := plugin.LatestVersion()
+	item, ok := plugin.LatestVersionOption().Get()
 	if !ok {
 		return Plugin{}, PluginVersion{}, fmt.Errorf("plugin %q has no versions in the registry", id)
 	}
@@ -229,7 +245,7 @@ func loadExternal(ctx context.Context, options LoadOptions, source string) (*Ind
 		return nil, err
 	}
 
-	plugins := make([]Plugin, 0, len(indexFile.Plugins))
+	plugins := list.NewListWithCapacity[Plugin](len(indexFile.Plugins))
 	for _, ref := range indexFile.Plugins {
 		entrySource, err := resolveRegistryRef(indexBase, ref.File)
 		if err != nil {
@@ -251,9 +267,9 @@ func loadExternal(ctx context.Context, options LoadOptions, source string) (*Ind
 				Errorf("registry plugin id %q does not match index id %q", plugin.ID, ref.ID)
 		}
 		resolvePluginAssets(&plugin, entryBase)
-		plugins = append(plugins, plugin)
+		plugins.Add(plugin)
 	}
-	return newIndex(indexFile.Version, plugins)
+	return newIndex(indexFile.Version, plugins.Values())
 }
 
 func readRegistryFile(ctx context.Context, client *http.Client, source string) ([]byte, string, error) {
@@ -360,7 +376,7 @@ func newIndex(version int, plugins []Plugin) (*Index, error) {
 	if version == 0 {
 		return nil, oops.In("bu1ld.plugin_registry").New("plugin registry version is required")
 	}
-	items := slices.Clone(plugins)
+	items := list.NewList(plugins...).Values()
 	slices.SortFunc(items, func(left, right Plugin) int {
 		return strings.Compare(left.ID, right.ID)
 	})
@@ -368,20 +384,17 @@ func newIndex(version int, plugins []Plugin) (*Index, error) {
 }
 
 func (p Plugin) matches(query string) bool {
-	values := []string{
+	values := list.NewList(
 		p.ID,
 		p.Namespace,
 		p.Owner,
 		p.Description,
 		p.Homepage,
 		strings.Join(p.Tags, " "),
-	}
-	for _, value := range values {
-		if strings.Contains(strings.ToLower(value), query) {
-			return true
-		}
-	}
-	return false
+	)
+	return values.AnyMatch(func(_ int, value string) bool {
+		return strings.Contains(strings.ToLower(value), query)
+	})
 }
 
 func registryPath(source string) (string, error) {

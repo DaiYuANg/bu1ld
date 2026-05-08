@@ -12,6 +12,7 @@ import (
 	"github.com/arcgolabs/collectionx/list"
 	"github.com/arcgolabs/collectionx/mapping"
 	prefixx "github.com/arcgolabs/collectionx/prefix"
+	"github.com/samber/mo"
 	"go.lsp.dev/protocol"
 )
 
@@ -20,9 +21,9 @@ type completionIndex struct {
 	topLevelTrie           *prefixx.Trie[protocol.CompletionItem]
 	topLevelHovers         *mapping.Map[string, hoverEntry]
 	ruleSchemasByNamespace *mapping.MultiMap[string, buildplugin.RuleSchema]
-	fieldItemsByKind       *mapping.Map[string, []protocol.CompletionItem]
+	fieldItemsByKind       *mapping.MultiMap[string, protocol.CompletionItem]
 	fieldTriesByKind       *mapping.Map[string, *prefixx.Trie[protocol.CompletionItem]]
-	fieldHoversByKind      *mapping.Map[string, *mapping.Map[string, hoverEntry]]
+	fieldHoversByKind      *mapping.Table[string, string, hoverEntry]
 }
 
 func newCompletionIndex(parser *dsl.Parser) *completionIndex {
@@ -31,9 +32,9 @@ func newCompletionIndex(parser *dsl.Parser) *completionIndex {
 		topLevelTrie:           prefixx.NewTrie[protocol.CompletionItem](),
 		topLevelHovers:         mapping.NewMap[string, hoverEntry](),
 		ruleSchemasByNamespace: mapping.NewMultiMap[string, buildplugin.RuleSchema](),
-		fieldItemsByKind:       mapping.NewMap[string, []protocol.CompletionItem](),
+		fieldItemsByKind:       mapping.NewMultiMap[string, protocol.CompletionItem](),
 		fieldTriesByKind:       mapping.NewMap[string, *prefixx.Trie[protocol.CompletionItem]](),
-		fieldHoversByKind:      mapping.NewMap[string, *mapping.Map[string, hoverEntry]](),
+		fieldHoversByKind:      mapping.NewTable[string, string, hoverEntry](),
 	}
 
 	index.addTopLevelItems(coreTopLevelCompletionItems())
@@ -95,17 +96,17 @@ func (s *Server) fieldCompletions(kind, labelPrefix string) []protocol.Completio
 	if s.index == nil {
 		return nil
 	}
-	items, ok := s.index.fieldItemsByKind.Get(kind)
-	if !ok {
-		schema, ok := s.index.ruleSchema(kind)
+	trie, trieKnown := s.index.fieldTriesByKind.Get(kind)
+	if !trieKnown {
+		schema, ok := s.index.ruleSchemaOption(kind).Get()
 		if !ok {
 			return nil
 		}
 		s.index.registerFieldItems(kind, completionItemsForFields(schema.Fields))
 		s.index.registerFieldHovers(kind, hoverEntriesForFields(kind, schema.Fields))
-		items, _ = s.index.fieldItemsByKind.Get(kind)
+		trie, _ = s.index.fieldTriesByKind.Get(kind)
 	}
-	trie, _ := s.index.fieldTriesByKind.Get(kind)
+	items := s.index.fieldItemsByKind.Get(kind)
 	return filteredCompletionItems(items, trie, labelPrefix)
 }
 
@@ -168,33 +169,32 @@ func (i *completionIndex) registerFieldItems(kind string, items []protocol.Compl
 		item := sorted[i]
 		trie.Put(item.Label, item)
 	}
-	i.fieldItemsByKind.Set(kind, sorted)
+	i.fieldItemsByKind.Set(kind, sorted...)
 	i.fieldTriesByKind.Set(kind, trie)
 }
 
 func (i *completionIndex) registerFieldHovers(kind string, entries map[string]hoverEntry) {
-	items := mapping.NewMap[string, hoverEntry]()
 	for label, entry := range entries {
-		items.Set(label, entry)
+		i.fieldHoversByKind.Put(kind, label, entry)
 	}
-	i.fieldHoversByKind.Set(kind, items)
 }
 
 func (i *completionIndex) ruleSchema(kind string) (buildplugin.RuleSchema, bool) {
+	return i.ruleSchemaOption(kind).Get()
+}
+
+func (i *completionIndex) ruleSchemaOption(kind string) mo.Option[buildplugin.RuleSchema] {
 	namespace, ruleName, ok := strings.Cut(kind, ".")
 	if !ok {
-		return buildplugin.RuleSchema{}, false
+		return mo.None[buildplugin.RuleSchema]()
 	}
-	rules, ok := i.ruleSchemasByNamespace.GetOption(namespace).Get()
-	if !ok {
-		return buildplugin.RuleSchema{}, false
-	}
-	for _, rule := range rules {
+	rules := i.ruleSchemasByNamespace.GetOption(namespace).OrEmpty()
+	return list.NewList(rules...).FirstWhere(func(_ int, rule buildplugin.RuleSchema) bool {
 		if rule.Name == ruleName {
-			return rule, true
+			return true
 		}
-	}
-	return buildplugin.RuleSchema{}, false
+		return false
+	})
 }
 
 func filteredCompletionItems(
@@ -203,7 +203,7 @@ func filteredCompletionItems(
 	labelPrefix string,
 ) []protocol.CompletionItem {
 	if labelPrefix == "" || trie == nil {
-		return sortedCompletions(append([]protocol.CompletionItem(nil), items...))
+		return sortedCompletions(list.NewList(items...).Values())
 	}
 	return sortedCompletions(trie.ValuesWithPrefix(labelPrefix))
 }
