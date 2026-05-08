@@ -124,6 +124,37 @@ url = "../assets/rust"
 
 Supported asset formats are `zip`, `tar`, `tar.gz`, and local `dir`.
 
+## Validation And Publishing Helpers
+
+Validate the embedded registry or an external source before publishing:
+
+```bash
+bu1ld plugins registry validate
+bu1ld plugins registry validate ./registry
+BU1LD_PLUGIN_REGISTRY='git+https://example.com/platform/bu1ld-plugins.git?ref=main&path=registry' \
+  bu1ld plugins registry validate
+```
+
+Validation checks duplicate plugin ids, duplicate version entries, approved
+versions without assets, unsupported asset formats, duplicate platform assets,
+and signature metadata shape.
+
+To generate a plugin entry snippet from an installable manifest:
+
+```bash
+bu1ld plugins publish ./plugin.toml \
+  --asset-url https://downloads.example.com/bu1ld/rust/0.1.0/rust-linux-amd64.tar.gz \
+  --os linux \
+  --arch amd64 \
+  --format tar.gz \
+  --sha256 <sha256> \
+  --bu1ld '>=0.1.3'
+```
+
+The command prints TOML metadata that can be copied into a registry repository.
+It does not upload artifacts; the registry remains a metadata layer and the
+asset URL decides where bytes are hosted.
+
 ## Review And Signing
 
 Registry versions can declare `status = "approved"`, `"pending"`, or

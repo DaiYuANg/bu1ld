@@ -17,6 +17,8 @@ func newPluginsCommand(opts *options) *cobra.Command {
 		newPluginsInfoCommand(opts),
 		newPluginsInstallCommand(opts),
 		newPluginsUpdateCommand(opts),
+		newPluginsRegistryCommand(opts),
+		newPluginsPublishCommand(opts),
 	)
 	return cmd
 }
@@ -90,5 +92,61 @@ func newPluginsUpdateCommand(opts *options) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&global, "global", false, "update the global plugin directory")
+	return cmd
+}
+
+func newPluginsRegistryCommand(opts *options) *cobra.Command {
+	cmd := newCommandGroup("registry", "Manage plugin registry metadata", opts)
+	cmd.AddCommand(&cobra.Command{
+		Use:   "validate [source]",
+		Short: "Validate plugin registry metadata",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			source := ""
+			if len(args) > 0 {
+				source = args[0]
+			}
+			return runCommand(cmd, opts, app.CommandRequest{
+				Kind:           app.CommandPluginsRegistryValidate,
+				RegistrySource: source,
+			})
+		},
+	})
+	return cmd
+}
+
+func newPluginsPublishCommand(opts *options) *cobra.Command {
+	var assetURL string
+	var goos string
+	var goarch string
+	var format string
+	var sha256 string
+	var status string
+	var bu1ld string
+	cmd := &cobra.Command{
+		Use:   "publish <plugin.toml>",
+		Short: "Generate registry metadata for a plugin artifact",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runCommand(cmd, opts, app.CommandRequest{
+				Kind:               app.CommandPluginsPublish,
+				PluginManifestPath: args[0],
+				PluginAssetURL:     assetURL,
+				PluginOS:           goos,
+				PluginArch:         goarch,
+				PluginFormat:       format,
+				PluginSHA256:       sha256,
+				PluginStatus:       status,
+				PluginBu1ld:        bu1ld,
+			})
+		},
+	}
+	cmd.Flags().StringVar(&assetURL, "asset-url", "", "download URL for the plugin artifact")
+	cmd.Flags().StringVar(&goos, "os", "", "target operating system for the asset")
+	cmd.Flags().StringVar(&goarch, "arch", "", "target architecture for the asset")
+	cmd.Flags().StringVar(&format, "format", "", "asset format: zip, tar, tar.gz, tgz, or dir")
+	cmd.Flags().StringVar(&sha256, "sha256", "", "asset SHA-256 checksum")
+	cmd.Flags().StringVar(&status, "status", "approved", "registry version status")
+	cmd.Flags().StringVar(&bu1ld, "bu1ld", "", "compatible bu1ld version constraint")
 	return cmd
 }

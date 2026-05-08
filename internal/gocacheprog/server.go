@@ -26,6 +26,7 @@ type Options struct {
 	CacheDir         string
 	RemotePull       bool
 	RemotePush       bool
+	LogPath          string
 }
 
 type Server struct {
@@ -33,6 +34,7 @@ type Server struct {
 	client  *cache.RemoteClient
 	mu      sync.Mutex
 	entries *mapping.Map[string, localEntry]
+	logFile *os.File
 }
 
 type localEntry struct {
@@ -68,10 +70,29 @@ func NewServer(options Options) (*Server, func(), error) {
 	if options.RemoteCacheURL != "" {
 		client = cache.NewRemoteClientWithToken(options.RemoteCacheURL, options.RemoteCacheToken)
 	}
+	var logFile *os.File
+	if options.LogPath != "" {
+		if err := os.MkdirAll(filepath.Dir(options.LogPath), 0o755); err != nil {
+			cleanup()
+			return nil, func() {}, fmt.Errorf("create go cacheprog log dir: %w", err)
+		}
+		file, err := os.OpenFile(options.LogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			cleanup()
+			return nil, func() {}, fmt.Errorf("open go cacheprog log: %w", err)
+		}
+		logFile = file
+		previousCleanup := cleanup
+		cleanup = func() {
+			_ = file.Close()
+			previousCleanup()
+		}
+	}
 	return &Server{
 		options: options,
 		client:  client,
 		entries: mapping.NewMap[string, localEntry](),
+		logFile: logFile,
 	}, cleanup, nil
 }
 
@@ -153,9 +174,11 @@ func (s *Server) handleGet(ctx context.Context, request Request) Response {
 	}
 
 	if entry, ok := s.localEntry(actionID); ok {
+		s.log("get %s local_hit\n", actionID)
 		return entryResponse(request.ID, entry.entry, entry.diskPath)
 	}
 	if s.client == nil || !s.options.RemotePull {
+		s.log("get %s miss remote_disabled\n", actionID)
 		return Response{ID: request.ID, Miss: true}
 	}
 
@@ -164,6 +187,7 @@ func (s *Server) handleGet(ctx context.Context, request Request) Response {
 		return Response{ID: request.ID, Err: err.Error()}
 	}
 	if !hit {
+		s.log("get %s miss remote_action\n", actionID)
 		return Response{ID: request.ID, Miss: true}
 	}
 	if ctx.Err() != nil {
@@ -192,6 +216,7 @@ func (s *Server) handleGet(ctx context.Context, request Request) Response {
 		entry.Size = int64(len(body))
 	}
 	s.setLocalEntry(actionID, entry, diskPath)
+	s.log("get %s remote_hit output=%s size=%d\n", actionID, entry.OutputID, entry.Size)
 	return entryResponse(request.ID, entry, diskPath)
 }
 
@@ -230,8 +255,20 @@ func (s *Server) handlePut(request Request, body []byte) Response {
 		if err := s.client.PutGoCacheEntry(actionID, entry); err != nil {
 			return Response{ID: request.ID, Err: err.Error()}
 		}
+		s.log("put %s remote_push output=%s size=%d\n", actionID, outputID, entry.Size)
+	} else {
+		s.log("put %s local_only output=%s size=%d\n", actionID, outputID, entry.Size)
 	}
 	return Response{ID: request.ID, OutputID: request.OutputID, Size: entry.Size, Time: &entry.Time, DiskPath: diskPath}
+}
+
+func (s *Server) log(format string, args ...any) {
+	if s.logFile == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, _ = fmt.Fprintf(s.logFile, format, args...)
 }
 
 func (s *Server) localEntry(actionID string) (localEntry, bool) {

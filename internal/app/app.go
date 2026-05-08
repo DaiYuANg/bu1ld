@@ -21,41 +21,52 @@ import (
 type CommandKind string
 
 const (
-	CommandBuild             CommandKind = "build"
-	CommandTest              CommandKind = "test"
-	CommandInit              CommandKind = "init"
-	CommandDoctor            CommandKind = "doctor"
-	CommandGraph             CommandKind = "graph"
-	CommandTasks             CommandKind = "tasks"
-	CommandPackages          CommandKind = "packages"
-	CommandPackagesGraph     CommandKind = "packages.graph"
-	CommandAffected          CommandKind = "affected"
-	CommandClean             CommandKind = "clean"
-	CommandPluginsList       CommandKind = "plugins.list"
-	CommandPluginsDoctor     CommandKind = "plugins.doctor"
-	CommandPluginsLock       CommandKind = "plugins.lock"
-	CommandPluginsSearch     CommandKind = "plugins.search"
-	CommandPluginsInfo       CommandKind = "plugins.info"
-	CommandPluginsInstall    CommandKind = "plugins.install"
-	CommandPluginsUpdate     CommandKind = "plugins.update"
-	CommandDaemonStatus      CommandKind = "daemon.status"
-	CommandDaemonStart       CommandKind = "daemon.start"
-	CommandDaemonStop        CommandKind = "daemon.stop"
-	CommandServerStatus      CommandKind = "server.status"
-	CommandServerCoordinator CommandKind = "server.coordinator"
-	CommandServerWorker      CommandKind = "server.worker"
+	CommandBuild                   CommandKind = "build"
+	CommandTest                    CommandKind = "test"
+	CommandInit                    CommandKind = "init"
+	CommandDoctor                  CommandKind = "doctor"
+	CommandGraph                   CommandKind = "graph"
+	CommandTasks                   CommandKind = "tasks"
+	CommandPackages                CommandKind = "packages"
+	CommandPackagesGraph           CommandKind = "packages.graph"
+	CommandAffected                CommandKind = "affected"
+	CommandClean                   CommandKind = "clean"
+	CommandPluginsList             CommandKind = "plugins.list"
+	CommandPluginsDoctor           CommandKind = "plugins.doctor"
+	CommandPluginsLock             CommandKind = "plugins.lock"
+	CommandPluginsSearch           CommandKind = "plugins.search"
+	CommandPluginsInfo             CommandKind = "plugins.info"
+	CommandPluginsInstall          CommandKind = "plugins.install"
+	CommandPluginsUpdate           CommandKind = "plugins.update"
+	CommandPluginsRegistryValidate CommandKind = "plugins.registry.validate"
+	CommandPluginsPublish          CommandKind = "plugins.publish"
+	CommandDaemonStatus            CommandKind = "daemon.status"
+	CommandDaemonStart             CommandKind = "daemon.start"
+	CommandDaemonStop              CommandKind = "daemon.stop"
+	CommandServerStatus            CommandKind = "server.status"
+	CommandServerCoordinator       CommandKind = "server.coordinator"
+	CommandServerWorker            CommandKind = "server.worker"
 )
 
 type CommandRequest struct {
-	Kind         CommandKind
-	Targets      []string
-	AllPackages  bool
-	BaseRef      string
-	ForceWrite   bool
-	ListenAddr   string
-	PluginQuery  string
-	PluginRef    string
-	PluginGlobal bool
+	Kind               CommandKind
+	Targets            []string
+	AllPackages        bool
+	BaseRef            string
+	ForceWrite         bool
+	ListenAddr         string
+	PluginQuery        string
+	PluginRef          string
+	PluginGlobal       bool
+	RegistrySource     string
+	PluginManifestPath string
+	PluginAssetURL     string
+	PluginOS           string
+	PluginArch         string
+	PluginFormat       string
+	PluginSHA256       string
+	PluginStatus       string
+	PluginBu1ld        string
 }
 
 type App struct {

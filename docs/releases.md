@@ -73,11 +73,14 @@ The workflow runs:
 - Java plugin Gradle checks
 - root GoReleaser publish
 - Java plugin jpackage app-image builds on Linux, Windows, and macOS runners
-- release asset checksum verification after all uploads
+- release asset checksum and structure verification after all uploads
+- release install E2E against the downloaded Linux assets
 
 Pull requests and normal branch pushes are covered by `.github/workflows/ci.yml`
 with a Linux/macOS/Windows matrix for Go tests, Go plugin tests, and Java plugin
-checks.
+checks. CI also runs a Linux remote-cache E2E that starts a coordinator, builds
+the Go plugin cacheprog adapter, and verifies a second Go build can hit the
+remote Go cache.
 
 Go plugin release assets are produced by GoReleaser. Java plugin release assets
 are produced after GoReleaser creates the GitHub Release: each platform job runs
@@ -105,7 +108,20 @@ scripts/verify-release-assets.sh dist/release
 ```
 
 The script verifies `checksums.txt` plus every `*.sha256` file in the release
-directory.
+directory. It also extracts every CLI archive and first-party plugin archive,
+checks that `plugin.toml` has the expected id, namespace, and version, and
+verifies that the manifest `binary` path exists inside the archive.
+
+After structural verification, the workflow runs:
+
+```bash
+scripts/release-e2e.sh dist/release
+```
+
+That script builds a local registry from the downloaded release assets, installs
+`org.bu1ld.go` and `org.bu1ld.java` with the release `bu1ld` binary, and runs
+the Go, Java, and multi-language monorepo examples. This catches packaging
+mistakes that checksum verification alone cannot detect.
 
 ## Registry Update
 
@@ -116,6 +132,11 @@ other artifact location. The first-party embedded registry already follows this
 shape for `org.bu1ld.go` and `org.bu1ld.java`.
 
 See [Plugin Registry](plugin-registry.md).
+
+If a tag produced incomplete or incorrect assets, keep that version in registry
+metadata with `status = "rejected"` instead of deleting the history. Approved
+version selection skips rejected entries, while registry users can still see why
+the version exists.
 
 ## Upgrade Notes
 

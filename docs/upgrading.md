@@ -15,6 +15,9 @@ extension boundary:
   versions remain in metadata but are not installed.
 - Registry assets may include SHA-256 checksums and Ed25519 detached
   signatures.
+- Rejected registry versions are preserved for auditability but are skipped by
+  install and update selection. The first public release line marks bad
+  first-party plugin releases this way instead of silently removing them.
 - Remote cache deployments can configure a bearer token, maximum object size,
   total cache size, and max age through `remote_cache.*` config or
   `BU1LD_REMOTE_CACHE__*` environment variables.

@@ -289,6 +289,8 @@ model and TOML schema.
 bu1ld plugins search java
 bu1ld plugins info org.bu1ld.go
 bu1ld plugins install org.bu1ld.go@0.1.3
+bu1ld plugins registry validate ./registry
+bu1ld plugins publish ./plugin.toml --asset-url https://downloads.example.com/plugin.tar.gz --os linux --arch amd64 --format tar.gz
 BU1LD_PLUGIN_REGISTRY=./registry bu1ld plugins search
 BU1LD_PLUGIN_REGISTRY='git+https://example.com/platform/bu1ld-plugins.git?ref=main&path=registry' bu1ld plugins search
 ```
@@ -387,6 +389,8 @@ go run ./cmd/cli plugins lock
 go run ./cmd/cli plugins search go
 go run ./cmd/cli plugins info org.bu1ld.go
 go run ./cmd/cli plugins install org.bu1ld.go@0.1.3
+go run ./cmd/cli plugins registry validate
+go run ./cmd/cli plugins publish plugins/go/plugin.toml --asset-url https://downloads.example.com/bu1ld-go-plugin.tar.gz --os linux --arch amd64 --format tar.gz
 go run ./cmd/daemon status
 go run ./cmd/server status
 go run ./cmd/lsp stdio

@@ -33,6 +33,8 @@ func (a *App) handlers() map[CommandKind]commandHandler {
 		CommandPluginsUpdate: func(ctx context.Context) error {
 			return a.installRegistryPlugin(ctx, true, "updated")
 		},
+		CommandPluginsRegistryValidate: a.validatePluginRegistry,
+		CommandPluginsPublish:          a.printPluginPublishSnippet,
 		CommandDaemonStatus: func(context.Context) error {
 			return writeLine(a.output, "daemon status: unavailable (not implemented)")
 		},

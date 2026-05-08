@@ -147,9 +147,18 @@ writes the output to local disk before returning a `DiskPath` to the Go
 toolchain. On push it validates the output digest, writes local disk state, then
 uploads output and action metadata when remote push is enabled.
 
+For diagnostics and CI assertions, set `BU1LD_GO_CACHEPROG_LOG` or pass
+`bu1ld-go-plugin cacheprog --log <path>`. The log records local hits, remote
+misses, remote hits, and remote pushes without changing the cacheprog protocol
+stream.
+
 The cacheprog adapter is intentionally shipped as a subcommand of the Go plugin
 binary so installing `bu1ld-go-plugin` is enough for both JSON-RPC plugin
 execution and Go build-cache integration.
+
+The repository CI runs `scripts/remote-cache-e2e.sh` on Linux. It starts a real
+coordinator, builds with the Go plugin cacheprog adapter, clears local outputs,
+and asserts that the second build reports a remote Go cache hit.
 
 ## Current Boundary
 

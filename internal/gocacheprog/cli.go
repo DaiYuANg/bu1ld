@@ -17,6 +17,7 @@ func OptionsFromEnv() Options {
 		CacheDir:   firstEnv("BU1LD_GO_CACHEPROG_CACHE_DIR", "BU1LD_GO__CACHEPROG_CACHE_DIR"),
 		RemotePull: envBool(true, "BU1LD_REMOTE_CACHE__PULL", "BU1LD_REMOTE_CACHE_PULL"),
 		RemotePush: envBool(false, "BU1LD_REMOTE_CACHE__PUSH", "BU1LD_REMOTE_CACHE_PUSH"),
+		LogPath:    firstEnv("BU1LD_GO_CACHEPROG_LOG", "BU1LD_GO__CACHEPROG_LOG"),
 	}
 }
 

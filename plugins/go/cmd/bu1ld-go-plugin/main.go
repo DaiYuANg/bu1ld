@@ -72,6 +72,7 @@ func newCacheprogCommand(ctx context.Context, streams commandStreams) *cobra.Com
 	flags.StringVar(&options.CacheDir, "cache-dir", options.CacheDir, "local GOCACHEPROG disk path")
 	flags.BoolVar(&options.RemotePull, "remote-cache-pull", options.RemotePull, "pull Go cache entries from the coordinator")
 	flags.BoolVar(&options.RemotePush, "remote-cache-push", options.RemotePush, "push Go cache entries to the coordinator")
+	flags.StringVar(&options.LogPath, "log", options.LogPath, "write cacheprog hit/miss diagnostics to a file")
 	return command
 }
 

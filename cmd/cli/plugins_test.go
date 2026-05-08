@@ -213,6 +213,92 @@ binary = "echo"
 	}
 }
 
+func TestPluginsRegistryValidateCommand(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	registryDir := t.TempDir()
+	writeBuildFile(t, projectDir, ``)
+	writeRegistryTestFile(t, filepath.Join(registryDir, "plugins.toml"), `
+version = 1
+
+[[plugins]]
+id = "org.example.echo"
+file = "plugins/org.example.echo.toml"
+`)
+	writeRegistryTestFile(t, filepath.Join(registryDir, "plugins", "org.example.echo.toml"), `
+id = "org.example.echo"
+namespace = "echo"
+
+[[versions]]
+version = "0.1.0"
+status = "approved"
+
+[[versions.assets]]
+os = "linux"
+arch = "amd64"
+url = "../assets/echo.tar.gz"
+format = "tar.gz"
+`)
+
+	var out bytes.Buffer
+	cmd := NewRootCommand(&out)
+	cmd.SetArgs([]string{"--project-dir", projectDir, "plugins", "registry", "validate", registryDir})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	for _, want := range []string{"registry ok", "1 plugins", "1 approved", "1 assets"} {
+		if got := out.String(); !strings.Contains(got, want) {
+			t.Fatalf("output = %q, want substring %q", got, want)
+		}
+	}
+}
+
+func TestPluginsPublishCommandPrintsRegistryMetadata(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	writeBuildFile(t, projectDir, ``)
+	manifest := filepath.Join(projectDir, "plugin.toml")
+	writeRegistryTestFile(t, manifest, `
+id = "org.example.echo"
+namespace = "echo"
+version = "0.2.0"
+binary = "echo"
+`)
+
+	var out bytes.Buffer
+	cmd := NewRootCommand(&out)
+	cmd.SetArgs([]string{
+		"--project-dir", projectDir,
+		"plugins", "publish", "plugin.toml",
+		"--asset-url", "https://downloads.example.com/echo.tar.gz",
+		"--os", "linux",
+		"--arch", "amd64",
+		"--format", "tar.gz",
+		"--sha256", strings.Repeat("a", 64),
+		"--bu1ld", ">=0.1.3",
+	})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{
+		`id = 'org.example.echo'`,
+		`namespace = 'echo'`,
+		`version = '0.2.0'`,
+		`bu1ld = '>=0.1.3'`,
+		`url = 'https://downloads.example.com/echo.tar.gz'`,
+		`sha256 = '` + strings.Repeat("a", 64) + `'`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("output = %q, want substring %q", got, want)
+		}
+	}
+}
+
 func TestPluginsDoctorReportsLockChecksumMismatch(t *testing.T) {
 	t.Parallel()
 

@@ -64,3 +64,18 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: .\plugins\java\gradlew.bat -p plugins/java check
+
+  remote-cache-e2e:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.2"
+
+      - name: Run remote cache E2E
+        run: bash scripts/remote-cache-e2e.sh

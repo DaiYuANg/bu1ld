@@ -223,6 +223,60 @@ func TestSelectSkipsPendingRegistryVersions(t *testing.T) {
 	}
 }
 
+func TestValidateIndexReportsRejectedVersions(t *testing.T) {
+	t.Parallel()
+
+	index, err := newIndex(1, nil, []Plugin{
+		{
+			ID:        "org.example.echo",
+			Namespace: "echo",
+			Versions: []PluginVersion{
+				{
+					Version: "0.2.0",
+					Status:  "approved",
+					Assets: []PluginAsset{
+						{OS: "linux", Arch: "amd64", URL: "echo.tar.gz", Format: "tar.gz"},
+					},
+				},
+				{Version: "0.1.0", Status: "rejected"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("newIndex() error = %v", err)
+	}
+	report, err := ValidateIndex(index)
+	if err != nil {
+		t.Fatalf("ValidateIndex() error = %v", err)
+	}
+	if got, want := report.ApprovedVersions, 1; got != want {
+		t.Fatalf("ApprovedVersions = %d, want %d", got, want)
+	}
+	if got, want := report.RejectedVersions, 1; got != want {
+		t.Fatalf("RejectedVersions = %d, want %d", got, want)
+	}
+}
+
+func TestValidateIndexRejectsApprovedVersionWithoutAssets(t *testing.T) {
+	t.Parallel()
+
+	index, err := newIndex(1, nil, []Plugin{
+		{
+			ID:        "org.example.echo",
+			Namespace: "echo",
+			Versions: []PluginVersion{
+				{Version: "0.1.0", Status: "approved"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("newIndex() error = %v", err)
+	}
+	if _, err := ValidateIndex(index); err == nil {
+		t.Fatalf("ValidateIndex() error = nil, want error")
+	}
+}
+
 func TestVerifyAssetSignatureEd25519(t *testing.T) {
 	t.Parallel()
 

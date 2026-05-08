@@ -147,3 +147,6 @@ jobs:
 
       - name: Verify release checksums
         run: bash scripts/verify-release-assets.sh dist/release
+
+      - name: Run release install E2E
+        run: bash scripts/release-e2e.sh dist/release
