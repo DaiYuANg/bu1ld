@@ -21,10 +21,11 @@ import (
 )
 
 type Options struct {
-	RemoteCacheURL string
-	CacheDir       string
-	RemotePull     bool
-	RemotePush     bool
+	RemoteCacheURL   string
+	RemoteCacheToken string
+	CacheDir         string
+	RemotePull       bool
+	RemotePush       bool
 }
 
 type Server struct {
@@ -65,7 +66,7 @@ func NewServer(options Options) (*Server, func(), error) {
 
 	var client *cache.RemoteClient
 	if options.RemoteCacheURL != "" {
-		client = cache.NewRemoteClient(options.RemoteCacheURL)
+		client = cache.NewRemoteClientWithToken(options.RemoteCacheURL, options.RemoteCacheToken)
 	}
 	return &Server{
 		options: options,

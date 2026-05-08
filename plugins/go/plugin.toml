@@ -1,6 +1,6 @@
 id = "org.bu1ld.go"
 namespace = "go"
-version = "0.1.0"
+version = "0.1.1"
 binary = "bu1ld-go-plugin"
 
 [[rules]]

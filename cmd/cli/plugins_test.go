@@ -132,7 +132,7 @@ func TestPluginsSearchCommand(t *testing.T) {
 	}
 
 	got := out.String()
-	for _, want := range []string{"ID", "org.bu1ld.go", "go", "0.1.0"} {
+	for _, want := range []string{"ID", "org.bu1ld.go", "go", "0.1.1"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("output = %q, want substring %q", got, want)
 		}
@@ -154,7 +154,7 @@ func TestPluginsInfoCommand(t *testing.T) {
 	}
 
 	got := out.String()
-	for _, want := range []string{"id: org.bu1ld.java", "namespace: java", "JPMS", "0.1.0"} {
+	for _, want := range []string{"id: org.bu1ld.java", "namespace: java", "JPMS", "0.1.1"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("output = %q, want substring %q", got, want)
 		}

@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"crypto/subtle"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -70,6 +71,9 @@ func newHTTPXServer(store *Store, logger *slog.Logger, router *chi.Mux) (httpx.S
 	}
 	if router == nil {
 		router = chi.NewMux()
+	}
+	if token := strings.TrimSpace(store.cfg.RemoteCacheToken); token != "" {
+		router.Use(requireBearerToken(token))
 	}
 
 	adapter := std.New(router, httpadapter.HumaOptions{
@@ -151,6 +155,9 @@ func (s *Store) headAction(_ context.Context, input *cacheKeyInput) (*cacheHeadO
 
 func (s *Store) putAction(_ context.Context, input *cachePutInput) (*cacheStatusOutput, error) {
 	if err := validateCacheKey(input.Key, "action key"); err != nil {
+		return nil, err
+	}
+	if err := s.checkHTTPObjectSize(int64(len(input.RawBody)), "action record"); err != nil {
 		return nil, err
 	}
 
@@ -261,6 +268,9 @@ func (s *Store) putBlob(_ context.Context, input *cachePutInput) (*cacheStatusOu
 	if err := validateCacheKey(input.Key, "blob digest"); err != nil {
 		return nil, err
 	}
+	if err := s.checkHTTPObjectSize(int64(len(input.RawBody)), "cache blob"); err != nil {
+		return nil, err
+	}
 	if snapshot.HashBytes(input.RawBody) != input.Key {
 		return nil, httpx.NewError(http.StatusBadRequest, "blob digest mismatch")
 	}
@@ -300,6 +310,31 @@ func (s *Store) statCacheData(path string) (*cacheHeadOutput, error) {
 		Status:        http.StatusNoContent,
 		ContentLength: info.Size(),
 	}, nil
+}
+
+func requireBearerToken(token string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			header := strings.TrimSpace(r.Header.Get("Authorization"))
+			if !strings.HasPrefix(strings.ToLower(header), "bearer ") {
+				http.Error(w, "remote cache authorization is required", http.StatusUnauthorized)
+				return
+			}
+			value := strings.TrimSpace(header[len("bearer "):])
+			if subtle.ConstantTimeCompare([]byte(value), []byte(token)) != 1 {
+				http.Error(w, "remote cache authorization failed", http.StatusUnauthorized)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func (s *Store) checkHTTPObjectSize(size int64, label string) error {
+	if s.cfg.RemoteCacheMaxObjectBytes <= 0 || size <= s.cfg.RemoteCacheMaxObjectBytes {
+		return nil
+	}
+	return httpx.NewError(http.StatusRequestEntityTooLarge, label+" exceeds remote cache max object size")
 }
 
 func validateCacheKey(value, label string) error {

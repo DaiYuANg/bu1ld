@@ -28,10 +28,33 @@ or through config:
 
 ```dotenv
 BU1LD_SERVER__COORDINATOR__LISTEN_ADDR=0.0.0.0:19876
+BU1LD_REMOTE_CACHE__TOKEN=change-me
+BU1LD_REMOTE_CACHE__MAX_BYTES=10737418240
+BU1LD_REMOTE_CACHE__MAX_OBJECT_BYTES=536870912
+BU1LD_REMOTE_CACHE__MAX_AGE=168h
 ```
 
 The coordinator is implemented with `arcgolabs/httpx` and serves the same cache
 store used locally by the CLI.
+
+When `BU1LD_REMOTE_CACHE__TOKEN` or `remote_cache.token` is set, every remote
+cache HTTP request must send `Authorization: Bearer <token>`. The CLI and Go
+cacheprog adapter inherit the token through configx dotenv/env loading and pass
+it to the remote cache client automatically.
+
+Capacity controls are enforced after writes:
+
+- `remote_cache.max_object_bytes`: reject individual uploaded action records or
+  blobs above this size.
+- `remote_cache.max_bytes`: remove oldest cache objects until the cache is at
+  or under the configured size.
+- `remote_cache.max_age`: remove objects older than a Go duration such as
+  `24h`, `168h`, or `720h`.
+
+Cache object writes use a temporary file followed by rename, so interrupted
+writes do not leave partially written action records or blobs at the final cache
+path. Remote clients retry transient 5xx/network failures before surfacing an
+error.
 
 ## Action Cache API
 
@@ -92,6 +115,7 @@ Equivalent dotenv setup:
 BU1LD_REMOTE_CACHE__URL=http://192.168.1.10:19876
 BU1LD_REMOTE_CACHE__PULL=true
 BU1LD_REMOTE_CACHE__PUSH=false
+BU1LD_REMOTE_CACHE__TOKEN=change-me
 ```
 
 Use `env` in `bu1ld.toml` to select environment-specific dotenv files:

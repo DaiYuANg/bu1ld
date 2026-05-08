@@ -52,7 +52,7 @@ The Java plugin is packaged by Gradle:
 ```
 
 This builds a JPMS jpackage app image, writes `plugin.toml`, and installs it
-under `.bu1ld/plugins/org.bu1ld.java/0.1.0/`. The Java plugin does not currently
+under `.bu1ld/plugins/org.bu1ld.java/0.1.1/`. The Java plugin does not currently
 publish MSI, DMG, DEB, or RPM installers; the app image is the plugin artifact.
 
 See [Java Plugin](java-plugin.md) for the packaging model.
@@ -62,8 +62,8 @@ See [Java Plugin](java-plugin.md) for the packaging model.
 Tagged releases are handled by `.github/workflows/release.yml`.
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.1.1
+git push origin v0.1.1
 ```
 
 The workflow runs:
@@ -73,6 +73,11 @@ The workflow runs:
 - Java plugin Gradle checks
 - root GoReleaser publish
 - Java plugin jpackage app-image builds on Linux, Windows, and macOS runners
+- release asset checksum verification after all uploads
+
+Pull requests and normal branch pushes are covered by `.github/workflows/ci.yml`
+with a Linux/macOS/Windows matrix for Go tests, Go plugin tests, and Java plugin
+checks.
 
 Go plugin release assets are produced by GoReleaser. Java plugin release assets
 are produced after GoReleaser creates the GitHub Release: each platform job runs
@@ -91,6 +96,17 @@ The archive root contains `plugin.toml` plus the app image contents. This means
 registry installation and local `path = ".../plugin.toml"` development both use
 the same manifest-driven layout.
 
+Each Java plugin asset is uploaded with a sibling `.sha256` file. GoReleaser
+publishes `checksums.txt` for Go-built assets. The release workflow downloads
+the final GitHub Release assets and runs:
+
+```bash
+scripts/verify-release-assets.sh dist/release
+```
+
+The script verifies `checksums.txt` plus every `*.sha256` file in the release
+directory.
+
 ## Registry Update
 
 After a release, update the plugin registry metadata with the new plugin version
@@ -100,3 +116,9 @@ other artifact location. The first-party embedded registry already follows this
 shape for `org.bu1ld.go` and `org.bu1ld.java`.
 
 See [Plugin Registry](plugin-registry.md).
+
+## Upgrade Notes
+
+Version upgrade guidance lives in [Upgrading](upgrading.md). Before publishing a
+tag, add user-facing compatibility notes there, including CLI changes, plugin
+manifest changes, cache protocol changes, and registry metadata changes.

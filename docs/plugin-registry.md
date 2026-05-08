@@ -63,6 +63,11 @@ The index is a TOML file named `plugins.toml`:
 ```toml
 version = 1
 
+[[trusted_keys]]
+id = "release"
+algorithm = "ed25519"
+public_key = "base64-encoded-ed25519-public-key"
+
 [[plugins]]
 id = "org.example.rust"
 file = "plugins/org.example.rust.toml"
@@ -82,12 +87,21 @@ tags = ["rust", "cargo"]
 [[versions]]
 version = "0.1.0"
 bu1ld = ">=0.1.0"
+status = "approved"
+reviewed_by = "build-team"
+reviewed_at = "2026-05-08T00:00:00Z"
 
 [[versions.assets]]
 os = "linux"
 arch = "amd64"
 format = "tar.gz"
 url = "https://downloads.example.com/bu1ld/rust/0.1.0/rust-linux-amd64.tar.gz"
+sha256 = "..."
+
+[[versions.assets.signatures]]
+key_id = "release"
+algorithm = "ed25519"
+url = "https://downloads.example.com/bu1ld/rust/0.1.0/rust-linux-amd64.tar.gz.sig"
 sha256 = "..."
 
 [[versions.assets]]
@@ -109,6 +123,24 @@ url = "../assets/rust"
 ```
 
 Supported asset formats are `zip`, `tar`, `tar.gz`, and local `dir`.
+
+## Review And Signing
+
+Registry versions can declare `status = "approved"`, `"pending"`, or
+`"rejected"`. Empty status is treated as approved for existing registries.
+Install and version selection ignore pending and rejected versions; they remain
+visible in metadata so a registry repository can keep review history.
+
+Detached asset signatures are optional but supported. A registry index declares
+trusted Ed25519 keys with `[[trusted_keys]]`, and each asset can declare one or
+more `[[versions.assets.signatures]]` entries. During install, bu1ld verifies:
+
+- the asset SHA-256 when `sha256` is present
+- each signature SHA-256 when `signature.sha256` is present
+- the Ed25519 signature against the downloaded asset bytes
+
+This gives private registries a lightweight review and signing path without
+requiring GitHub Release or any specific artifact store.
 
 ## Operational Guidance
 

@@ -35,13 +35,15 @@ type LoadOptions struct {
 }
 
 type Index struct {
-	Version int
-	Items   []Plugin
+	Version     int
+	TrustedKeys []TrustedKey
+	Items       []Plugin
 }
 
 type IndexFile struct {
-	Version int         `toml:"version"`
-	Plugins []PluginRef `toml:"plugins"`
+	Version     int          `toml:"version"`
+	TrustedKeys []TrustedKey `toml:"trusted_keys,omitempty"`
+	Plugins     []PluginRef  `toml:"plugins"`
 }
 
 type PluginRef struct {
@@ -60,18 +62,35 @@ type Plugin struct {
 }
 
 type PluginVersion struct {
-	Version  string        `toml:"version"`
-	Bu1ld    string        `toml:"bu1ld,omitempty"`
-	Manifest string        `toml:"manifest,omitempty"`
-	Assets   []PluginAsset `toml:"assets,omitempty"`
+	Version    string        `toml:"version"`
+	Bu1ld      string        `toml:"bu1ld,omitempty"`
+	Status     string        `toml:"status,omitempty"`
+	ReviewedBy string        `toml:"reviewed_by,omitempty"`
+	ReviewedAt string        `toml:"reviewed_at,omitempty"`
+	Manifest   string        `toml:"manifest,omitempty"`
+	Assets     []PluginAsset `toml:"assets,omitempty"`
 }
 
 type PluginAsset struct {
-	OS     string `toml:"os,omitempty"`
-	Arch   string `toml:"arch,omitempty"`
-	URL    string `toml:"url"`
-	SHA256 string `toml:"sha256,omitempty"`
-	Format string `toml:"format,omitempty"`
+	OS         string            `toml:"os,omitempty"`
+	Arch       string            `toml:"arch,omitempty"`
+	URL        string            `toml:"url"`
+	SHA256     string            `toml:"sha256,omitempty"`
+	Format     string            `toml:"format,omitempty"`
+	Signatures []PluginSignature `toml:"signatures,omitempty"`
+}
+
+type PluginSignature struct {
+	KeyID     string `toml:"key_id"`
+	Algorithm string `toml:"algorithm,omitempty"`
+	URL       string `toml:"url"`
+	SHA256    string `toml:"sha256,omitempty"`
+}
+
+type TrustedKey struct {
+	ID        string `toml:"id"`
+	Algorithm string `toml:"algorithm,omitempty"`
+	PublicKey string `toml:"public_key"`
 }
 
 func Load(ctx context.Context, options LoadOptions) (*Index, error) {
@@ -127,7 +146,7 @@ func LoadEmbedded() (*Index, error) {
 		}
 		plugins.Add(plugin)
 	}
-	return newIndex(indexFile.Version, plugins.Values())
+	return newIndex(indexFile.Version, indexFile.TrustedKeys, plugins.Values())
 }
 
 func (i *Index) Search(query string) []Plugin {
@@ -145,6 +164,14 @@ func (i *Index) Find(id string) (Plugin, bool) {
 	return i.FindOption(id).Get()
 }
 
+func (i *Index) trustedKeyMap() map[string]TrustedKey {
+	keys := make(map[string]TrustedKey, len(i.TrustedKeys))
+	for _, key := range i.TrustedKeys {
+		keys[strings.TrimSpace(key.ID)] = key
+	}
+	return keys
+}
+
 func (i *Index) FindOption(id string) mo.Option[Plugin] {
 	return list.NewList(i.Items...).FirstWhere(func(_ int, item Plugin) bool {
 		if item.ID == id {
@@ -159,7 +186,9 @@ func (p Plugin) LatestVersion() (PluginVersion, bool) {
 }
 
 func (p Plugin) LatestVersionOption() mo.Option[PluginVersion] {
-	return list.NewList(p.Versions...).GetFirstOption()
+	return list.NewList(p.Versions...).FirstWhere(func(_ int, item PluginVersion) bool {
+		return item.Approved()
+	})
 }
 
 func (p Plugin) Version(version string) (PluginVersion, bool) {
@@ -168,7 +197,7 @@ func (p Plugin) Version(version string) (PluginVersion, bool) {
 
 func (p Plugin) VersionOption(version string) mo.Option[PluginVersion] {
 	return list.NewList(p.Versions...).FirstWhere(func(_ int, item PluginVersion) bool {
-		if item.Version == version {
+		if item.Version == version && item.Approved() {
 			return true
 		}
 		return false
@@ -196,6 +225,11 @@ func (v PluginVersion) AssetOption(goos, goarch string) mo.Option[PluginAsset] {
 		}
 		return false
 	})
+}
+
+func (v PluginVersion) Approved() bool {
+	status := strings.TrimSpace(strings.ToLower(v.Status))
+	return status == "" || status == "approved"
 }
 
 func ParseRef(ref string) (id string, version string, err error) {
@@ -269,7 +303,7 @@ func loadExternal(ctx context.Context, options LoadOptions, source string) (*Ind
 		resolvePluginAssets(&plugin, entryBase)
 		plugins.Add(plugin)
 	}
-	return newIndex(indexFile.Version, plugins.Values())
+	return newIndex(indexFile.Version, indexFile.TrustedKeys, plugins.Values())
 }
 
 func readRegistryFile(ctx context.Context, client *http.Client, source string) ([]byte, string, error) {
@@ -340,6 +374,9 @@ func parseIndexFile(path string, data []byte) (IndexFile, error) {
 				New("registry plugin file is required")
 		}
 	}
+	if err := validateTrustedKeys(path, index.TrustedKeys); err != nil {
+		return IndexFile{}, err
+	}
 	return index, nil
 }
 
@@ -368,11 +405,45 @@ func parsePluginFile(path string, data []byte) (Plugin, error) {
 				With("plugin", plugin.ID).
 				New("registry plugin version is required")
 		}
+		switch strings.TrimSpace(strings.ToLower(version.Status)) {
+		case "", "approved", "pending", "rejected":
+		default:
+			return Plugin{}, oops.In("bu1ld.plugin_registry").
+				With("file", path).
+				With("plugin", plugin.ID).
+				With("version", version.Version).
+				Errorf("registry plugin version status %q is invalid", version.Status)
+		}
+		for _, asset := range version.Assets {
+			for _, signature := range asset.Signatures {
+				if strings.TrimSpace(signature.KeyID) == "" {
+					return Plugin{}, oops.In("bu1ld.plugin_registry").
+						With("file", path).
+						With("plugin", plugin.ID).
+						With("version", version.Version).
+						New("registry plugin asset signature key_id is required")
+				}
+				if strings.TrimSpace(signature.URL) == "" {
+					return Plugin{}, oops.In("bu1ld.plugin_registry").
+						With("file", path).
+						With("plugin", plugin.ID).
+						With("version", version.Version).
+						New("registry plugin asset signature url is required")
+				}
+				if !registrySignatureAlgorithmSupported(signature.Algorithm) {
+					return Plugin{}, oops.In("bu1ld.plugin_registry").
+						With("file", path).
+						With("plugin", plugin.ID).
+						With("version", version.Version).
+						Errorf("registry plugin asset signature algorithm %q is unsupported", signature.Algorithm)
+				}
+			}
+		}
 	}
 	return plugin, nil
 }
 
-func newIndex(version int, plugins []Plugin) (*Index, error) {
+func newIndex(version int, trustedKeys []TrustedKey, plugins []Plugin) (*Index, error) {
 	if version == 0 {
 		return nil, oops.In("bu1ld.plugin_registry").New("plugin registry version is required")
 	}
@@ -380,7 +451,12 @@ func newIndex(version int, plugins []Plugin) (*Index, error) {
 	slices.SortFunc(items, func(left, right Plugin) int {
 		return strings.Compare(left.ID, right.ID)
 	})
-	return &Index{Version: version, Items: items}, nil
+	return &Index{Version: version, TrustedKeys: trustedKeys, Items: items}, nil
+}
+
+func registrySignatureAlgorithmSupported(algorithm string) bool {
+	algorithm = strings.TrimSpace(strings.ToLower(algorithm))
+	return algorithm == "" || algorithm == "ed25519"
 }
 
 func (p Plugin) matches(query string) bool {
@@ -475,8 +551,45 @@ func resolvePluginAssets(plugin *Plugin, base string) {
 		for assetIndex := range version.Assets {
 			asset := &version.Assets[assetIndex]
 			asset.URL = resolveAssetURL(base, asset.URL)
+			for signatureIndex := range asset.Signatures {
+				signature := &asset.Signatures[signatureIndex]
+				signature.URL = resolveAssetURL(base, signature.URL)
+			}
 		}
 	}
+}
+
+func validateTrustedKeys(path string, keys []TrustedKey) error {
+	seen := map[string]struct{}{}
+	for _, key := range keys {
+		id := strings.TrimSpace(key.ID)
+		if id == "" {
+			return oops.In("bu1ld.plugin_registry").
+				With("file", path).
+				New("registry trusted key id is required")
+		}
+		if _, ok := seen[id]; ok {
+			return oops.In("bu1ld.plugin_registry").
+				With("file", path).
+				With("key", id).
+				New("registry trusted key id is duplicated")
+		}
+		seen[id] = struct{}{}
+		algorithm := strings.TrimSpace(strings.ToLower(key.Algorithm))
+		if algorithm != "" && algorithm != "ed25519" {
+			return oops.In("bu1ld.plugin_registry").
+				With("file", path).
+				With("key", id).
+				Errorf("registry trusted key algorithm %q is unsupported", key.Algorithm)
+		}
+		if strings.TrimSpace(key.PublicKey) == "" {
+			return oops.In("bu1ld.plugin_registry").
+				With("file", path).
+				With("key", id).
+				New("registry trusted key public key is required")
+		}
+	}
+	return nil
 }
 
 func resolveAssetURL(base, assetURL string) string {

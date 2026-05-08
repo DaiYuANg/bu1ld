@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/arcgolabs/collectionx/list"
 	"github.com/arcgolabs/configx"
@@ -20,6 +22,10 @@ type Config struct {
 	RemoteCacheURL              string
 	RemoteCachePull             bool
 	RemoteCachePush             bool
+	RemoteCacheToken            string
+	RemoteCacheMaxBytes         int64
+	RemoteCacheMaxObjectBytes   int64
+	RemoteCacheMaxAge           time.Duration
 	ServerCoordinatorListenAddr string
 	PluginRegistrySource        string
 }
@@ -68,6 +74,10 @@ func New(
 			"remote_cache_url":               remoteCacheURL,
 			"remote_cache_pull":              remoteCachePull,
 			"remote_cache_push":              remoteCachePush,
+			"remote_cache.token":             "",
+			"remote_cache.max_bytes":         0,
+			"remote_cache.max_object_bytes":  0,
+			"remote_cache.max_age":           "",
 			"server.coordinator.listen_addr": "127.0.0.1:19876",
 			"plugin_registry":                "",
 		}),
@@ -93,6 +103,10 @@ func New(
 		RemoteCacheURL:              configString(loaded, "remote_cache.url", "remote_cache_url"),
 		RemoteCachePull:             configBool(loaded, "remote_cache.pull", "remote_cache_pull"),
 		RemoteCachePush:             configBool(loaded, "remote_cache.push", "remote_cache_push"),
+		RemoteCacheToken:            configString(loaded, "remote_cache.token", "remote_cache_token"),
+		RemoteCacheMaxBytes:         configInt64(loaded, "remote_cache.max_bytes", "remote_cache_max_bytes"),
+		RemoteCacheMaxObjectBytes:   configInt64(loaded, "remote_cache.max_object_bytes", "remote_cache_max_object_bytes"),
+		RemoteCacheMaxAge:           configDuration(loaded, "remote_cache.max_age", "remote_cache_max_age"),
 		ServerCoordinatorListenAddr: loaded.GetString("server.coordinator.listen_addr"),
 		PluginRegistrySource:        configString(loaded, "plugin_registry.source", "plugin_registry", "plugin_registry_source"),
 	}, nil
@@ -137,6 +151,8 @@ func (c Config) ChildEnv() []string {
 		"BU1LD_REMOTE_CACHE_PULL=" + strconv.FormatBool(c.RemoteCachePull),
 		"BU1LD_REMOTE_CACHE__PUSH=" + strconv.FormatBool(c.RemoteCachePush),
 		"BU1LD_REMOTE_CACHE_PUSH=" + strconv.FormatBool(c.RemoteCachePush),
+		"BU1LD_REMOTE_CACHE__TOKEN=" + c.RemoteCacheToken,
+		"BU1LD_REMOTE_CACHE_TOKEN=" + c.RemoteCacheToken,
 		"BU1LD_SERVER__COORDINATOR__LISTEN_ADDR=" + c.ServerCoordinatorListenAddr,
 	}
 }
@@ -208,4 +224,40 @@ func configBool(loaded *configx.Config, paths ...string) bool {
 		}
 	}
 	return false
+}
+
+func configInt64(loaded *configx.Config, paths ...string) int64 {
+	for _, path := range paths {
+		if !loaded.Exists(path) {
+			continue
+		}
+		value := strings.TrimSpace(loaded.GetString(path))
+		if value == "" {
+			return 0
+		}
+		parsed, err := strconv.ParseInt(value, 10, 64)
+		if err == nil {
+			return parsed
+		}
+		return 0
+	}
+	return 0
+}
+
+func configDuration(loaded *configx.Config, paths ...string) time.Duration {
+	for _, path := range paths {
+		if !loaded.Exists(path) {
+			continue
+		}
+		value := strings.TrimSpace(loaded.GetString(path))
+		if value == "" {
+			return 0
+		}
+		parsed, err := time.ParseDuration(value)
+		if err == nil {
+			return parsed
+		}
+		return 0
+	}
+	return 0
 }

@@ -50,7 +50,7 @@ func NewStore(cfg config.Config, fs afero.Fs) *Store {
 		fs:  fs,
 	}
 	if cfg.RemoteCacheURL != "" {
-		store.remote = NewRemoteClient(cfg.RemoteCacheURL)
+		store.remote = NewRemoteClientWithToken(cfg.RemoteCacheURL, cfg.RemoteCacheToken)
 	}
 	return store
 }
@@ -89,12 +89,17 @@ func (s *Store) Save(task build.Task, actionKey string) error {
 		outputs.Add(entry)
 	}
 	record.Outputs = outputs.Values()
-	path := s.recordPath(actionKey)
-	if err := cachefile.Write(s.fs, path, record); err != nil {
+	data, err := cachefile.Marshal(record)
+	if err != nil {
 		return oops.In("bu1ld.cache").
 			With("task", task.Name).
 			With("action_key", actionKey).
-			With("path", path).
+			Wrapf(err, "encode action cache record")
+	}
+	if err := s.writeRecordBytes(actionKey, data); err != nil {
+		return oops.In("bu1ld.cache").
+			With("task", task.Name).
+			With("action_key", actionKey).
 			Wrapf(err, "write action cache record")
 	}
 	if s.remote != nil && s.cfg.RemoteCachePush {
@@ -285,35 +290,51 @@ func (s *Store) Clean() error {
 }
 
 func (s *Store) writeRecordBytes(actionKey string, data []byte) error {
+	if err := s.checkObjectSize(int64(len(data)), "action record"); err != nil {
+		return err
+	}
 	path := s.recordPath(actionKey)
 	if err := s.fs.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return oops.In("bu1ld.cache").
 			With("path", filepath.Dir(path)).
 			Wrapf(err, "create action cache directory")
 	}
-	if err := afero.WriteFile(s.fs, path, data, 0o644); err != nil {
+	if err := atomicWriteFile(s.fs, path, data, 0o644); err != nil {
 		return oops.In("bu1ld.cache").
 			With("action_key", actionKey).
 			With("path", path).
 			Wrapf(err, "write action cache record")
 	}
-	return nil
+	return s.EnforcePolicy()
 }
 
 func (s *Store) writeBlobBytes(digest string, data []byte) error {
+	if err := s.checkObjectSize(int64(len(data)), "cache blob"); err != nil {
+		return err
+	}
 	path := s.blobPath(digest)
 	if err := s.fs.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return oops.In("bu1ld.cache").
 			With("path", filepath.Dir(path)).
 			Wrapf(err, "create blob cache directory")
 	}
-	if err := afero.WriteFile(s.fs, path, data, 0o644); err != nil {
+	if err := atomicWriteFile(s.fs, path, data, 0o644); err != nil {
 		return oops.In("bu1ld.cache").
 			With("digest", digest).
 			With("path", path).
 			Wrapf(err, "write cache blob")
 	}
-	return nil
+	return s.EnforcePolicy()
+}
+
+func (s *Store) checkObjectSize(size int64, label string) error {
+	if s.cfg.RemoteCacheMaxObjectBytes <= 0 || size <= s.cfg.RemoteCacheMaxObjectBytes {
+		return nil
+	}
+	return oops.In("bu1ld.cache").
+		With("size", size).
+		With("max_bytes", s.cfg.RemoteCacheMaxObjectBytes).
+		Errorf("%s exceeds remote cache max object size", label)
 }
 
 func recordDigests(record Record) []string {

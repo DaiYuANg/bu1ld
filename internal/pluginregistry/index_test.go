@@ -2,6 +2,8 @@ package pluginregistry
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -31,7 +33,7 @@ func TestLoadEmbeddedRegistry(t *testing.T) {
 	if !ok {
 		t.Fatalf("org.bu1ld.go has no latest version")
 	}
-	if got, want := latest.Version, "0.1.0"; got != want {
+	if got, want := latest.Version, "0.1.1"; got != want {
 		t.Fatalf("Version = %q, want %q", got, want)
 	}
 }
@@ -193,6 +195,73 @@ arch = "amd64"
 	}
 }
 
+func TestSelectSkipsPendingRegistryVersions(t *testing.T) {
+	t.Parallel()
+
+	index, err := newIndex(1, nil, []Plugin{
+		{
+			ID:        "org.example.echo",
+			Namespace: "echo",
+			Versions: []PluginVersion{
+				{Version: "0.2.0", Status: "pending"},
+				{Version: "0.1.0", Status: "approved"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("newIndex() error = %v", err)
+	}
+	_, latest, err := Select(index, "org.example.echo")
+	if err != nil {
+		t.Fatalf("Select(latest) error = %v", err)
+	}
+	if got, want := latest.Version, "0.1.0"; got != want {
+		t.Fatalf("latest Version = %q, want %q", got, want)
+	}
+	if _, _, err := Select(index, "org.example.echo@0.2.0"); err == nil {
+		t.Fatalf("Select(pending) error = nil, want error")
+	}
+}
+
+func TestVerifyAssetSignatureEd25519(t *testing.T) {
+	t.Parallel()
+
+	publicKey, privateKey, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatalf("GenerateKey() error = %v", err)
+	}
+	payload := []byte("signed plugin asset")
+	signature := ed25519.Sign(privateKey, payload)
+	root := t.TempDir()
+	assetPath := filepath.Join(root, "plugin.tar.gz")
+	signaturePath := filepath.Join(root, "plugin.tar.gz.sig")
+	writeFile(t, assetPath, string(payload))
+	if err := os.WriteFile(signaturePath, signature, 0o600); err != nil {
+		t.Fatalf("write signature: %v", err)
+	}
+	file, err := os.Open(assetPath)
+	if err != nil {
+		t.Fatalf("Open(asset) error = %v", err)
+	}
+	defer file.Close()
+
+	err = verifyAssetSignatures(context.Background(), http.DefaultClient, PluginAsset{
+		URL: assetPath,
+		Signatures: []PluginSignature{
+			{KeyID: "release", URL: signaturePath},
+		},
+	}, map[string]TrustedKey{
+		"release": {
+			ID:        "release",
+			Algorithm: "ed25519",
+			PublicKey: base64.StdEncoding.EncodeToString(publicKey),
+		},
+	}, file)
+	if err != nil {
+		t.Fatalf("verifyAssetSignatures() error = %v", err)
+	}
+}
+
 func TestInstallDirAsset(t *testing.T) {
 	t.Parallel()
 
@@ -205,7 +274,7 @@ binary = "echo"
 `)
 	writeFile(t, filepath.Join(assetDir, "echo"), "#!/bin/sh\n")
 
-	index, err := newIndex(1, []Plugin{
+	index, err := newIndex(1, nil, []Plugin{
 		{
 			ID:        "org.example.echo",
 			Namespace: "echo",

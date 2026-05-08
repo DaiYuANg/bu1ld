@@ -5,7 +5,7 @@ workspace {
 plugin go {
   source = local
   id = "org.bu1ld.go"
-  version = "0.1.0"
+  version = "0.1.1"
   path = "../../plugins/go/plugin.toml"
 }
 

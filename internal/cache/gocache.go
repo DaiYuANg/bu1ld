@@ -98,10 +98,24 @@ func (s *Store) SaveGoCacheEntry(actionID string, entry GoCacheEntry) error {
 		entry.Time = time.Now().UTC()
 	}
 	entry.ActionID = actionID
-	if err := cachefile.Write(s.fs, s.goCacheActionPath(actionID), entry); err != nil {
+	data, err := cachefile.Marshal(entry)
+	if err != nil {
+		return oops.In("bu1ld.cache.go").
+			With("action_id", actionID).
+			Wrapf(err, "encode go cache action")
+	}
+	if err := s.checkObjectSize(int64(len(data)), "go cache action"); err != nil {
+		return err
+	}
+	if err := atomicWriteFile(s.fs, s.goCacheActionPath(actionID), data, 0o644); err != nil {
 		return oops.In("bu1ld.cache.go").
 			With("action_id", actionID).
 			Wrapf(err, "write go cache action")
+	}
+	if err := s.EnforcePolicy(); err != nil {
+		return oops.In("bu1ld.cache.go").
+			With("action_id", actionID).
+			Wrapf(err, "enforce cache policy")
 	}
 	return nil
 }

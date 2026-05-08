@@ -1,8 +1,11 @@
 package pluginregistry
 
 import (
+	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -68,7 +71,7 @@ func Install(ctx context.Context, index *Index, options InstallOptions) (Install
 			With("path", extractedDir).
 			Wrapf(err, "create plugin extract dir")
 	}
-	if err := extractAsset(ctx, options.Client, asset, extractedDir); err != nil {
+	if err := extractAsset(ctx, options.Client, asset, index.trustedKeyMap(), extractedDir); err != nil {
 		return InstallResult{}, err
 	}
 
@@ -109,7 +112,7 @@ func Install(ctx context.Context, index *Index, options InstallOptions) (Install
 	}, nil
 }
 
-func extractAsset(ctx context.Context, client *http.Client, asset PluginAsset, target string) error {
+func extractAsset(ctx context.Context, client *http.Client, asset PluginAsset, trustedKeys map[string]TrustedKey, target string) error {
 	format := assetFormat(asset)
 	if format == "dir" {
 		source, err := localAssetPath(asset.URL)
@@ -138,6 +141,9 @@ func extractAsset(ctx context.Context, client *http.Client, asset PluginAsset, t
 	if err := verifySHA256(file, asset.SHA256); err != nil {
 		return err
 	}
+	if err := verifyAssetSignatures(ctx, client, asset, trustedKeys, file); err != nil {
+		return err
+	}
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return oops.In("bu1ld.plugin_registry").
 			With("file", path).
@@ -157,6 +163,76 @@ func extractAsset(ctx context.Context, client *http.Client, asset PluginAsset, t
 	default:
 		return fmt.Errorf("unsupported plugin asset format %q", format)
 	}
+}
+
+func verifyAssetSignatures(
+	ctx context.Context,
+	client *http.Client,
+	asset PluginAsset,
+	trustedKeys map[string]TrustedKey,
+	file *os.File,
+) error {
+	if len(asset.Signatures) == 0 {
+		return nil
+	}
+	if len(trustedKeys) == 0 {
+		return fmt.Errorf("plugin asset declares signatures but the registry has no trusted keys")
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return oops.In("bu1ld.plugin_registry").Wrapf(err, "seek plugin asset")
+	}
+	payload, err := io.ReadAll(file)
+	if err != nil {
+		return oops.In("bu1ld.plugin_registry").Wrapf(err, "read plugin asset for signature verification")
+	}
+	for _, signature := range asset.Signatures {
+		key, ok := trustedKeys[strings.TrimSpace(signature.KeyID)]
+		if !ok {
+			return fmt.Errorf("plugin asset signature references unknown trusted key %q", signature.KeyID)
+		}
+		if !signatureAlgorithmSupported(signature.Algorithm) || !signatureAlgorithmSupported(key.Algorithm) {
+			return fmt.Errorf("plugin asset signature uses unsupported algorithm")
+		}
+		signatureBytes, err := downloadSignature(ctx, client, signature)
+		if err != nil {
+			return err
+		}
+		publicKey, err := decodeBase64(strings.TrimSpace(key.PublicKey))
+		if err != nil {
+			return fmt.Errorf("decode trusted key %q: %w", key.ID, err)
+		}
+		if len(publicKey) != ed25519.PublicKeySize {
+			return fmt.Errorf("trusted key %q is not an Ed25519 public key", key.ID)
+		}
+		if !ed25519.Verify(ed25519.PublicKey(publicKey), payload, signatureBytes) {
+			return fmt.Errorf("plugin asset signature verification failed for key %q", key.ID)
+		}
+	}
+	return nil
+}
+
+func downloadSignature(ctx context.Context, client *http.Client, signature PluginSignature) ([]byte, error) {
+	var buffer bytes.Buffer
+	if err := downloadAsset(ctx, client, signature.URL, &buffer); err != nil {
+		return nil, err
+	}
+	data := buffer.Bytes()
+	if err := verifySHA256(bytes.NewReader(data), signature.SHA256); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func signatureAlgorithmSupported(algorithm string) bool {
+	algorithm = strings.TrimSpace(strings.ToLower(algorithm))
+	return algorithm == "" || algorithm == "ed25519"
+}
+
+func decodeBase64(value string) ([]byte, error) {
+	if decoded, err := base64.StdEncoding.DecodeString(value); err == nil {
+		return decoded, nil
+	}
+	return base64.RawStdEncoding.DecodeString(value)
 }
 
 func downloadAsset(ctx context.Context, client *http.Client, source string, target io.Writer) error {

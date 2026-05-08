@@ -88,6 +88,7 @@ Detailed design notes live under [`docs/`](docs/):
 - [Java Plugin](docs/java-plugin.md)
 - [Remote Cache](docs/remote-cache.md)
 - [Releases](docs/releases.md)
+- [Upgrading](docs/upgrading.md)
 
 ## DSL
 
@@ -240,13 +241,13 @@ Process plugins can be resolved from local, global, or direct development paths:
 plugin rust {
   source = local
   id = "org.bu1ld.rust"
-  version = "0.1.0"
+  version = "0.1.1"
 }
 
 plugin java {
   source = global
   id = "org.bu1ld.java"
-  version = "0.1.0"
+  version = "0.1.1"
 }
 ```
 
@@ -269,7 +270,7 @@ Installed plugins can include a manifest at
 ```toml
 id = "org.bu1ld.rust"
 namespace = "rust"
-version = "0.1.0"
+version = "0.1.1"
 binary = "bu1ld-rust"
 
 [[rules]]
@@ -287,7 +288,7 @@ model and TOML schema.
 ```bash
 bu1ld plugins search java
 bu1ld plugins info org.bu1ld.go
-bu1ld plugins install org.bu1ld.go@0.1.0
+bu1ld plugins install org.bu1ld.go@0.1.1
 BU1LD_PLUGIN_REGISTRY=./registry bu1ld plugins search
 BU1LD_PLUGIN_REGISTRY='git+https://example.com/platform/bu1ld-plugins.git?ref=main&path=registry' bu1ld plugins search
 ```
@@ -301,7 +302,7 @@ fallback. See [`docs/go-plugin.md`](docs/go-plugin.md) for the full rule model.
 plugin go {
   source = local
   id = "org.bu1ld.go"
-  version = "0.1.0"
+  version = "0.1.1"
 }
 
 go.generate generate {
@@ -336,7 +337,7 @@ logging, and rule details.
 plugin java {
   source = local
   id = "org.bu1ld.java"
-  version = "0.1.0"
+  version = "0.1.1"
 }
 
 java {
@@ -385,7 +386,7 @@ go run ./cmd/cli plugins doctor
 go run ./cmd/cli plugins lock
 go run ./cmd/cli plugins search go
 go run ./cmd/cli plugins info org.bu1ld.go
-go run ./cmd/cli plugins install org.bu1ld.go@0.1.0
+go run ./cmd/cli plugins install org.bu1ld.go@0.1.1
 go run ./cmd/daemon status
 go run ./cmd/server status
 go run ./cmd/lsp stdio
@@ -453,8 +454,8 @@ goreleaser release --snapshot --clean --skip=publish
 Tagged releases are handled by `.github/workflows/release.yml`:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.1.1
+git push origin v0.1.1
 ```
 
 ## Editor Integrations

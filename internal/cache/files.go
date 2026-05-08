@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"bu1ld/internal/build"
 
@@ -35,6 +36,25 @@ func copyFile(fs afero.Fs, src, dst string, mode os.FileMode) (err error) {
 
 	if _, err := io.Copy(out, in); err != nil {
 		return fmt.Errorf("copy %s -> %s: %w", src, dst, err)
+	}
+	return nil
+}
+
+func atomicWriteFile(fs afero.Fs, path string, data []byte, mode os.FileMode) error {
+	dir := filepath.Dir(path)
+	if err := fs.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create parent directory %s: %w", dir, err)
+	}
+	tmp := filepath.Join(dir, fmt.Sprintf(".%s.%d.tmp", filepath.Base(path), time.Now().UnixNano()))
+	if err := afero.WriteFile(fs, tmp, data, mode); err != nil {
+		return fmt.Errorf("write temp file %s: %w", tmp, err)
+	}
+	if err := fs.Rename(tmp, path); err != nil {
+		_ = fs.Remove(path)
+		if renameErr := fs.Rename(tmp, path); renameErr != nil {
+			_ = fs.Remove(tmp)
+			return fmt.Errorf("replace %s: %w", path, renameErr)
+		}
 	}
 	return nil
 }

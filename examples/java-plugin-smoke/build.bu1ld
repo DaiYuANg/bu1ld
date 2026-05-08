@@ -5,8 +5,8 @@ workspace {
 plugin java {
   source = local
   id = "org.bu1ld.java"
-  version = "0.1.0"
-  path = os == "windows" ? "../../.bu1ld/plugins/org.bu1ld.java/0.1.0/bu1ld-java-plugin.exe" : "../../.bu1ld/plugins/org.bu1ld.java/0.1.0/bu1ld-java-plugin"
+  version = "0.1.1"
+  path = os == "windows" ? "../../.bu1ld/plugins/org.bu1ld.java/0.1.1/bu1ld-java-plugin.exe" : "../../.bu1ld/plugins/org.bu1ld.java/0.1.1/bu1ld-java-plugin"
 }
 
 java {

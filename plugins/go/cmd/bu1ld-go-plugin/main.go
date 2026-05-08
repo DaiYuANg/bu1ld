@@ -68,6 +68,7 @@ func newCacheprogCommand(ctx context.Context, streams commandStreams) *cobra.Com
 	flags := command.Flags()
 	flags.StringVar(&options.RemoteCacheURL, "remote-cache-url", options.RemoteCacheURL, "bu1ld coordinator remote cache URL")
 	flags.StringVar(&options.RemoteCacheURL, "url", options.RemoteCacheURL, "bu1ld coordinator remote cache URL")
+	flags.StringVar(&options.RemoteCacheToken, "remote-cache-token", options.RemoteCacheToken, "bearer token for the bu1ld coordinator remote cache")
 	flags.StringVar(&options.CacheDir, "cache-dir", options.CacheDir, "local GOCACHEPROG disk path")
 	flags.BoolVar(&options.RemotePull, "remote-cache-pull", options.RemotePull, "pull Go cache entries from the coordinator")
 	flags.BoolVar(&options.RemotePush, "remote-cache-push", options.RemotePush, "push Go cache entries to the coordinator")

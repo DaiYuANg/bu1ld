@@ -6,9 +6,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"bu1ld/internal/build"
 	"bu1ld/internal/config"
@@ -160,6 +163,131 @@ func TestRemoteCacheRejectsBlobDigestMismatch(t *testing.T) {
 	}
 }
 
+func TestRemoteCacheRequiresBearerToken(t *testing.T) {
+	t.Parallel()
+
+	store := NewStore(config.Config{WorkDir: "/server", RemoteCacheToken: "secret"}, afero.NewMemMapFs())
+	server := httptest.NewServer(NewHTTPHandler(store))
+	defer server.Close()
+
+	body := []byte("authorized")
+	digest := snapshot.HashBytes(body)
+	req, err := http.NewRequest(http.MethodPut, server.URL+"/v1/blobs/"+digest, bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("NewRequest() error = %v", err)
+	}
+	req.Header.Set("Content-Type", "application/octet-stream")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do() error = %v", err)
+	}
+	resp.Body.Close()
+	if got, want := resp.StatusCode, http.StatusUnauthorized; got != want {
+		t.Fatalf("status without token = %d, want %d", got, want)
+	}
+
+	client := NewRemoteClientWithToken(server.URL, "secret")
+	if err := client.PutBlob(digest, body); err != nil {
+		t.Fatalf("PutBlob() error = %v", err)
+	}
+	got, hit, err := client.GetBlob(digest)
+	if err != nil {
+		t.Fatalf("GetBlob() error = %v", err)
+	}
+	if !hit || !bytes.Equal(got, body) {
+		t.Fatalf("GetBlob() = %q, %v; want %q, true", got, hit, body)
+	}
+}
+
+func TestRemoteCacheRejectsObjectsOverConfiguredLimit(t *testing.T) {
+	t.Parallel()
+
+	store := NewStore(config.Config{WorkDir: "/server", RemoteCacheMaxObjectBytes: 3}, afero.NewMemMapFs())
+	server := httptest.NewServer(NewHTTPHandler(store))
+	defer server.Close()
+
+	body := []byte("toolong")
+	digest := snapshot.HashBytes(body)
+	req, err := http.NewRequest(http.MethodPut, server.URL+"/v1/blobs/"+digest, bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("NewRequest() error = %v", err)
+	}
+	req.Header.Set("Content-Type", "application/octet-stream")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do() error = %v", err)
+	}
+	resp.Body.Close()
+	if got, want := resp.StatusCode, http.StatusRequestEntityTooLarge; got != want {
+		t.Fatalf("status = %d, want %d", got, want)
+	}
+}
+
+func TestStorePruneRemovesOldestFilesToCapacity(t *testing.T) {
+	t.Parallel()
+
+	fs := afero.NewMemMapFs()
+	store := NewStore(config.Config{WorkDir: "/workspace"}, fs)
+	now := time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
+	oldDigest := strings.Repeat("1", 64)
+	newDigest := strings.Repeat("2", 64)
+	writeCacheFile(t, fs, store.blobPath(oldDigest), []byte("old cache object"), now.Add(-2*time.Hour))
+	writeCacheFile(t, fs, store.blobPath(newDigest), []byte("new"), now)
+
+	result, err := store.Prune(PruneOptions{MaxBytes: 8, Now: now})
+	if err != nil {
+		t.Fatalf("Prune() error = %v", err)
+	}
+	if got, want := result.FilesRemoved, 1; got != want {
+		t.Fatalf("FilesRemoved = %d, want %d", got, want)
+	}
+	if _, err := fs.Stat(store.blobPath(oldDigest)); !os.IsNotExist(err) {
+		t.Fatalf("old cache object still exists or stat failed with %v", err)
+	}
+	if _, err := fs.Stat(store.blobPath(newDigest)); err != nil {
+		t.Fatalf("new cache object missing: %v", err)
+	}
+}
+
+func TestRemoteCacheHandlesConcurrentBlobTraffic(t *testing.T) {
+	t.Parallel()
+
+	store := NewStore(config.Config{WorkDir: "/server"}, afero.NewMemMapFs())
+	server := httptest.NewServer(NewHTTPHandler(store))
+	defer server.Close()
+	client := NewRemoteClient(server.URL)
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 32)
+	for i := range 32 {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			body := []byte(strings.Repeat(string(rune('a'+i%26)), i+1))
+			digest := snapshot.HashBytes(body)
+			if err := client.PutBlob(digest, body); err != nil {
+				errs <- err
+				return
+			}
+			got, hit, err := client.GetBlob(digest)
+			if err != nil {
+				errs <- err
+				return
+			}
+			if !hit || !bytes.Equal(got, body) {
+				errs <- io.ErrUnexpectedEOF
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent remote cache operation error = %v", err)
+		}
+	}
+}
+
 func TestGoCacheHTTPRoutesStoreActionAndOutput(t *testing.T) {
 	t.Parallel()
 
@@ -255,5 +383,18 @@ func TestGoCacheHTTPRoutesStoreActionAndOutput(t *testing.T) {
 	}
 	if !bytes.Equal(gotBody, body) {
 		t.Fatalf("output body = %q, want %q", gotBody, body)
+	}
+}
+
+func writeCacheFile(t *testing.T, fs afero.Fs, path string, data []byte, modTime time.Time) {
+	t.Helper()
+	if err := fs.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll(%s) error = %v", filepath.Dir(path), err)
+	}
+	if err := afero.WriteFile(fs, path, data, 0o644); err != nil {
+		t.Fatalf("WriteFile(%s) error = %v", path, err)
+	}
+	if err := fs.Chtimes(path, modTime, modTime); err != nil {
+		t.Fatalf("Chtimes(%s) error = %v", path, err)
 	}
 }

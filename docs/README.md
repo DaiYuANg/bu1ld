@@ -19,3 +19,5 @@ for the root README.
   cacheprog adapter, and dotenv-based LAN configuration.
 - [Releases](releases.md): GoReleaser, standalone Go plugin releases, Java
   plugin packaging, and tagged release flow.
+- [Upgrading](upgrading.md): release-to-release compatibility and operational
+  upgrade notes.

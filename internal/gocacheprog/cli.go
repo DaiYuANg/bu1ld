@@ -9,9 +9,14 @@ import (
 func OptionsFromEnv() Options {
 	return Options{
 		RemoteCacheURL: firstEnv("BU1LD_GO_CACHEPROG_REMOTE_CACHE_URL", "BU1LD_REMOTE_CACHE__URL", "BU1LD_REMOTE_CACHE_URL"),
-		CacheDir:       firstEnv("BU1LD_GO_CACHEPROG_CACHE_DIR", "BU1LD_GO__CACHEPROG_CACHE_DIR"),
-		RemotePull:     envBool(true, "BU1LD_REMOTE_CACHE__PULL", "BU1LD_REMOTE_CACHE_PULL"),
-		RemotePush:     envBool(false, "BU1LD_REMOTE_CACHE__PUSH", "BU1LD_REMOTE_CACHE_PUSH"),
+		RemoteCacheToken: firstEnv(
+			"BU1LD_GO_CACHEPROG_REMOTE_CACHE_TOKEN",
+			"BU1LD_REMOTE_CACHE__TOKEN",
+			"BU1LD_REMOTE_CACHE_TOKEN",
+		),
+		CacheDir:   firstEnv("BU1LD_GO_CACHEPROG_CACHE_DIR", "BU1LD_GO__CACHEPROG_CACHE_DIR"),
+		RemotePull: envBool(true, "BU1LD_REMOTE_CACHE__PULL", "BU1LD_REMOTE_CACHE_PULL"),
+		RemotePush: envBool(false, "BU1LD_REMOTE_CACHE__PUSH", "BU1LD_REMOTE_CACHE_PUSH"),
 	}
 }
 

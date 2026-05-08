@@ -13,13 +13,13 @@ Build files declare plugins by namespace:
 plugin go {
   source = local
   id = "org.bu1ld.go"
-  version = "0.1.0"
+  version = "0.1.1"
 }
 
 plugin java {
   source = global
   id = "org.bu1ld.java"
-  version = "0.1.0"
+  version = "0.1.1"
 }
 ```
 
@@ -55,7 +55,7 @@ Installed process plugins include `plugin.toml` beside the executable:
 ```toml
 id = "org.example.rust"
 namespace = "rust"
-version = "0.1.0"
+version = "0.1.1"
 binary = "bu1ld-rust"
 
 [[rules]]

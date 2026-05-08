@@ -5,7 +5,7 @@ package {
 plugin java {
   source = local
   id = "org.bu1ld.java"
-  version = "0.1.0"
+  version = "0.1.1"
   path = "../../plugins/java/build/plugin/plugin.toml"
 }
 

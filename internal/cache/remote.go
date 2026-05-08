@@ -13,12 +13,18 @@ import (
 
 type RemoteClient struct {
 	baseURL string
+	token   string
 	client  *http.Client
 }
 
 func NewRemoteClient(baseURL string) *RemoteClient {
+	return NewRemoteClientWithToken(baseURL, "")
+}
+
+func NewRemoteClientWithToken(baseURL, token string) *RemoteClient {
 	return &RemoteClient{
 		baseURL: strings.TrimRight(baseURL, "/"),
+		token:   strings.TrimSpace(token),
 		client:  &http.Client{Timeout: 30 * time.Second},
 	}
 }
@@ -39,7 +45,8 @@ func (c *RemoteClient) HasBlob(digest string) (bool, error) {
 			Wrapf(err, "create remote cache request")
 	}
 
-	resp, err := c.client.Do(req)
+	c.authorize(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return false, oops.In("bu1ld.cache.remote").
 			With("digest", digest).
@@ -105,7 +112,8 @@ func (c *RemoteClient) get(path string) ([]byte, bool, error) {
 			Wrapf(err, "create remote cache request")
 	}
 
-	resp, err := c.client.Do(req)
+	c.authorize(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, false, oops.In("bu1ld.cache.remote").
 			With("path", path).
@@ -141,8 +149,9 @@ func (c *RemoteClient) putContent(path string, data []byte, contentType string) 
 			Wrapf(err, "create remote cache request")
 	}
 	req.Header.Set("Content-Type", contentType)
+	c.authorize(req)
 
-	resp, err := c.client.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return oops.In("bu1ld.cache.remote").
 			With("path", path).
@@ -160,6 +169,37 @@ func (c *RemoteClient) putContent(path string, data []byte, contentType string) 
 
 func (c *RemoteClient) url(path string) string {
 	return c.baseURL + path
+}
+
+func (c *RemoteClient) authorize(req *http.Request) {
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+}
+
+func (c *RemoteClient) do(req *http.Request) (*http.Response, error) {
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 && req.GetBody != nil {
+			body, err := req.GetBody()
+			if err != nil {
+				return nil, err
+			}
+			req.Body = body
+		}
+		resp, err := c.client.Do(req)
+		if err == nil && (resp.StatusCode < 500 || resp.StatusCode == http.StatusNotImplemented) {
+			return resp, nil
+		}
+		if attempt == 2 {
+			return resp, err
+		}
+		if resp != nil {
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1024))
+			_ = resp.Body.Close()
+		}
+		time.Sleep(time.Duration(attempt+1) * 50 * time.Millisecond)
+	}
+	return c.client.Do(req)
 }
 
 func remoteStatusError(resp *http.Response, action string) error {
