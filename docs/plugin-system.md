@@ -73,7 +73,13 @@ bu1ld uses `go.lsp.dev/jsonrpc2` with `Content-Length` stream framing, matching
 the LSP-style framing supported by libraries such as Eclipse LSP4J JSON-RPC.
 Stdout is reserved for protocol frames; logs should go to stderr or a file.
 
-Supported methods:
+Every plugin `metadata` response must declare `protocol_version = 1` and a
+`capabilities` list. The baseline capabilities are `metadata` and `expand`;
+plugins add `configure` and/or `execute` when they implement those optional
+methods. bu1ld performs a metadata handshake when starting a process plugin and
+rejects unsupported protocol versions before evaluating build rules.
+
+Supported capabilities and methods:
 
 - `metadata`: returns plugin ID, namespace, rule schemas, optional config
   fields, and whether the plugin supports automatic configuration.

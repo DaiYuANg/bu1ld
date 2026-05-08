@@ -42,8 +42,10 @@ func NewWithID(id string) *Plugin {
 
 func (p *Plugin) Metadata() (pluginapi.Metadata, error) {
 	return pluginapi.Metadata{
-		ID:        p.id,
-		Namespace: Namespace,
+		ID:              p.id,
+		Namespace:       Namespace,
+		ProtocolVersion: pluginapi.ProtocolVersion,
+		Capabilities:    pluginapi.DefaultCapabilities(p),
 		Rules: []pluginapi.RuleSchema{
 			{
 				Name: "binary",

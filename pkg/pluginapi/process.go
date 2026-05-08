@@ -20,22 +20,6 @@ const (
 	PluginExecActionKind = "plugin.exec"
 )
 
-type Request struct {
-	ID     int64           `json:"id"`
-	Method string          `json:"method"`
-	Params json.RawMessage `json:"params,omitempty"`
-}
-
-type Response struct {
-	ID     int64           `json:"id"`
-	Result json.RawMessage `json:"result,omitempty"`
-	Error  *ResponseError  `json:"error,omitempty"`
-}
-
-type ResponseError struct {
-	Message string `json:"message"`
-}
-
 type MetadataResult struct {
 	Metadata Metadata `json:"metadata"`
 }
@@ -86,6 +70,7 @@ func handleRequest(ctx context.Context, item Plugin, reply jsonrpc2.Replier, req
 		if err != nil {
 			return reply(ctx, nil, fmt.Errorf("read plugin metadata: %w", err))
 		}
+		metadata = NormalizeMetadata(item, metadata)
 		return reply(ctx, MetadataResult{Metadata: metadata}, nil)
 	case MethodConfigure:
 		configurable, ok := item.(ConfigurablePlugin)
@@ -135,18 +120,6 @@ func decodeParams(request jsonrpc2.Request, target any) error {
 		return fmt.Errorf("decode %s params: %w", request.Method(), err)
 	}
 	return nil
-}
-
-func resultResponse(id int64, result any) Response {
-	data, err := json.Marshal(result)
-	if err != nil {
-		return errorResponse(id, fmt.Errorf("marshal plugin result: %w", err))
-	}
-	return Response{ID: id, Result: data}
-}
-
-func errorResponse(id int64, err error) Response {
-	return Response{ID: id, Error: &ResponseError{Message: err.Error()}}
 }
 
 type readWriteCloser struct {

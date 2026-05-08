@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"bu1ld/pkg/pluginapi"
 
@@ -19,6 +20,11 @@ import (
 	"github.com/arcgolabs/collectionx/mapping"
 	"github.com/samber/oops"
 	"go.lsp.dev/jsonrpc2"
+)
+
+const (
+	defaultPluginHandshakeTimeout = 5 * time.Second
+	maxPluginStderrTail           = 4096
 )
 
 type ProcessLoader struct {
@@ -33,19 +39,28 @@ func NewProcessLoader(options LoadOptions) *ProcessLoader {
 	}
 }
 
-func (l *ProcessLoader) Load(_ context.Context, declaration Declaration) (Plugin, error) {
+func (l *ProcessLoader) Load(ctx context.Context, declaration Declaration) (Plugin, error) {
+	declaration = normalizeDeclaration(declaration)
 	path, err := l.resolvePath(declaration)
 	if err != nil {
 		return nil, err
 	}
 
-	client, err := startProcessClient(path, l.options.Env)
+	client, err := startProcessClient(path, l.options)
 	if err != nil {
 		return nil, oops.In("bu1ld.plugins").
 			With("namespace", declaration.Namespace).
 			With("source", declaration.Source).
 			With("path", path).
 			Wrapf(err, "start plugin process")
+	}
+	if err := client.handshake(ctx, declaration, l.options.handshakeTimeout()); err != nil {
+		closeErr := client.close()
+		return nil, oops.In("bu1ld.plugins").
+			With("namespace", declaration.Namespace).
+			With("source", declaration.Source).
+			With("path", path).
+			Wrapf(client.decorateProcessError(err, closeErr), "start plugin process")
 	}
 	if l.clients == nil {
 		l.clients = list.NewList[*processClient]()
@@ -55,17 +70,19 @@ func (l *ProcessLoader) Load(_ context.Context, declaration Declaration) (Plugin
 }
 
 type processClient struct {
-	cmd    *exec.Cmd
-	conn   jsonrpc2.Conn
-	cancel context.CancelFunc
-	mu     sync.Mutex
-	closed bool
+	cmd      *exec.Cmd
+	conn     jsonrpc2.Conn
+	cancel   context.CancelFunc
+	stderr   *processStderr
+	metadata Metadata
+	mu       sync.Mutex
+	closed   bool
 }
 
-func startProcessClient(path string, env []string) (*processClient, error) {
+func startProcessClient(path string, options LoadOptions) (*processClient, error) {
 	cmd := processCommand(path)
-	if len(env) > 0 {
-		cmd.Env = mergeEnv(os.Environ(), env)
+	if len(options.Env) > 0 {
+		cmd.Env = mergeEnv(os.Environ(), options.Env)
 	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -75,7 +92,8 @@ func startProcessClient(path string, env []string) (*processClient, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open plugin stdout: %w", err)
 	}
-	cmd.Stderr = os.Stderr
+	stderr := newProcessStderr(filepath.Base(path), options.stderrOutput())
+	cmd.Stderr = stderr
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
@@ -89,12 +107,45 @@ func startProcessClient(path string, env []string) (*processClient, error) {
 		cmd:    cmd,
 		conn:   conn,
 		cancel: cancel,
+		stderr: stderr,
 	}, nil
 }
 
 func (c *processClient) Metadata() (Metadata, error) {
+	c.mu.Lock()
+	metadata := c.metadata
+	c.mu.Unlock()
+	if metadata.ProtocolVersion != 0 {
+		return metadata, nil
+	}
+	return c.metadataCall(context.Background())
+}
+
+func (c *processClient) handshake(ctx context.Context, declaration Declaration, timeout time.Duration) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	metadata, err := c.metadataCall(ctx)
+	if err != nil {
+		return fmt.Errorf("metadata handshake: %w", err)
+	}
+	if err := validateProcessMetadata(declaration, metadata); err != nil {
+		return fmt.Errorf("metadata handshake: %w", err)
+	}
+	c.mu.Lock()
+	c.metadata = metadata
+	c.mu.Unlock()
+	return nil
+}
+
+func (c *processClient) metadataCall(ctx context.Context) (Metadata, error) {
 	var result pluginapi.MetadataResult
-	if err := c.call(context.Background(), pluginapi.MethodMetadata, nil, &result); err != nil {
+	if err := c.call(ctx, pluginapi.MethodMetadata, nil, &result); err != nil {
 		return Metadata{}, fmt.Errorf("call plugin metadata: %w", err)
 	}
 	return result.Metadata, nil
@@ -110,6 +161,9 @@ func (c *processClient) Expand(ctx context.Context, invocation Invocation) ([]Ta
 }
 
 func (c *processClient) Configure(ctx context.Context, config PluginConfig) ([]TaskSpec, error) {
+	if !SupportsCapability(c.metadata, CapabilityConfigure) {
+		return nil, fmt.Errorf("plugin does not support configure")
+	}
 	params := pluginapi.ConfigureParams{Config: config}
 	var result pluginapi.ConfigureResult
 	if err := c.call(ctx, pluginapi.MethodConfigure, params, &result); err != nil {
@@ -119,6 +173,9 @@ func (c *processClient) Configure(ctx context.Context, config PluginConfig) ([]T
 }
 
 func (c *processClient) Execute(ctx context.Context, request ExecuteRequest) (ExecuteResult, error) {
+	if !SupportsCapability(c.metadata, CapabilityExecute) {
+		return ExecuteResult{}, fmt.Errorf("plugin does not support execute")
+	}
 	params := pluginapi.ExecuteParams{Request: request}
 	var result pluginapi.ExecuteResult
 	if err := c.call(ctx, pluginapi.MethodExecute, params, &result); err != nil {
@@ -137,14 +194,21 @@ func (c *processClient) call(ctx context.Context, method string, params any, res
 		ctx = context.Background()
 	}
 	_, err := c.conn.Call(ctx, method, params, result)
-	return err
+	if err != nil {
+		return c.decorateProcessError(err, nil)
+	}
+	return nil
 }
 
 func (c *processClient) Close() {
+	_ = c.close()
+}
+
+func (c *processClient) close() error {
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
-		return
+		return nil
 	}
 	c.closed = true
 	cancel := c.cancel
@@ -163,8 +227,9 @@ func (c *processClient) Close() {
 		_ = process.Kill()
 	}
 	if cmd != nil {
-		_ = cmd.Wait()
+		return cmd.Wait()
 	}
+	return nil
 }
 
 type pluginReadWriteCloser struct {
@@ -214,6 +279,114 @@ func mergeEnv(base []string, overrides []string) []string {
 		merged.Add(item)
 	}
 	return merged.Values()
+}
+
+func (o LoadOptions) handshakeTimeout() time.Duration {
+	if o.HandshakeTimeout > 0 {
+		return o.HandshakeTimeout
+	}
+	return defaultPluginHandshakeTimeout
+}
+
+func (o LoadOptions) stderrOutput() io.Writer {
+	if o.Stderr != nil {
+		return o.Stderr
+	}
+	return os.Stderr
+}
+
+func validateProcessMetadata(declaration Declaration, metadata Metadata) error {
+	if metadata.ProtocolVersion != ProtocolVersion {
+		return fmt.Errorf("plugin protocol_version = %d, want %d", metadata.ProtocolVersion, ProtocolVersion)
+	}
+	if !SupportsCapability(metadata, CapabilityMetadata) {
+		return fmt.Errorf("plugin metadata missing capability %q", CapabilityMetadata)
+	}
+	if !SupportsCapability(metadata, CapabilityExpand) {
+		return fmt.Errorf("plugin metadata missing capability %q", CapabilityExpand)
+	}
+	if declaration.Namespace != "" && metadata.Namespace != "" && metadata.Namespace != declaration.Namespace {
+		return fmt.Errorf("plugin namespace = %q, want %q", metadata.Namespace, declaration.Namespace)
+	}
+	if declaration.ID != "" && metadata.ID != "" && metadata.ID != declaration.ID {
+		return fmt.Errorf("plugin id = %q, want %q", metadata.ID, declaration.ID)
+	}
+	return nil
+}
+
+func (c *processClient) decorateProcessError(err error, closeErr error) error {
+	if err == nil {
+		return closeErr
+	}
+	message := err.Error()
+	if closeErr != nil && !strings.Contains(message, closeErr.Error()) {
+		message += "\nprocess exit: " + closeErr.Error()
+	}
+	if c != nil && c.stderr != nil {
+		tail := c.stderr.Tail()
+		if tail != "" && !strings.Contains(message, "plugin stderr:") {
+			message += "\nplugin stderr:\n" + tail
+		}
+	}
+	return errors.New(message)
+}
+
+type processStderr struct {
+	name      string
+	output    io.Writer
+	mu        sync.Mutex
+	tail      string
+	lineStart bool
+}
+
+func newProcessStderr(name string, output io.Writer) *processStderr {
+	if name == "" {
+		name = "plugin"
+	}
+	return &processStderr{name: name, output: output, lineStart: true}
+}
+
+func (w *processStderr) Write(data []byte) (int, error) {
+	text := string(data)
+	w.mu.Lock()
+	w.tail += text
+	if len(w.tail) > maxPluginStderrTail {
+		w.tail = w.tail[len(w.tail)-maxPluginStderrTail:]
+	}
+	err := w.writePrefixedLocked(text)
+	w.mu.Unlock()
+	return len(data), err
+}
+
+func (w *processStderr) writePrefixedLocked(text string) error {
+	if w.output == nil || text == "" {
+		return nil
+	}
+	for text != "" {
+		if w.lineStart {
+			if _, err := fmt.Fprintf(w.output, "[plugin:%s] ", w.name); err != nil {
+				return err
+			}
+			w.lineStart = false
+		}
+		index := strings.IndexByte(text, '\n')
+		if index < 0 {
+			_, err := io.WriteString(w.output, text)
+			return err
+		}
+		if _, err := io.WriteString(w.output, text[:index+1]); err != nil {
+			return err
+		}
+		w.lineStart = true
+		text = text[index+1:]
+	}
+	return nil
+}
+
+func (w *processStderr) Tail() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return strings.TrimSpace(w.tail)
 }
 
 func (l *ProcessLoader) Close() {

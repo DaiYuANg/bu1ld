@@ -21,6 +21,7 @@ import static org.bu1ld.plugins.java.Protocol.TaskSpec;
 final class JavaBuildPlugin implements Plugin {
     static final String DEFAULT_ID = "org.bu1ld.java";
     static final String NAMESPACE = "java";
+    static final int PROTOCOL_VERSION = 1;
 
     private static final String ACTION_COMPILE = "compile";
     private static final String ACTION_JAR = "jar";
@@ -39,6 +40,8 @@ final class JavaBuildPlugin implements Plugin {
         return new Metadata(
             DEFAULT_ID,
             NAMESPACE,
+            PROTOCOL_VERSION,
+            ImmutableList.of("metadata", "expand", "configure", "execute"),
             ImmutableList.of(
                 rule("compile",
                     field("deps", "list", false),

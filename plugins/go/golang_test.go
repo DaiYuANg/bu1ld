@@ -22,6 +22,12 @@ func TestMetadataUsesExternalPluginID(t *testing.T) {
 	if got, want := metadata.Namespace, "go"; got != want {
 		t.Fatalf("metadata namespace = %q, want %q", got, want)
 	}
+	if got, want := metadata.ProtocolVersion, pluginapi.ProtocolVersion; got != want {
+		t.Fatalf("metadata protocol version = %d, want %d", got, want)
+	}
+	if !pluginapi.SupportsCapability(metadata, pluginapi.CapabilityExecute) {
+		t.Fatalf("metadata capabilities = %#v, want execute", metadata.Capabilities)
+	}
 	for _, want := range []string{"binary", "test", "generate", "release"} {
 		if !metadataHasRule(metadata, want) {
 			t.Fatalf("metadata missing rule %q", want)

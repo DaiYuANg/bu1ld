@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -224,6 +225,36 @@ binary = "bu1ld-go-plugin"
 	}
 	if path != binary {
 		t.Fatalf("resolved path = %q, want %q", path, binary)
+	}
+}
+
+func TestValidateProcessMetadataRejectsProtocolMismatch(t *testing.T) {
+	t.Parallel()
+
+	err := validateProcessMetadata(Declaration{Namespace: "go", ID: "org.bu1ld.go"}, Metadata{
+		ID:              "org.bu1ld.go",
+		Namespace:       "go",
+		ProtocolVersion: 99,
+		Capabilities:    []string{CapabilityMetadata, CapabilityExpand},
+	})
+	if err == nil {
+		t.Fatalf("validateProcessMetadata() error = nil, want protocol mismatch")
+	}
+}
+
+func TestProcessStderrPrefixesAndKeepsTail(t *testing.T) {
+	t.Parallel()
+
+	var output strings.Builder
+	stderr := newProcessStderr("plugin-test", &output)
+	if _, err := stderr.Write([]byte("failed to start\n")); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	if got, want := output.String(), "[plugin:plugin-test] failed to start\n"; got != want {
+		t.Fatalf("stderr output = %q, want %q", got, want)
+	}
+	if got, want := stderr.Tail(), "failed to start"; got != want {
+		t.Fatalf("stderr tail = %q, want %q", got, want)
 	}
 }
 

@@ -3,7 +3,9 @@ package plugin
 import (
 	"context"
 	"errors"
+	"io"
 	"strings"
+	"time"
 
 	"bu1ld/internal/build"
 
@@ -14,10 +16,12 @@ import (
 )
 
 type LoadOptions struct {
-	ProjectDir string
-	LocalDir   string
-	GlobalDir  string
-	Env        []string
+	ProjectDir       string
+	LocalDir         string
+	GlobalDir        string
+	Env              []string
+	HandshakeTimeout time.Duration
+	Stderr           io.Writer
 }
 
 type Registry struct {
@@ -110,7 +114,7 @@ func (r *Registry) Expand(ctx context.Context, invocation Invocation) ([]build.T
 			Errorf("plugin namespace %q is not registered", invocation.Namespace)
 	}
 
-	metadata, err := item.Metadata()
+	metadata, err := pluginMetadata(item)
 	if err != nil {
 		return nil, oops.In("bu1ld.plugins").
 			With("namespace", invocation.Namespace).
@@ -155,7 +159,7 @@ func (r *Registry) Configure(ctx context.Context, configs map[string]PluginConfi
 	tasks := list.NewList[build.Task]()
 	var firstErr error
 	r.active.Range(func(namespace string, item Plugin) bool {
-		metadata, err := item.Metadata()
+		metadata, err := pluginMetadata(item)
 		if err != nil {
 			firstErr = oops.In("bu1ld.plugins").
 				With("namespace", namespace).
@@ -217,7 +221,7 @@ func (r *Registry) Schemas() ([]Metadata, error) {
 	metadata := list.NewList[Metadata]()
 	var firstErr error
 	r.active.Range(func(_ string, item Plugin) bool {
-		itemMetadata, metadataErr := item.Metadata()
+		itemMetadata, metadataErr := pluginMetadata(item)
 		if metadataErr != nil {
 			firstErr = oops.In("bu1ld.plugins").Wrapf(metadataErr, "read plugin metadata")
 			return false
@@ -252,7 +256,7 @@ func (r *Registry) Metadata(namespace string) (Metadata, error) {
 			With("namespace", namespace).
 			Errorf("plugin namespace %q is not registered", namespace)
 	}
-	metadata, err := item.Metadata()
+	metadata, err := pluginMetadata(item)
 	if err != nil {
 		return Metadata{}, oops.In("bu1ld.plugins").
 			With("namespace", namespace).
@@ -267,8 +271,16 @@ func (r *Registry) Close() {
 	}
 }
 
-func (r *Registry) addBuiltin(item Plugin) error {
+func pluginMetadata(item Plugin) (Metadata, error) {
 	metadata, err := item.Metadata()
+	if err != nil {
+		return Metadata{}, err
+	}
+	return NormalizeMetadata(item, metadata), nil
+}
+
+func (r *Registry) addBuiltin(item Plugin) error {
+	metadata, err := pluginMetadata(item)
 	if err != nil {
 		return oops.In("bu1ld.plugins").Wrapf(err, "read builtin plugin metadata")
 	}

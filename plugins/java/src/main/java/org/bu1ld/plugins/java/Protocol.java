@@ -11,6 +11,9 @@ public final class Protocol {
     public static record Metadata(
         String id,
         String namespace,
+        @SerializedName("protocol_version")
+        int protocolVersion,
+        List<String> capabilities,
         List<RuleSchema> rules,
         @SerializedName("config_fields")
         List<FieldSchema> configFields,

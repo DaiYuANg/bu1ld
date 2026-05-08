@@ -11,16 +11,25 @@ import (
 )
 
 type Metadata struct {
-	ID            string        `json:"id"`
-	Namespace     string        `json:"namespace"`
-	Rules         []RuleSchema  `json:"rules"`
-	ConfigFields  []FieldSchema `json:"config_fields,omitempty"`
-	AutoConfigure bool          `json:"auto_configure,omitempty"`
+	ID              string        `json:"id"`
+	Namespace       string        `json:"namespace"`
+	ProtocolVersion int           `json:"protocol_version,omitempty"`
+	Capabilities    []string      `json:"capabilities,omitempty"`
+	Rules           []RuleSchema  `json:"rules"`
+	ConfigFields    []FieldSchema `json:"config_fields,omitempty"`
+	AutoConfigure   bool          `json:"auto_configure,omitempty"`
 }
 
 type FieldType string
 
 const (
+	ProtocolVersion = 1
+
+	CapabilityMetadata  = "metadata"
+	CapabilityExpand    = "expand"
+	CapabilityConfigure = "configure"
+	CapabilityExecute   = "execute"
+
 	FieldString FieldType = "string"
 	FieldList   FieldType = "list"
 	FieldObject FieldType = "object"
@@ -214,4 +223,34 @@ type TaskSpec struct {
 type TaskAction struct {
 	Kind   string         `json:"kind,omitempty"`
 	Params map[string]any `json:"params,omitempty"`
+}
+
+func NormalizeMetadata(item Plugin, metadata Metadata) Metadata {
+	if metadata.ProtocolVersion == 0 {
+		metadata.ProtocolVersion = ProtocolVersion
+	}
+	if len(metadata.Capabilities) == 0 {
+		metadata.Capabilities = DefaultCapabilities(item)
+	}
+	return metadata
+}
+
+func DefaultCapabilities(item Plugin) []string {
+	capabilities := list.NewList[string](CapabilityMetadata, CapabilityExpand)
+	if _, ok := item.(ConfigurablePlugin); ok {
+		capabilities.Add(CapabilityConfigure)
+	}
+	if _, ok := item.(ExecutablePlugin); ok {
+		capabilities.Add(CapabilityExecute)
+	}
+	return capabilities.Values()
+}
+
+func SupportsCapability(metadata Metadata, capability string) bool {
+	for _, item := range metadata.Capabilities {
+		if item == capability {
+			return true
+		}
+	}
+	return false
 }

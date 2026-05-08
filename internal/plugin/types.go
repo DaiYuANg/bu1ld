@@ -38,6 +38,12 @@ type TaskSpec = pluginapi.TaskSpec
 type TaskAction = pluginapi.TaskAction
 
 const (
+	ProtocolVersion     = pluginapi.ProtocolVersion
+	CapabilityMetadata  = pluginapi.CapabilityMetadata
+	CapabilityExpand    = pluginapi.CapabilityExpand
+	CapabilityConfigure = pluginapi.CapabilityConfigure
+	CapabilityExecute   = pluginapi.CapabilityExecute
+
 	FieldString          = pluginapi.FieldString
 	FieldList            = pluginapi.FieldList
 	FieldObject          = pluginapi.FieldObject
@@ -45,7 +51,11 @@ const (
 	PluginExecActionKind = pluginapi.PluginExecActionKind
 )
 
-var ValidateInvocation = pluginapi.ValidateInvocation
+var (
+	ValidateInvocation = pluginapi.ValidateInvocation
+	NormalizeMetadata  = pluginapi.NormalizeMetadata
+	SupportsCapability = pluginapi.SupportsCapability
+)
 
 func TaskSpecToBuild(spec TaskSpec) build.Task {
 	task := build.NewTask(spec.Name)

@@ -56,6 +56,8 @@ public final class PluginSmokeTest {
             String text = output.toString(StandardCharsets.UTF_8);
             requireContains(text, "\"id\":\"org.bu1ld.java\"");
             requireContains(text, "\"namespace\":\"java\"");
+            requireContains(text, "\"protocol_version\":1");
+            requireContains(text, "\"capabilities\":[\"metadata\",\"expand\",\"configure\",\"execute\"]");
             requireContains(text, "\"auto_configure\":true");
             requireContains(text, "\"name\":\"compileJava\"");
             requireContains(text, "\"kind\":\"plugin.exec\"");

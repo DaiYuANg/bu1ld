@@ -57,6 +57,8 @@ func TestServeHandlesMetadataAndExpand(t *testing.T) {
 	text := output.String()
 	for _, want := range []string{
 		`"id":"org.bu1ld.fake"`,
+		`"protocol_version":1`,
+		`"capabilities":["metadata","expand","configure","execute"]`,
 		`"name":"configured"`,
 		`"command":["echo","world"]`,
 		`"output":"executed\n"`,
