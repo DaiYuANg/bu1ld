@@ -11,7 +11,7 @@ require (
 	github.com/arcgolabs/collectionx/set v0.8.0
 	github.com/arcgolabs/httpx v0.1.4
 	github.com/arcgolabs/httpx/adapter/std v0.1.4
-	github.com/arcgolabs/plano v0.7.0
+	github.com/arcgolabs/plano v0.8.0
 	github.com/cyphar/filepath-securejoin v0.4.1
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/fxamacker/cbor/v2 v2.9.2
@@ -36,7 +36,6 @@ require (
 	github.com/arcgolabs/httpx/adapter/echo v0.1.4 // indirect
 	github.com/arcgolabs/httpx/adapter/fiber v0.1.4 // indirect
 	github.com/arcgolabs/httpx/adapter/gin v0.1.4 // indirect
-	github.com/arcgolabs/plano/examples/builddsl v0.0.0-20260429150020-93c29b878803 // indirect
 	github.com/bodgit/plumbing v1.3.0 // indirect
 	github.com/bodgit/sevenzip v1.6.1 // indirect
 	github.com/bodgit/windows v1.0.1 // indirect
@@ -99,6 +98,7 @@ require (
 	golang.org/x/net v0.53.0 // indirect
 	golang.org/x/term v0.42.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260427160629-7cedc36a6bc4 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260504160031-60b97b32f348 // indirect
 	google.golang.org/grpc v1.81.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
@@ -153,6 +153,6 @@ require (
 	golang.org/x/crypto v0.50.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.43.0
-	golang.org/x/text v0.36.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 )
