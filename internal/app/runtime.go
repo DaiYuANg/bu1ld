@@ -73,15 +73,15 @@ func NewDixApp(cfg config.Config, output io.Writer, request CommandRequest) *dix
 			coreModule(cfg, output),
 			commandModule(request),
 		),
-		dix.LoggerFrom(func(c *dix.Container) (*slog.Logger, error) {
-			return dix.ResolveAs[*slog.Logger](c)
+		dix.UseLogger1(func(logger *slog.Logger) *slog.Logger {
+			return logger
 		}),
 	)
 }
 
 func coreModule(cfg config.Config, output io.Writer) dix.Module {
 	return dix.NewModule("core",
-		dix.WithModuleProviders(
+		dix.Providers(
 			dix.Value[config.Config](cfg),
 			dix.Value[io.Writer](output),
 			dix.ProviderErr1[*slog.Logger, config.Config](newLogger),
@@ -99,7 +99,7 @@ func coreModule(cfg config.Config, output io.Writer) dix.Module {
 			dix.Provider6[appServices, config.Config, *dsl.Loader, *buildplugin.Registry, *engine.Engine, *cache.Store, io.Writer](newAppServices),
 			dix.ProviderErr2[*App, CommandRequest, appServices](New),
 		),
-		dix.WithModuleHooks(
+		dix.Hooks(
 			dix.OnStop[eventx.BusRuntime](func(_ context.Context, bus eventx.BusRuntime) error {
 				return bus.Close()
 			}),
@@ -113,7 +113,7 @@ func coreModule(cfg config.Config, output io.Writer) dix.Module {
 
 func commandModule(request CommandRequest) dix.Module {
 	return dix.NewModule("command."+string(request.Kind),
-		dix.WithModuleProviders(
+		dix.Providers(
 			dix.Value[CommandRequest](request),
 		),
 	)

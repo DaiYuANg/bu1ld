@@ -106,7 +106,7 @@ require (
 
 require (
 	github.com/arcgolabs/configx v0.3.2
-	github.com/arcgolabs/dix v0.7.2
+	github.com/arcgolabs/dix v0.10.0
 	github.com/arcgolabs/eventx v0.1.2
 	github.com/arcgolabs/logx v0.1.2
 	github.com/arcgolabs/observabilityx v0.4.0 // indirect

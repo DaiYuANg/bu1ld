@@ -9,21 +9,14 @@ import (
 	"bu1ld/internal/gocacheprog"
 	"bu1ld/pkg/pluginapi"
 	"github.com/arcgolabs/dix"
+	"github.com/arcgolabs/dix/testx"
 )
 
 func TestGoPluginModuleResolvesPlugin(t *testing.T) {
 	t.Parallel()
 
 	spec := dix.New("test go plugin", dix.Modules(goPluginModule()))
-	runtime, err := spec.Start(context.Background())
-	if err != nil {
-		t.Fatalf("Start() error = %v", err)
-	}
-	t.Cleanup(func() {
-		if err := runtime.Stop(context.Background()); err != nil {
-			t.Fatalf("Stop() error = %v", err)
-		}
-	})
+	runtime := testx.Start(context.Background(), t, spec)
 
 	item, err := dix.ResolveAs[pluginapi.Plugin](runtime.Container())
 	if err != nil {

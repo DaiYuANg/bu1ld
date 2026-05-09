@@ -101,7 +101,9 @@ func runPlugin(ctx context.Context) (err error) {
 	spec := dix.New(
 		"bu1ld go plugin",
 		dix.Modules(goPluginModule()),
-		dix.UseLogger(slog.New(slog.DiscardHandler)),
+		dix.UseLogger1(func(logger *slog.Logger) *slog.Logger {
+			return logger
+		}),
 	)
 	runtime, err := spec.Start(ctx)
 	if err != nil {
@@ -125,7 +127,8 @@ func runPlugin(ctx context.Context) (err error) {
 
 func goPluginModule() dix.Module {
 	return dix.NewModule("go-build-plugin",
-		dix.WithModuleProviders(
+		dix.Providers(
+			dix.Value[*slog.Logger](slog.New(slog.DiscardHandler)),
 			dix.Provider0[*goplugin.Plugin](goplugin.New),
 			dix.Provider1[pluginapi.Plugin, *goplugin.Plugin](func(plugin *goplugin.Plugin) pluginapi.Plugin {
 				return plugin

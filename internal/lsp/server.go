@@ -71,7 +71,7 @@ func NewDixApp(in io.Reader, out io.Writer) *dix.App {
 		"bu1ld lsp",
 		dix.Modules(
 			dix.NewModule("lsp",
-				dix.WithModuleProviders(
+				dix.Providers(
 					dix.Value[io.Reader](in),
 					dix.Value[io.Writer](out),
 					dix.Provider0[*dsl.Parser](dsl.NewParser),
