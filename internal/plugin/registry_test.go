@@ -67,6 +67,19 @@ func TestRegistryRejectsUnknownField(t *testing.T) {
 	}
 }
 
+func TestNormalizeDeclarationUsesContainerSourceForImages(t *testing.T) {
+	t.Parallel()
+
+	declaration := NormalizeDeclaration(Declaration{
+		Namespace: "go",
+		ID:        "org.bu1ld.go",
+		Image:     "ghcr.io/example/bu1ld-go-plugin:0.1.3",
+	})
+	if got, want := declaration.Source, SourceContainer; got != want {
+		t.Fatalf("source = %q, want %q", got, want)
+	}
+}
+
 func TestProcessLoaderResolvesLocalAndGlobalPaths(t *testing.T) {
 	t.Parallel()
 

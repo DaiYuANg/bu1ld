@@ -43,6 +43,22 @@ func (h *ExecuteHandler) Run(ctx context.Context, workDir string, params map[str
 	if err != nil {
 		return err
 	}
+	image, err := stringActionParam(params, "image", false)
+	if err != nil {
+		return err
+	}
+	pull, err := stringActionParam(params, "pull", false)
+	if err != nil {
+		return err
+	}
+	network, err := stringActionParam(params, "network", false)
+	if err != nil {
+		return err
+	}
+	containerWorkDir, err := stringActionParam(params, "work_dir", false)
+	if err != nil {
+		return err
+	}
 	payload, err := objectActionParam(params, "params")
 	if err != nil {
 		return err
@@ -57,6 +73,10 @@ func (h *ExecuteHandler) Run(ctx context.Context, workDir string, params map[str
 		Source:    Source(source),
 		Version:   version,
 		Path:      path,
+		Image:     image,
+		Pull:      pull,
+		Network:   network,
+		WorkDir:   containerWorkDir,
 	}))
 	if err != nil {
 		return fmt.Errorf("load plugin %q for action %q: %w", namespace, action, err)

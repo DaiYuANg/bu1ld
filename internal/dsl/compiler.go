@@ -30,6 +30,7 @@ func newCompiler(
 	compiler.RegisterConst("builtin", string(buildplugin.SourceBuiltin))
 	compiler.RegisterConst("local", string(buildplugin.SourceLocal))
 	compiler.RegisterConst("global", string(buildplugin.SourceGlobal))
+	compiler.RegisterConst("container", string(buildplugin.SourceContainer))
 
 	if err := compiler.RegisterForms(planschema.FormSpecs(
 		workspaceFormSpec(),
@@ -133,8 +134,12 @@ func pluginFormSpec() planschema.FormSpec {
 			planschema.FieldSpec{Name: "id", Type: planschema.TypeString},
 			planschema.FieldSpec{Name: "version", Type: planschema.TypeString},
 			planschema.FieldSpec{Name: "path", Type: planschema.TypePath},
+			planschema.FieldSpec{Name: "image", Type: planschema.TypeString},
+			planschema.FieldSpec{Name: "pull", Type: planschema.TypeString},
+			planschema.FieldSpec{Name: "network", Type: planschema.TypeString},
+			planschema.FieldSpec{Name: "work_dir", Type: planschema.TypePath},
 		),
-		Docs: "Declare a builtin, local, or global bu1ld plugin.",
+		Docs: "Declare a builtin, local, global, or container bu1ld plugin.",
 	}
 }
 

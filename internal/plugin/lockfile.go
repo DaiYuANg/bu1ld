@@ -29,6 +29,10 @@ type LockedPlugin struct {
 	ID        string `json:"id"`
 	Version   string `json:"version,omitempty"`
 	Path      string `json:"path,omitempty"`
+	Image     string `json:"image,omitempty"`
+	Pull      string `json:"pull,omitempty"`
+	Network   string `json:"network,omitempty"`
+	WorkDir   string `json:"work_dir,omitempty"`
 	Checksum  string `json:"checksum,omitempty"`
 }
 
@@ -122,7 +126,7 @@ func ChecksumFile(path string) (result string, err error) {
 }
 
 func lockKey(plugin LockedPlugin) string {
-	return string(plugin.Source) + "\x00" + plugin.Namespace + "\x00" + plugin.ID + "\x00" + plugin.Version + "\x00" + plugin.Path
+	return string(plugin.Source) + "\x00" + plugin.Namespace + "\x00" + plugin.ID + "\x00" + plugin.Version + "\x00" + plugin.Path + "\x00" + plugin.Image
 }
 
 func isNotExist(err error) bool {

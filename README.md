@@ -263,6 +263,29 @@ used for local plugin development. External process plugins implement the public
 is missing, local and global plugin resolution falls back to file discovery
 under the corresponding plugin directory.
 
+Plugins can also run as containers:
+
+```text
+plugin go {
+  source = container
+  id = "org.bu1ld.go"
+  version = "0.1.3"
+  image = "registry.local/build/bu1ld-go-plugin:0.1.3"
+  pull = "missing"
+}
+```
+
+Container plugins use the same JSON-RPC protocol, but bu1ld starts them through
+the official Docker Engine Go API instead of shelling out to `docker`. The
+project directory is mounted at `/workspace` by default, and `plugin.exec` work
+directories are mapped into that mount.
+
+First-party release images are published to GitHub Container Registry:
+
+- `ghcr.io/daiyuang/bu1ld`
+- `ghcr.io/daiyuang/bu1ld-go-plugin`
+- `ghcr.io/daiyuang/bu1ld-java-plugin`
+
 Installed plugins can include a manifest at
 `.bu1ld/plugins/<id>/<version>/plugin.toml` or
 `~/.bu1ld/plugins/<id>/<version>/plugin.toml`:

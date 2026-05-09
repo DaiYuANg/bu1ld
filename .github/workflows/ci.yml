@@ -79,3 +79,43 @@ jobs:
 
       - name: Run remote cache E2E
         run: bash scripts/remote-cache-e2e.sh
+
+  container-images:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build bu1ld image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packaging/container/bu1ld.Dockerfile
+          push: false
+          tags: bu1ld:ci
+          build-args: |
+            VERSION=ci
+            COMMIT=${{ github.sha }}
+
+      - name: Build Go plugin image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packaging/container/bu1ld-go-plugin.Dockerfile
+          push: false
+          tags: bu1ld-go-plugin:ci
+          build-args: |
+            VERSION=ci
+            COMMIT=${{ github.sha }}
+
+      - name: Build Java plugin image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packaging/container/bu1ld-java-plugin.Dockerfile
+          push: false
+          tags: bu1ld-java-plugin:ci

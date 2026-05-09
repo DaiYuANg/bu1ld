@@ -51,6 +51,14 @@ func RawPluginDeclarations(fs afero.Fs, path string) ([]PluginDeclaration, error
 				declaration.Version = value
 			case "path":
 				declaration.Path = value
+			case "image":
+				declaration.Image = value
+			case "pull":
+				declaration.Pull = value
+			case "network":
+				declaration.Network = value
+			case "work_dir":
+				declaration.WorkDir = value
 			}
 		}
 		declarations.Add(PluginDeclaration{

@@ -10,9 +10,10 @@ import (
 type Source string
 
 const (
-	SourceBuiltin Source = "builtin"
-	SourceLocal   Source = "local"
-	SourceGlobal  Source = "global"
+	SourceBuiltin   Source = "builtin"
+	SourceLocal     Source = "local"
+	SourceGlobal    Source = "global"
+	SourceContainer Source = "container"
 )
 
 type Declaration struct {
@@ -21,6 +22,10 @@ type Declaration struct {
 	Source    Source
 	Version   string
 	Path      string
+	Image     string
+	Pull      string
+	Network   string
+	WorkDir   string
 }
 
 type Metadata = pluginapi.Metadata

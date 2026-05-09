@@ -71,6 +71,7 @@ The workflow runs:
 - root Go tests
 - Go plugin tests
 - Java plugin Gradle checks
+- container image build/publish for bu1ld, the Go plugin, and the Java plugin
 - root GoReleaser publish
 - Java plugin jpackage app-image builds on Linux, Windows, and macOS runners
 - release asset checksum and structure verification after all uploads
@@ -98,6 +99,47 @@ Java plugin asset names follow:
 The archive root contains `plugin.toml` plus the app image contents. This means
 registry installation and local `path = ".../plugin.toml"` development both use
 the same manifest-driven layout.
+
+## Container Images
+
+Tagged releases also publish Linux container images to GitHub Container Registry:
+
+- `ghcr.io/daiyuang/bu1ld:<version>`
+- `ghcr.io/daiyuang/bu1ld-go-plugin:<version>`
+- `ghcr.io/daiyuang/bu1ld-java-plugin:<version>`
+
+Each image is also tagged with `<major>.<minor>` and `latest`. The release
+workflow lowercases the GitHub owner before building the GHCR image name because
+container repository names must be lowercase.
+
+The image build inputs live under `packaging/container/`:
+
+- `bu1ld.Dockerfile` builds the core CLI from source and packages it into an
+  Alpine runtime image with Git and SSH tooling.
+- `bu1ld-go-plugin.Dockerfile` builds the Go plugin and packages it on top of a
+  Go toolchain image with Git and SSH tooling, so plugin actions can run
+  `go generate`, `go test`, `go build`, and `go release`.
+- `bu1ld-java-plugin.Dockerfile` runs the Java plugin Gradle build in a Linux
+  JDK image, then packages the jlink/jpackage app image into a slim Debian
+  runtime image.
+
+The first-party plugin images are compatible with `source = container`:
+
+```text
+plugin go {
+  source = container
+  id = "org.bu1ld.go"
+  version = "0.1.3"
+  image = "ghcr.io/daiyuang/bu1ld-go-plugin:0.1.3"
+}
+
+plugin java {
+  source = container
+  id = "org.bu1ld.java"
+  version = "0.1.3"
+  image = "ghcr.io/daiyuang/bu1ld-java-plugin:0.1.3"
+}
+```
 
 Each Java plugin asset is uploaded with a sibling `.sha256` file. GoReleaser
 publishes `checksums.txt` for Go-built assets. The release workflow downloads

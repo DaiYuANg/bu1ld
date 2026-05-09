@@ -105,7 +105,7 @@ func coreTopLevelHoverEntries() map[string]hoverEntry {
 		"plugin": {
 			Signature: "plugin name { ... }",
 			Detail:    "plugin declaration",
-			Docs:      "Declares a builtin, local, or global plugin namespace.",
+			Docs:      "Declares a builtin, local, global, or container plugin namespace.",
 		},
 		"toolchain": {
 			Signature: "toolchain name { ... }",
@@ -194,10 +194,14 @@ func coreFieldDocs(kind string) *mapping.Map[string, string] {
 		})
 	case "plugin":
 		return newStringMap(map[string]string{
-			"source":  "Plugin source: builtin, local, or global.",
-			"id":      "Plugin identifier, for example org.bu1ld.go.",
-			"version": "Plugin version used for local or global process plugins.",
-			"path":    "Development path for a local process plugin binary.",
+			"source":   "Plugin source: builtin, local, global, or container.",
+			"id":       "Plugin identifier, for example org.bu1ld.go.",
+			"version":  "Plugin version used for external plugins.",
+			"path":     "Development path for a local process plugin binary.",
+			"image":    "Container image used when source is container.",
+			"pull":     "Container image pull policy: missing, always, or never.",
+			"network":  "Docker network mode for container plugins.",
+			"work_dir": "Project mount path inside the plugin container.",
 		})
 	case "toolchain":
 		return newStringMap(map[string]string{

@@ -15,6 +15,10 @@ func coreFields(kind string) []buildplugin.FieldSchema {
 			{Name: "id", Type: buildplugin.FieldString},
 			{Name: "version", Type: buildplugin.FieldString},
 			{Name: "path", Type: buildplugin.FieldString},
+			{Name: "image", Type: buildplugin.FieldString},
+			{Name: "pull", Type: buildplugin.FieldString},
+			{Name: "network", Type: buildplugin.FieldString},
+			{Name: "work_dir", Type: buildplugin.FieldString},
 		}
 	case "toolchain":
 		return []buildplugin.FieldSchema{

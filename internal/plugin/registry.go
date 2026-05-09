@@ -25,22 +25,24 @@ type LoadOptions struct {
 }
 
 type Registry struct {
-	builtins      *mapping.Map[string, Plugin]
-	localPlugins  *mapping.Map[string, Plugin]
-	globalPlugins *mapping.Map[string, Plugin]
-	active        *mapping.Map[string, Plugin]
-	declarations  *mapping.Map[string, Declaration]
-	loader        *ProcessLoader
+	builtins         *mapping.Map[string, Plugin]
+	localPlugins     *mapping.Map[string, Plugin]
+	globalPlugins    *mapping.Map[string, Plugin]
+	containerPlugins *mapping.Map[string, Plugin]
+	active           *mapping.Map[string, Plugin]
+	declarations     *mapping.Map[string, Declaration]
+	loader           *ProcessLoader
 }
 
 func NewRegistry(options LoadOptions, builtins ...Plugin) (*Registry, error) {
 	registry := &Registry{
-		builtins:      mapping.NewMap[string, Plugin](),
-		localPlugins:  mapping.NewMap[string, Plugin](),
-		globalPlugins: mapping.NewMap[string, Plugin](),
-		active:        mapping.NewMap[string, Plugin](),
-		declarations:  mapping.NewMap[string, Declaration](),
-		loader:        NewProcessLoader(options),
+		builtins:         mapping.NewMap[string, Plugin](),
+		localPlugins:     mapping.NewMap[string, Plugin](),
+		globalPlugins:    mapping.NewMap[string, Plugin](),
+		containerPlugins: mapping.NewMap[string, Plugin](),
+		active:           mapping.NewMap[string, Plugin](),
+		declarations:     mapping.NewMap[string, Declaration](),
+		loader:           NewProcessLoader(options),
 	}
 	for _, item := range builtins {
 		if err := registry.addBuiltin(item); err != nil {
@@ -52,12 +54,13 @@ func NewRegistry(options LoadOptions, builtins ...Plugin) (*Registry, error) {
 
 func (r *Registry) CloneWithOptions(options LoadOptions) *Registry {
 	clone := &Registry{
-		builtins:      mapping.NewMap[string, Plugin](),
-		localPlugins:  mapping.NewMap[string, Plugin](),
-		globalPlugins: mapping.NewMap[string, Plugin](),
-		active:        mapping.NewMap[string, Plugin](),
-		declarations:  mapping.NewMap[string, Declaration](),
-		loader:        NewProcessLoader(options),
+		builtins:         mapping.NewMap[string, Plugin](),
+		localPlugins:     mapping.NewMap[string, Plugin](),
+		globalPlugins:    mapping.NewMap[string, Plugin](),
+		containerPlugins: mapping.NewMap[string, Plugin](),
+		active:           mapping.NewMap[string, Plugin](),
+		declarations:     mapping.NewMap[string, Declaration](),
+		loader:           NewProcessLoader(options),
 	}
 	r.builtins.Range(func(id string, item Plugin) bool {
 		clone.builtins.Set(id, item)
@@ -71,8 +74,16 @@ func (r *Registry) CloneWithOptions(options LoadOptions) *Registry {
 		clone.globalPlugins.Set(namespace, item)
 		return true
 	})
+	r.containerPlugins.Range(func(namespace string, item Plugin) bool {
+		clone.containerPlugins.Set(namespace, item)
+		return true
+	})
 	r.active.Range(func(namespace string, item Plugin) bool {
 		clone.active.Set(namespace, item)
+		return true
+	})
+	r.declarations.Range(func(namespace string, declaration Declaration) bool {
+		clone.declarations.Set(namespace, declaration)
 		return true
 	})
 	return clone
@@ -89,7 +100,7 @@ func (r *Registry) Declare(ctx context.Context, declaration Declaration) error {
 	switch declaration.Source {
 	case SourceBuiltin:
 		item, err = r.resolveBuiltin(declaration)
-	case SourceLocal, SourceGlobal:
+	case SourceLocal, SourceGlobal, SourceContainer:
 		item, err = r.loader.Load(ctx, declaration)
 	default:
 		return oops.In("bu1ld.plugins").
@@ -303,6 +314,8 @@ func (r *Registry) setScoped(source Source, namespace string, item Plugin) {
 		r.localPlugins.Set(namespace, item)
 	case SourceGlobal:
 		r.globalPlugins.Set(namespace, item)
+	case SourceContainer:
+		r.containerPlugins.Set(namespace, item)
 	}
 }
 
@@ -328,6 +341,18 @@ func (r *Registry) decoratePluginAction(namespace string, spec TaskSpec) TaskSpe
 		}
 		if _, exists := spec.Action.Params["path"]; !exists && declaration.Path != "" {
 			spec.Action.Params["path"] = declaration.Path
+		}
+		if _, exists := spec.Action.Params["image"]; !exists && declaration.Image != "" {
+			spec.Action.Params["image"] = declaration.Image
+		}
+		if _, exists := spec.Action.Params["pull"]; !exists && declaration.Pull != "" {
+			spec.Action.Params["pull"] = declaration.Pull
+		}
+		if _, exists := spec.Action.Params["network"]; !exists && declaration.Network != "" {
+			spec.Action.Params["network"] = declaration.Network
+		}
+		if _, exists := spec.Action.Params["work_dir"]; !exists && declaration.WorkDir != "" {
+			spec.Action.Params["work_dir"] = declaration.WorkDir
 		}
 	}
 	return spec
@@ -355,6 +380,8 @@ func (r *Registry) resolveBuiltin(declaration Declaration) (Plugin, error) {
 func normalizeDeclaration(declaration Declaration) Declaration {
 	if declaration.Source == "" {
 		switch {
+		case declaration.Image != "":
+			declaration.Source = SourceContainer
 		case declaration.ID == "":
 			declaration.Source = SourceBuiltin
 		case strings.HasPrefix(declaration.ID, "builtin."):

@@ -41,6 +41,27 @@ func NewProcessLoader(options LoadOptions) *ProcessLoader {
 
 func (l *ProcessLoader) Load(ctx context.Context, declaration Declaration) (Plugin, error) {
 	declaration = normalizeDeclaration(declaration)
+	if declaration.Source == SourceContainer {
+		client, err := startContainerClient(ctx, declaration, l.options)
+		if err != nil {
+			return nil, oops.In("bu1ld.plugins").
+				With("namespace", declaration.Namespace).
+				With("source", declaration.Source).
+				With("image", declaration.Image).
+				Wrapf(err, "start plugin container")
+		}
+		if err := client.handshake(ctx, declaration, l.options.handshakeTimeout()); err != nil {
+			closeErr := client.close()
+			return nil, oops.In("bu1ld.plugins").
+				With("namespace", declaration.Namespace).
+				With("source", declaration.Source).
+				With("image", declaration.Image).
+				Wrapf(client.decorateProcessError(err, closeErr), "start plugin container")
+		}
+		l.addClient(client)
+		return client, nil
+	}
+
 	path, err := l.resolvePath(declaration)
 	if err != nil {
 		return nil, err
@@ -62,21 +83,27 @@ func (l *ProcessLoader) Load(ctx context.Context, declaration Declaration) (Plug
 			With("path", path).
 			Wrapf(client.decorateProcessError(err, closeErr), "start plugin process")
 	}
+	l.addClient(client)
+	return client, nil
+}
+
+func (l *ProcessLoader) addClient(client *processClient) {
 	if l.clients == nil {
 		l.clients = list.NewList[*processClient]()
 	}
 	l.clients.Add(client)
-	return client, nil
 }
 
 type processClient struct {
-	cmd      *exec.Cmd
-	conn     jsonrpc2.Conn
-	cancel   context.CancelFunc
-	stderr   *processStderr
-	metadata Metadata
-	mu       sync.Mutex
-	closed   bool
+	cmd           *exec.Cmd
+	conn          jsonrpc2.Conn
+	cancel        context.CancelFunc
+	stderr        *processStderr
+	closeFunc     func() error
+	workDirMapper *containerWorkDirMapper
+	metadata      Metadata
+	mu            sync.Mutex
+	closed        bool
 }
 
 func startProcessClient(path string, options LoadOptions) (*processClient, error) {
@@ -176,6 +203,13 @@ func (c *processClient) Execute(ctx context.Context, request ExecuteRequest) (Ex
 	if !SupportsCapability(c.metadata, CapabilityExecute) {
 		return ExecuteResult{}, fmt.Errorf("plugin does not support execute")
 	}
+	if c.workDirMapper != nil {
+		workDir, err := c.workDirMapper.Map(request.WorkDir)
+		if err != nil {
+			return ExecuteResult{}, err
+		}
+		request.WorkDir = workDir
+	}
 	params := pluginapi.ExecuteParams{Request: request}
 	var result pluginapi.ExecuteResult
 	if err := c.call(ctx, pluginapi.MethodExecute, params, &result); err != nil {
@@ -213,23 +247,31 @@ func (c *processClient) close() error {
 	c.closed = true
 	cancel := c.cancel
 	conn := c.conn
-	process := c.cmd.Process
 	cmd := c.cmd
+	var process *os.Process
+	if cmd != nil {
+		process = cmd.Process
+	}
+	closeFunc := c.closeFunc
 	c.mu.Unlock()
 
+	var err error
 	if cancel != nil {
 		cancel()
 	}
 	if conn != nil {
-		_ = conn.Close()
+		err = errors.Join(err, conn.Close())
 	}
 	if process != nil {
-		_ = process.Kill()
+		err = errors.Join(err, process.Kill())
+	}
+	if closeFunc != nil {
+		err = errors.Join(err, closeFunc())
 	}
 	if cmd != nil {
-		return cmd.Wait()
+		err = errors.Join(err, cmd.Wait())
 	}
-	return nil
+	return err
 }
 
 type pluginReadWriteCloser struct {
@@ -417,6 +459,11 @@ func (l *ProcessLoader) resolvePath(declaration Declaration) (string, error) {
 			return l.resolveExplicitPath(declaration, globalPluginDir(l.options.GlobalDir), false)
 		}
 		return l.resolveInstalledPath(globalPluginDir(l.options.GlobalDir), declaration)
+	case SourceContainer:
+		return "", oops.In("bu1ld.plugins").
+			With("namespace", declaration.Namespace).
+			With("source", declaration.Source).
+			New("container plugins do not have a local executable path")
 	default:
 		return "", oops.In("bu1ld.plugins").
 			With("namespace", declaration.Namespace).

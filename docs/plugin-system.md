@@ -1,9 +1,9 @@
 # Plugin System
 
 Plugins let bu1ld add task rules without hardcoding every language or tool into
-the core binary. A plugin can be a builtin Go implementation linked into bu1ld
-or an external process written in any language that implements the JSON-RPC
-protocol over stdin/stdout.
+the core binary. A plugin can be a builtin Go implementation linked into bu1ld,
+an external process written in any language, or a containerized process. External
+plugins implement the JSON-RPC protocol over stdin/stdout.
 
 ## Plugin Sources
 
@@ -21,6 +21,13 @@ plugin java {
   id = "org.bu1ld.java"
   version = "0.1.3"
 }
+
+plugin go {
+  source = container
+  id = "org.bu1ld.go"
+  version = "0.1.3"
+  image = "ghcr.io/acme/bu1ld-go-plugin:0.1.3"
+}
 ```
 
 Supported runtime sources:
@@ -28,6 +35,7 @@ Supported runtime sources:
 - `builtin`: native Go plugin linked into the CLI.
 - `local`: project `.bu1ld/plugins/<id>/<version>`.
 - `global`: user `~/.bu1ld/plugins/<id>/<version>`.
+- `container`: Docker image started through the official Docker Engine Go API.
 
 For local development, keep `source = local` or `source = global` and set
 `path`. The path can point at:
@@ -47,6 +55,38 @@ plugin java {
   path = "./plugins/java/build/plugin/plugin.toml"
 }
 ```
+
+Container plugins use the same JSON-RPC protocol, but bu1ld starts an ephemeral
+container instead of a host process. The project directory is bind-mounted read
+write into the container at `/workspace` by default, and `plugin.exec` work
+directories are mapped from host paths into that mount. The image entrypoint or
+command must start the plugin JSON-RPC server on stdin/stdout.
+
+```text
+plugin go {
+  source = container
+  id = "org.bu1ld.go"
+  version = "0.1.3"
+  image = "registry.local/build/bu1ld-go-plugin:0.1.3"
+  pull = "missing"
+  network = "bridge"
+  work_dir = "/workspace"
+}
+```
+
+Container-specific fields:
+
+- `image`: required container image reference.
+- `pull`: optional image pull policy. Supported values are `missing` (default),
+  `always`, and `never`.
+- `network`: optional Docker network mode such as `bridge`, `host`, or `none`.
+  When omitted, Docker's default network mode is used.
+- `work_dir`: optional project mount path inside the container. Defaults to
+  `/workspace`.
+
+bu1ld does not shell out to `docker`; it uses the Docker Engine Go client
+directly. The Docker client reads the normal Docker environment such as
+`DOCKER_HOST`, `DOCKER_TLS_VERIFY`, and `DOCKER_CERT_PATH`.
 
 ## Manifest
 
@@ -68,7 +108,7 @@ manifest directory unless it is absolute.
 
 ## Protocol
 
-Process plugins use JSON-RPC 2.0 request/response messages on stdin/stdout.
+Process and container plugins use JSON-RPC 2.0 request/response messages on stdin/stdout.
 bu1ld uses `go.lsp.dev/jsonrpc2` with `Content-Length` stream framing, matching
 the LSP-style framing supported by libraries such as Eclipse LSP4J JSON-RPC.
 Stdout is reserved for protocol frames; logs should go to stderr or a file.
@@ -129,9 +169,11 @@ through `execute`.
 ## Locks And Doctor
 
 `bu1ld plugins lock` writes `bu1ld.lock` with resolved plugin source,
-namespace, ID, version, path, and binary checksum. When the lock exists,
-`plugins doctor` verifies paths and checksums in addition to manifest validity
-and protocol metadata.
+namespace, ID, version, path/image, and binary checksum when a host executable
+is used. Container plugin locks record the image and container options instead
+of a host binary checksum. When the lock exists, `plugins doctor` verifies paths
+and checksums in addition to manifest validity, image declarations, and protocol
+metadata.
 
 `plugins list` and `plugins doctor` are intentionally runtime checks. They
 inspect builtin plugins, declared plugins, local installs, global installs, and

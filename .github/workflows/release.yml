@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   goreleaser:
@@ -29,6 +30,9 @@ jobs:
           distribution: temurin
           java-version: "21"
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Test Go
         run: go test ./...
 
@@ -46,6 +50,110 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute container metadata
+        id: container
+        shell: bash
+        run: |
+          echo "namespace=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Metadata for bu1ld image
+        id: meta-bu1ld
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.container.outputs.namespace }}/bu1ld
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Publish bu1ld image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packaging/container/bu1ld.Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-bu1ld.outputs.tags }}
+          labels: ${{ steps.meta-bu1ld.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.container.outputs.version }}
+            COMMIT=${{ github.sha }}
+
+      - name: Metadata for Go plugin image
+        id: meta-go-plugin
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.container.outputs.namespace }}/bu1ld-go-plugin
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Publish Go plugin image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packaging/container/bu1ld-go-plugin.Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-go-plugin.outputs.tags }}
+          labels: ${{ steps.meta-go-plugin.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.container.outputs.version }}
+            COMMIT=${{ github.sha }}
+
+  java-plugin-container:
+    needs: goreleaser
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute container metadata
+        id: container
+        shell: bash
+        run: |
+          echo "namespace=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Metadata for Java plugin image
+        id: meta-java-plugin
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.container.outputs.namespace }}/bu1ld-java-plugin
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Publish Java plugin image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packaging/container/bu1ld-java-plugin.Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-java-plugin.outputs.tags }}
+          labels: ${{ steps.meta-java-plugin.outputs.labels }}
 
   java-plugin-assets:
     needs: goreleaser
@@ -128,10 +236,48 @@ jobs:
           "$hash  $asset" | Set-Content "$asset.sha256"
           gh release upload $env:GITHUB_REF_NAME $asset "$asset.sha256" --clobber
 
+  verify-container-images:
+    needs:
+      - goreleaser
+      - java-plugin-container
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Compute container metadata
+        id: container
+        shell: bash
+        run: |
+          echo "namespace=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull and smoke test container images
+        shell: bash
+        run: |
+          set -euo pipefail
+          namespace="${{ steps.container.outputs.namespace }}"
+          version="${{ steps.container.outputs.version }}"
+
+          docker pull "$namespace/bu1ld:$version"
+          docker run --rm "$namespace/bu1ld:$version" --help
+
+          docker pull "$namespace/bu1ld-go-plugin:$version"
+          docker run --rm "$namespace/bu1ld-go-plugin:$version" --help
+
+          docker pull "$namespace/bu1ld-java-plugin:$version"
+          docker run --rm --entrypoint /bin/sh "$namespace/bu1ld-java-plugin:$version" -c 'test -x /opt/bu1ld-java-plugin/bin/bu1ld-java-plugin'
+
   verify-release-assets:
     needs:
       - goreleaser
       - java-plugin-assets
+      - verify-container-images
     runs-on: ubuntu-latest
 
     steps:

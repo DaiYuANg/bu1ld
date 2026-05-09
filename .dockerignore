@@ -1,0 +1,11 @@
+.git/
+.bu1ld/
+.tmp/
+dist/
+
+examples/**/.bu1ld/
+examples/**/build/
+examples/**/dist/
+
+plugins/java/.gradle/
+plugins/java/build/

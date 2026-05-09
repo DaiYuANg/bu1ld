@@ -26,6 +26,10 @@ type pluginEntry struct {
 	ID        string
 	Version   string
 	Path      string
+	Image     string
+	Pull      string
+	Network   string
+	WorkDir   string
 	Checksum  string
 	Rules     []string
 	Status    string
@@ -173,6 +177,10 @@ func inspectPlugin(ctx context.Context, registry *buildplugin.Registry, options 
 		ID:        declaration.ID,
 		Version:   declaration.Version,
 		Path:      declaration.Path,
+		Image:     declaration.Image,
+		Pull:      declaration.Pull,
+		Network:   declaration.Network,
+		WorkDir:   declaration.WorkDir,
 		Status:    "ok",
 	}
 
@@ -274,6 +282,10 @@ func lockedPluginFromEntry(entry pluginEntry) (buildplugin.LockedPlugin, error) 
 		ID:        entry.ID,
 		Version:   entry.Version,
 		Path:      entry.Path,
+		Image:     entry.Image,
+		Pull:      entry.Pull,
+		Network:   entry.Network,
+		WorkDir:   entry.WorkDir,
 	}
 	if entry.Path == "" {
 		return locked, nil
@@ -315,6 +327,10 @@ func applyLockDiagnostics(entries []pluginEntry, lock buildplugin.LockFile) []pl
 			ID:        locked.ID,
 			Version:   locked.Version,
 			Path:      locked.Path,
+			Image:     locked.Image,
+			Pull:      locked.Pull,
+			Network:   locked.Network,
+			WorkDir:   locked.WorkDir,
 			Checksum:  locked.Checksum,
 			Status:    "stale-lock",
 			Err:       errors.New("locked plugin is not present in current plugin graph"),
@@ -327,6 +343,18 @@ func withLockDiagnostic(entry pluginEntry, locked buildplugin.LockedPlugin) plug
 	entry.Checksum = locked.Checksum
 	if locked.Version != "" && entry.Version != "" && entry.Version != locked.Version {
 		return withPluginIssue(entry, "lock-mismatch", fmt.Errorf("version %q does not match lockfile version %q", entry.Version, locked.Version))
+	}
+	if locked.Image != "" && entry.Image != locked.Image {
+		return withPluginIssue(entry, "lock-mismatch", fmt.Errorf("image %q does not match lockfile image %q", entry.Image, locked.Image))
+	}
+	if locked.Pull != "" && entry.Pull != locked.Pull {
+		return withPluginIssue(entry, "lock-mismatch", fmt.Errorf("pull %q does not match lockfile pull %q", entry.Pull, locked.Pull))
+	}
+	if locked.Network != "" && entry.Network != locked.Network {
+		return withPluginIssue(entry, "lock-mismatch", fmt.Errorf("network %q does not match lockfile network %q", entry.Network, locked.Network))
+	}
+	if locked.WorkDir != "" && entry.WorkDir != locked.WorkDir {
+		return withPluginIssue(entry, "lock-mismatch", fmt.Errorf("work_dir %q does not match lockfile work_dir %q", entry.WorkDir, locked.WorkDir))
 	}
 	if locked.Path == "" {
 		return entry
@@ -357,7 +385,9 @@ func withPluginIssue(entry pluginEntry, status string, err error) pluginEntry {
 }
 
 func isProcessPluginSource(source buildplugin.Source) bool {
-	return source == buildplugin.SourceLocal || source == buildplugin.SourceGlobal
+	return source == buildplugin.SourceLocal ||
+		source == buildplugin.SourceGlobal ||
+		source == buildplugin.SourceContainer
 }
 
 func lockDiagnosticKey(source buildplugin.Source, namespace, id string) string {
@@ -366,7 +396,7 @@ func lockDiagnosticKey(source buildplugin.Source, namespace, id string) string {
 
 func writePluginTable(output io.Writer, entries []pluginEntry) error {
 	writer := tabwriter.NewWriter(output, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(writer, "SOURCE\tNAMESPACE\tID\tVERSION\tPATH\tRULES\tSTATUS"); err != nil {
+	if _, err := fmt.Fprintln(writer, "SOURCE\tNAMESPACE\tID\tVERSION\tPATH\tIMAGE\tRULES\tSTATUS"); err != nil {
 		return oops.In("bu1ld.app").Wrapf(err, "write plugin report")
 	}
 	for i := range entries {
@@ -377,12 +407,13 @@ func writePluginTable(output io.Writer, entries []pluginEntry) error {
 		}
 		if _, err := fmt.Fprintf(
 			writer,
-			"%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			emptyDash(string(entry.Source)),
 			emptyDash(entry.Namespace),
 			emptyDash(entry.ID),
 			emptyDash(entry.Version),
 			emptyDash(entry.Path),
+			emptyDash(entry.Image),
 			emptyDash(strings.Join(entry.Rules, ",")),
 			status,
 		); err != nil {
@@ -440,6 +471,9 @@ func sortPluginEntries(entries []pluginEntry) []pluginEntry {
 		if left.ID != right.ID {
 			return strings.Compare(left.ID, right.ID)
 		}
+		if left.Image != right.Image {
+			return strings.Compare(left.Image, right.Image)
+		}
 		return strings.Compare(left.Path, right.Path)
 	})
 	return entries
@@ -452,6 +486,7 @@ func pluginEntryKey(entry pluginEntry) string {
 		entry.ID,
 		entry.Version,
 		entry.Path,
+		entry.Image,
 	}, "\x00")
 }
 

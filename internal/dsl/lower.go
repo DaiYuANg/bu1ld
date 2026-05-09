@@ -56,6 +56,30 @@ func PluginDeclarations(file *File) ([]PluginDeclaration, error) {
 				return nil, err
 			}
 		}
+		if field, ok := form.Field("image"); ok {
+			declaration.Image, err = stringFieldValue(file.Result.FileSet, field)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if field, ok := form.Field("pull"); ok {
+			declaration.Pull, err = stringFieldValue(file.Result.FileSet, field)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if field, ok := form.Field("network"); ok {
+			declaration.Network, err = stringFieldValue(file.Result.FileSet, field)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if field, ok := form.Field("work_dir"); ok {
+			declaration.WorkDir, err = stringFieldValue(file.Result.FileSet, field)
+			if err != nil {
+				return nil, err
+			}
+		}
 		declarations.Add(PluginDeclaration{
 			Declaration: declaration,
 			Pos:         form.Pos,

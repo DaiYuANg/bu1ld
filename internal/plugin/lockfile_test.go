@@ -19,6 +19,16 @@ func TestLockFileRoundTrip(t *testing.T) {
 			Path:      "/plugins/rust",
 			Checksum:  "sha256:abc",
 		},
+		{
+			Source:    SourceContainer,
+			Namespace: "go",
+			ID:        "org.bu1ld.go",
+			Version:   "0.1.3",
+			Image:     "ghcr.io/example/bu1ld-go-plugin:0.1.3",
+			Pull:      "never",
+			Network:   "none",
+			WorkDir:   "/repo",
+		},
 	})
 	if err := WriteLockFile(path, lock); err != nil {
 		t.Fatalf("WriteLockFile() error = %v", err)
@@ -37,6 +47,16 @@ func TestLockFileRoundTrip(t *testing.T) {
 	}
 	if plugin.Checksum != "sha256:abc" {
 		t.Fatalf("checksum = %q, want sha256:abc", plugin.Checksum)
+	}
+	containerPlugin, ok := loaded.Find(SourceContainer, "go", "org.bu1ld.go")
+	if !ok {
+		t.Fatalf("locked container plugin not found")
+	}
+	if got, want := containerPlugin.Image, "ghcr.io/example/bu1ld-go-plugin:0.1.3"; got != want {
+		t.Fatalf("image = %q, want %q", got, want)
+	}
+	if got, want := containerPlugin.Pull, "never"; got != want {
+		t.Fatalf("pull = %q, want %q", got, want)
 	}
 }
 
