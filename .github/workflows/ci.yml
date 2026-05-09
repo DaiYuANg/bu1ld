@@ -65,6 +65,33 @@ jobs:
         shell: pwsh
         run: .\plugins\java\gradlew.bat -p plugins/java check
 
+  typescript-plugin:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-15
+          - windows-latest
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: plugins/typescript/package-lock.json
+
+      - name: Install TypeScript plugin dependencies
+        run: npm --prefix plugins/typescript ci
+
+      - name: Check TypeScript plugin
+        run: npm --prefix plugins/typescript test
+
   remote-cache-e2e:
     runs-on: ubuntu-latest
 
@@ -119,3 +146,11 @@ jobs:
           file: packaging/container/bu1ld-java-plugin.Dockerfile
           push: false
           tags: bu1ld-java-plugin:ci
+
+      - name: Build TypeScript plugin image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packaging/container/bu1ld-typescript-plugin.Dockerfile
+          push: false
+          tags: bu1ld-typescript-plugin:ci

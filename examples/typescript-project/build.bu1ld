@@ -1,0 +1,17 @@
+workspace {
+  name = "typescript-project"
+}
+
+plugin typescript {
+  source = local
+  id = "org.bu1ld.typescript"
+  version = "0.1.3"
+  path = "../../plugins/typescript/plugin.toml"
+}
+
+typescript {
+  srcs = ["src/**/*.ts"]
+  out_dir = "dist"
+  target = "ES2022"
+  module = "CommonJS"
+}

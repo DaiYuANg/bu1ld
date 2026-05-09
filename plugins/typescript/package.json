@@ -1,0 +1,26 @@
+{
+  "name": "@bu1ld/typescript-plugin",
+  "version": "0.1.3",
+  "private": true,
+  "description": "First-party TypeScript and JavaScript build plugin for bu1ld.",
+  "license": "Apache-2.0",
+  "type": "commonjs",
+  "bin": {
+    "bu1ld-typescript-plugin": "dist/main.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "npm run build && node --test dist/**/*.test.js",
+    "test": "npm run check"
+  },
+  "dependencies": {
+    "typescript": "^5.9.3",
+    "vscode-jsonrpc": "^8.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0"
+  },
+  "engines": {
+    "node": ">=20.19"
+  }
+}

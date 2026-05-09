@@ -35,6 +35,7 @@ extract_tar() {
 main_dir="$work/bu1ld"
 go_plugin_asset="$release_dir/bu1ld-go-plugin_${version}_linux_amd64.tar.gz"
 java_plugin_asset="$release_dir/bu1ld-java-plugin_${version}_linux_amd64.tar.gz"
+typescript_plugin_asset="$release_dir/bu1ld-typescript-plugin_${version}.tar.gz"
 extract_tar "$release_dir/bu1ld_${version}_linux_amd64.tar.gz" "$main_dir"
 
 bu1ld="$main_dir/bu1ld"
@@ -47,6 +48,7 @@ registry="$work/registry"
 mkdir -p "$registry/plugins" "$registry/assets"
 cp "$go_plugin_asset" "$registry/assets/"
 cp "$java_plugin_asset" "$registry/assets/"
+cp "$typescript_plugin_asset" "$registry/assets/"
 cat > "$registry/plugins.toml" <<EOF_REGISTRY
 version = 1
 
@@ -57,6 +59,10 @@ file = "plugins/org.bu1ld.go.toml"
 [[plugins]]
 id = "org.bu1ld.java"
 file = "plugins/org.bu1ld.java.toml"
+
+[[plugins]]
+id = "org.bu1ld.typescript"
+file = "plugins/org.bu1ld.typescript.toml"
 EOF_REGISTRY
 
 cat > "$registry/plugins/org.bu1ld.go.toml" <<EOF_GO
@@ -91,6 +97,20 @@ url = "../assets/$(basename "$java_plugin_asset")"
 format = "tar.gz"
 EOF_JAVA
 
+cat > "$registry/plugins/org.bu1ld.typescript.toml" <<EOF_TYPESCRIPT
+id = "org.bu1ld.typescript"
+namespace = "typescript"
+
+[[versions]]
+version = "$version"
+status = "approved"
+manifest = "plugin.toml"
+
+[[versions.assets]]
+url = "../assets/$(basename "$typescript_plugin_asset")"
+format = "tar.gz"
+EOF_TYPESCRIPT
+
 copy_example() {
   local name="$1"
   local target="$work/$name"
@@ -113,6 +133,10 @@ install_plugin "$go_project" org.bu1ld.go
 java_project="$(copy_example java-project)"
 install_plugin "$java_project" org.bu1ld.java
 "$bu1ld" --project-dir "$java_project" --no-cache build
+
+typescript_project="$(copy_example typescript-project)"
+install_plugin "$typescript_project" org.bu1ld.typescript
+"$bu1ld" --project-dir "$typescript_project" --no-cache build
 
 monorepo="$(copy_example multilang-monorepo)"
 install_plugin "$monorepo" org.bu1ld.go

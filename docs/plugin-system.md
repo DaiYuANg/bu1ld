@@ -28,6 +28,13 @@ plugin go {
   version = "0.1.3"
   image = "ghcr.io/acme/bu1ld-go-plugin:0.1.3"
 }
+
+plugin typescript {
+  source = container
+  id = "org.bu1ld.typescript"
+  version = "0.1.3"
+  image = "ghcr.io/acme/bu1ld-typescript-plugin:0.1.3"
+}
 ```
 
 Supported runtime sources:

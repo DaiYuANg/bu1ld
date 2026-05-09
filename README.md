@@ -11,7 +11,7 @@ The first version includes:
 - A basic DSL language server with parse diagnostics, semantic diagnostics, and schema completions
 - A plugin registry with embedded, local, HTTP(S), and Git metadata sources
 - Builtin `docker`, `archive`, and `git` plugins
-- First-party external Go and Java process plugins
+- First-party external Go, Java, and TypeScript process plugins
 - Monorepo workspace package discovery and package-scoped task ids
 - Task graph planning with dependency ordering and cycle detection
 - A configuration cache for unchanged build scripts and plugin binaries
@@ -57,8 +57,11 @@ The first version includes:
 │   │   ├── cmd/
 │   │   │   └── bu1ld-go-plugin/
 │   │   └── go.mod
-│   └── java/
-│       ├── build.gradle.kts
+│   ├── java/
+│   │   ├── build.gradle.kts
+│   │   └── src/
+│   └── typescript/
+│       ├── package.json
 │       └── src/
 ├── integration/
 │   └── vscode/
@@ -69,6 +72,7 @@ The first version includes:
 │   ├── plugin-registry.md
 │   ├── go-plugin.md
 │   ├── java-plugin.md
+│   ├── typescript-plugin.md
 │   ├── remote-cache.md
 │   └── releases.md
 ├── build.bu1ld
@@ -86,6 +90,7 @@ Detailed design notes live under [`docs/`](docs/):
 - [Plugin Registry](docs/plugin-registry.md)
 - [Go Plugin](docs/go-plugin.md)
 - [Java Plugin](docs/java-plugin.md)
+- [TypeScript Plugin](docs/typescript-plugin.md)
 - [Remote Cache](docs/remote-cache.md)
 - [Releases](docs/releases.md)
 - [Upgrading](docs/upgrading.md)
@@ -285,6 +290,7 @@ First-party release images are published to GitHub Container Registry:
 - `ghcr.io/daiyuang/bu1ld`
 - `ghcr.io/daiyuang/bu1ld-go-plugin`
 - `ghcr.io/daiyuang/bu1ld-java-plugin`
+- `ghcr.io/daiyuang/bu1ld-typescript-plugin`
 
 Installed plugins can include a manifest at
 `.bu1ld/plugins/<id>/<version>/plugin.toml` or
@@ -302,9 +308,9 @@ name = "binary"
 
 `bu1ld plugins search`, `bu1ld plugins info`, `bu1ld plugins install`, and
 `bu1ld plugins update` operate on the plugin distribution registry. The CLI
-embeds the first-party registry entries for `org.bu1ld.go` and
-`org.bu1ld.java`, and projects can override the registry metadata source with
-local, HTTP(S), or Git-backed metadata. See
+embeds the first-party registry entries for `org.bu1ld.go`,
+`org.bu1ld.java`, and `org.bu1ld.typescript`, and projects can override the
+registry metadata source with local, HTTP(S), or Git-backed metadata. See
 [`docs/plugin-registry.md`](docs/plugin-registry.md) for the registry source
 model and TOML schema.
 
@@ -373,6 +379,26 @@ java {
 java.compile generated {
   srcs = ["generated/**/*.java"]
   out = "build/classes/java/generated"
+}
+```
+
+The first-party TypeScript plugin is written in TypeScript and uses the
+TypeScript Compiler API directly. It does not register tasks from project
+`package.json` scripts; bu1ld owns the typecheck and compile task definitions.
+See [`docs/typescript-plugin.md`](docs/typescript-plugin.md) for the rule model.
+
+```text
+plugin typescript {
+  source = local
+  id = "org.bu1ld.typescript"
+  version = "0.1.3"
+}
+
+typescript {
+  srcs = ["src/**/*.ts"]
+  out_dir = "dist"
+  target = "ES2022"
+  module = "CommonJS"
 }
 ```
 
@@ -469,7 +495,8 @@ Optional config files are loaded through `configx` from `bu1ld.yaml`, `bu1ld.tom
 
 GoReleaser builds the first-party Go executables, including `bu1ld-go-plugin`.
 The Go plugin also has an independent GoReleaser config for standalone plugin
-releases. The Java plugin is packaged with Gradle/jpackage. See
+releases. The Java plugin is packaged with Gradle/jpackage, and the TypeScript
+plugin is packaged with npm plus a Node runtime container image. See
 [`docs/releases.md`](docs/releases.md) for the release model.
 
 Local snapshot release:
@@ -508,5 +535,6 @@ all supported platform binaries.
 go test ./...
 go test ./plugins/go/...
 ./plugins/java/gradlew -p plugins/java check
+npm --prefix plugins/typescript test
 go run ./cmd/cli build --no-cache java_plugin_verify
 ```

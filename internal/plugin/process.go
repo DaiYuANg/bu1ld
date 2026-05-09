@@ -291,6 +291,10 @@ func (c pluginReadWriteCloser) Close() error {
 }
 
 func processCommand(path string) *exec.Cmd {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".js", ".mjs", ".cjs":
+		return exec.Command("node", path)
+	}
 	if runtime.GOOS == "windows" {
 		ext := strings.ToLower(filepath.Ext(path))
 		if ext == ".bat" || ext == ".cmd" {

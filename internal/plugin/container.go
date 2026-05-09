@@ -114,10 +114,10 @@ func newContainerPluginSpec(declaration Declaration, options LoadOptions) (conta
 	}
 	containerProjectDir := normalizeContainerProjectDir(declaration.WorkDir)
 	networkMode := container.NetworkMode(strings.TrimSpace(declaration.Network))
-	env := mergeEnv([]string{
+	env := mergeEnv(options.Env, []string{
 		"BU1LD_PROJECT_DIR=" + containerProjectDir,
 		"BU1LD_HOST_PROJECT_DIR=" + hostProjectDir,
-	}, options.Env)
+	})
 	labels := map[string]string{
 		"org.bu1ld.plugin":           "true",
 		"org.bu1ld.plugin.namespace": declaration.Namespace,

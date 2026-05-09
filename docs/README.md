@@ -15,6 +15,8 @@ for the root README.
   defaults, `GOCACHEPROG` wiring, and embedded GoReleaser orchestration.
 - [Java Plugin](java-plugin.md): Java plugin build, JPMS packaging, native
   compiler tasks, task registration, RPC server startup, and logging.
+- [TypeScript Plugin](typescript-plugin.md): TypeScript plugin build, Compiler
+  API task execution, and container packaging.
 - [Remote Cache](remote-cache.md): local action cache, HTTP coordinator, Go
   cacheprog adapter, and dotenv-based LAN configuration.
 - [Releases](releases.md): GoReleaser, standalone Go plugin releases, Java

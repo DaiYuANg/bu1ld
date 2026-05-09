@@ -62,6 +62,18 @@ func TestProcessLoaderPerformsMetadataHandshake(t *testing.T) {
 	}
 }
 
+func TestProcessCommandUsesNodeForJavaScriptPlugin(t *testing.T) {
+	t.Parallel()
+
+	command := processCommand(filepath.Join("plugins", "typescript", "dist", "main.js"))
+	if got := strings.TrimSuffix(filepath.Base(command.Path), ".exe"); got != "node" {
+		t.Fatalf("command path = %q, want node", got)
+	}
+	if len(command.Args) != 2 || command.Args[1] != filepath.Join("plugins", "typescript", "dist", "main.js") {
+		t.Fatalf("command args = %#v, want node plus plugin path", command.Args)
+	}
+}
+
 func runTestPluginProcess() {
 	if message := os.Getenv("BU1LD_TEST_PLUGIN_STDERR"); message != "" {
 		_, _ = fmt.Fprintln(os.Stderr, message)

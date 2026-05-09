@@ -168,6 +168,10 @@ asset="$release_dir/bu1ld-go-plugin_${version}_windows_amd64.zip"
 validate_expected_asset "$asset"
 validate_plugin_archive "$asset" "org.bu1ld.go" "go" "windows"
 
+asset="$release_dir/bu1ld-typescript-plugin_${version}.tar.gz"
+validate_expected_asset "$asset"
+validate_plugin_archive "$asset" "org.bu1ld.typescript" "typescript" "linux"
+
 for target in "linux amd64 tar.gz" "darwin amd64 tar.gz" "darwin arm64 tar.gz" "windows amd64 zip"; do
   read -r goos goarch extension <<<"$target"
   asset="$release_dir/bu1ld-java-plugin_${version}_${goos}_${goarch}.${extension}"

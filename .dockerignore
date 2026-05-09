@@ -9,3 +9,5 @@ examples/**/dist/
 
 plugins/java/.gradle/
 plugins/java/build/
+plugins/typescript/dist/
+plugins/typescript/node_modules/

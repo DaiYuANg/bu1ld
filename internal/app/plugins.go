@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
@@ -520,10 +521,22 @@ func executableFileError(path string) error {
 	if runtime.GOOS == "windows" {
 		return nil
 	}
+	if isNodePluginBinary(path) {
+		return nil
+	}
 	if info.Mode()&0o111 == 0 {
 		return oops.In("bu1ld.plugins").
 			With("path", path).
 			Errorf("%s is not executable", path)
 	}
 	return nil
+}
+
+func isNodePluginBinary(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".js", ".mjs", ".cjs":
+		return true
+	default:
+		return false
+	}
 }

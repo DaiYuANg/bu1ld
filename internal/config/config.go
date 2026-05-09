@@ -144,6 +144,7 @@ func (c Config) LogPath() string {
 
 func (c Config) ChildEnv() []string {
 	return []string{
+		"BU1LD_PROJECT_DIR=" + c.WorkDir,
 		"BU1LD_ENV=" + c.Env,
 		"BU1LD_REMOTE_CACHE__URL=" + c.RemoteCacheURL,
 		"BU1LD_REMOTE_CACHE_URL=" + c.RemoteCacheURL,

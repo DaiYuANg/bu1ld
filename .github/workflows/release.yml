@@ -30,6 +30,13 @@ jobs:
           distribution: temurin
           java-version: "21"
 
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: plugins/typescript/package-lock.json
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -41,6 +48,11 @@ jobs:
 
       - name: Check Java plugin
         run: ./plugins/java/gradlew -p plugins/java check
+
+      - name: Check TypeScript plugin
+        run: |
+          npm --prefix plugins/typescript ci
+          npm --prefix plugins/typescript test
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
@@ -155,6 +167,50 @@ jobs:
           tags: ${{ steps.meta-java-plugin.outputs.tags }}
           labels: ${{ steps.meta-java-plugin.outputs.labels }}
 
+  typescript-plugin-container:
+    needs: goreleaser
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute container metadata
+        id: container
+        shell: bash
+        run: |
+          echo "namespace=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Metadata for TypeScript plugin image
+        id: meta-typescript-plugin
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.container.outputs.namespace }}/bu1ld-typescript-plugin
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Publish TypeScript plugin image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packaging/container/bu1ld-typescript-plugin.Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-typescript-plugin.outputs.tags }}
+          labels: ${{ steps.meta-typescript-plugin.outputs.labels }}
+
   java-plugin-assets:
     needs: goreleaser
     strategy:
@@ -236,10 +292,51 @@ jobs:
           "$hash  $asset" | Set-Content "$asset.sha256"
           gh release upload $env:GITHUB_REF_NAME $asset "$asset.sha256" --clobber
 
+  typescript-plugin-assets:
+    needs: goreleaser
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: plugins/typescript/package-lock.json
+
+      - name: Build TypeScript plugin
+        run: |
+          npm --prefix plugins/typescript ci
+          npm --prefix plugins/typescript run build
+          npm --prefix plugins/typescript prune --omit=dev
+          chmod +x plugins/typescript/dist/main.js
+
+      - name: Upload TypeScript plugin asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          asset="bu1ld-typescript-plugin_${version}.tar.gz"
+          stage="dist/typescript-plugin-package"
+          rm -rf "$stage"
+          mkdir -p "$stage"
+          cp plugins/typescript/plugin.toml "$stage/plugin.toml"
+          cp plugins/typescript/package.json "$stage/package.json"
+          cp plugins/typescript/package-lock.json "$stage/package-lock.json"
+          cp -R plugins/typescript/dist "$stage/dist"
+          cp -R plugins/typescript/node_modules "$stage/node_modules"
+          tar -czf "$asset" -C "$stage" .
+          sha256sum "$asset" > "$asset.sha256"
+          gh release upload "$GITHUB_REF_NAME" "$asset" "$asset.sha256" --clobber
+
   verify-container-images:
     needs:
       - goreleaser
       - java-plugin-container
+      - typescript-plugin-container
     runs-on: ubuntu-latest
 
     steps:
@@ -273,16 +370,25 @@ jobs:
           docker pull "$namespace/bu1ld-java-plugin:$version"
           docker run --rm --entrypoint /bin/sh "$namespace/bu1ld-java-plugin:$version" -c 'test -x /opt/bu1ld-java-plugin/bin/bu1ld-java-plugin'
 
+          docker pull "$namespace/bu1ld-typescript-plugin:$version"
+          docker run --rm --entrypoint /bin/sh "$namespace/bu1ld-typescript-plugin:$version" -c 'test -f /opt/bu1ld-typescript-plugin/dist/main.js'
+
   verify-release-assets:
     needs:
       - goreleaser
       - java-plugin-assets
+      - typescript-plugin-assets
       - verify-container-images
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
 
       - name: Download release assets
         env:
