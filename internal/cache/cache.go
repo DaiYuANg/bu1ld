@@ -6,11 +6,11 @@ import (
 	"path/filepath"
 	"slices"
 
-	"bu1ld/internal/build"
-	"bu1ld/internal/cachefile"
-	"bu1ld/internal/config"
-	"bu1ld/internal/fsx"
-	"bu1ld/internal/snapshot"
+	"github.com/lyonbrown4d/bu1ld/internal/build"
+	"github.com/lyonbrown4d/bu1ld/internal/cachefile"
+	"github.com/lyonbrown4d/bu1ld/internal/config"
+	"github.com/lyonbrown4d/bu1ld/internal/fsx"
+	"github.com/lyonbrown4d/bu1ld/internal/snapshot"
 
 	"github.com/arcgolabs/collectionx/list"
 	"github.com/arcgolabs/collectionx/set"

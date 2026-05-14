@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"slices"
 
-	"bu1ld/internal/build"
-	"bu1ld/internal/config"
-	buildplugin "bu1ld/internal/plugin"
+	"github.com/lyonbrown4d/bu1ld/internal/build"
+	"github.com/lyonbrown4d/bu1ld/internal/config"
+	buildplugin "github.com/lyonbrown4d/bu1ld/internal/plugin"
 
 	"github.com/arcgolabs/collectionx/list"
 	"github.com/arcgolabs/collectionx/mapping"

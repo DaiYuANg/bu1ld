@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	pluginparams "bu1ld/internal/plugins/params"
+	pluginparams "github.com/lyonbrown4d/bu1ld/internal/plugins/params"
 
 	"github.com/arcgolabs/collectionx/mapping"
 	dockerbuild "github.com/docker/docker/api/types/build"

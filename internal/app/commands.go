@@ -3,7 +3,7 @@ package app
 import (
 	"context"
 
-	"bu1ld/internal/build"
+	"github.com/lyonbrown4d/bu1ld/internal/build"
 
 	"github.com/samber/oops"
 )

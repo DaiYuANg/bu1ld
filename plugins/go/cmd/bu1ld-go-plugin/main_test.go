@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"testing"
 
-	"bu1ld/internal/gocacheprog"
-	"bu1ld/pkg/pluginapi"
 	"github.com/arcgolabs/dix"
 	"github.com/arcgolabs/dix/testx"
+	"github.com/lyonbrown4d/bu1ld/internal/gocacheprog"
+	"github.com/lyonbrown4d/bu1ld/pkg/pluginapi"
 )
 
 func TestGoPluginModuleResolvesPlugin(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"bu1ld/internal/dsl"
+	"github.com/lyonbrown4d/bu1ld/internal/dsl"
 )
 
 func TestServerPublishesDiagnostics(t *testing.T) {

@@ -1,7 +1,7 @@
 # Releases
 
 bu1ld uses GoReleaser for Go binaries, Gradle/jpackage for the Java plugin, and
-npm for the TypeScript plugin. The release model keeps first-party plugins
+npm for the Node plugin. The release model keeps first-party plugins
 visible as normal external plugins instead of hiding them inside the core CLI.
 
 ## Root GoReleaser
@@ -71,9 +71,9 @@ The workflow runs:
 - root Go tests
 - Go plugin tests
 - Java plugin Gradle checks
-- TypeScript plugin npm checks
+- Node plugin npm checks
 - container image build/publish for bu1ld, the Go plugin, the Java plugin, and
-  the TypeScript plugin
+  the Node plugin
 - root GoReleaser publish
 - Java plugin jpackage app-image builds on Linux, Windows, and macOS runners
 - release asset checksum and structure verification after all uploads
@@ -81,7 +81,7 @@ The workflow runs:
 
 Pull requests and normal branch pushes are covered by `.github/workflows/ci.yml`
 with a Linux/macOS/Windows matrix for Go tests, Go plugin tests, Java plugin
-checks, and TypeScript plugin checks. CI also runs a Linux remote-cache E2E that
+checks, and Node plugin checks. CI also runs a Linux remote-cache E2E that
 starts a coordinator, builds the Go plugin cacheprog adapter, and verifies a
 second Go build can hit the remote Go cache.
 
@@ -89,7 +89,7 @@ Go plugin release assets are produced by GoReleaser. Java plugin release assets
 are produced after GoReleaser creates the GitHub Release: each platform job runs
 `plugins/java assemble`, copies the jpackage app image contents and
 `plugin.toml` into one staging directory, archives that directory, and uploads
-the result to the same release. TypeScript plugin release assets are universal
+the result to the same release. Node plugin release assets are universal
 Node packages containing `plugin.toml`, compiled `dist/` files, and production
 `node_modules`.
 
@@ -100,12 +100,12 @@ Java plugin asset names follow:
 - `bu1ld-java-plugin_<version>_darwin_arm64.tar.gz`
 - `bu1ld-java-plugin_<version>_windows_amd64.zip`
 
-TypeScript plugin asset names follow:
+Node plugin asset names follow:
 
-- `bu1ld-typescript-plugin_<version>.tar.gz`
+- `bu1ld-node-plugin_<version>.tar.gz`
 
 Java archive roots contain `plugin.toml` plus the app image contents. The
-TypeScript archive root contains `plugin.toml`, `dist/`, package metadata, and
+Node archive root contains `plugin.toml`, `dist/`, package metadata, and
 production `node_modules`. This means registry installation and local
 `path = ".../plugin.toml"` development both use the same manifest-driven layout.
 
@@ -113,10 +113,10 @@ production `node_modules`. This means registry installation and local
 
 Tagged releases also publish Linux container images to GitHub Container Registry:
 
-- `ghcr.io/daiyuang/bu1ld:<version>`
-- `ghcr.io/daiyuang/bu1ld-go-plugin:<version>`
-- `ghcr.io/daiyuang/bu1ld-java-plugin:<version>`
-- `ghcr.io/daiyuang/bu1ld-typescript-plugin:<version>`
+- `ghcr.io/lyonbrown4d/bu1ld:<version>`
+- `ghcr.io/lyonbrown4d/bu1ld-go-plugin:<version>`
+- `ghcr.io/lyonbrown4d/bu1ld-java-plugin:<version>`
+- `ghcr.io/lyonbrown4d/bu1ld-node-plugin:<version>`
 
 Each image is also tagged with `<major>.<minor>` and `latest`. The release
 workflow lowercases the GitHub owner before building the GHCR image name because
@@ -132,7 +132,7 @@ The image build inputs live under `packaging/container/`:
 - `bu1ld-java-plugin.Dockerfile` runs the Java plugin Gradle build in a Linux
   JDK image, then packages the jlink/jpackage app image into a slim Debian
   runtime image.
-- `bu1ld-typescript-plugin.Dockerfile` builds the TypeScript plugin with npm
+- `bu1ld-node-plugin.Dockerfile` builds the Node plugin with npm
   and packages the compiled JSON-RPC server plus production dependencies on a
   Node runtime image.
 
@@ -143,25 +143,25 @@ plugin go {
   source = container
   id = "org.bu1ld.go"
   version = "0.1.3"
-  image = "ghcr.io/daiyuang/bu1ld-go-plugin:0.1.3"
+  image = "ghcr.io/lyonbrown4d/bu1ld-go-plugin:0.1.3"
 }
 
 plugin java {
   source = container
   id = "org.bu1ld.java"
   version = "0.1.3"
-  image = "ghcr.io/daiyuang/bu1ld-java-plugin:0.1.3"
+  image = "ghcr.io/lyonbrown4d/bu1ld-java-plugin:0.1.3"
 }
 
-plugin typescript {
+plugin node {
   source = container
-  id = "org.bu1ld.typescript"
+  id = "org.bu1ld.node"
   version = "0.1.3"
-  image = "ghcr.io/daiyuang/bu1ld-typescript-plugin:0.1.3"
+  image = "ghcr.io/lyonbrown4d/bu1ld-node-plugin:0.1.3"
 }
 ```
 
-Each Java and TypeScript plugin asset is uploaded with a sibling `.sha256`
+Each Java and Node plugin asset is uploaded with a sibling `.sha256`
 file. GoReleaser publishes `checksums.txt` for Go-built assets. The release
 workflow downloads the final GitHub Release assets and runs:
 
@@ -181,8 +181,8 @@ scripts/release-e2e.sh dist/release
 ```
 
 That script builds a local registry from the downloaded release assets, installs
-`org.bu1ld.go`, `org.bu1ld.java`, and `org.bu1ld.typescript` with the release
-`bu1ld` binary, and runs the Go, Java, TypeScript, and multi-language monorepo
+`org.bu1ld.go`, `org.bu1ld.java`, and `org.bu1ld.node` with the release
+`bu1ld` binary, and runs the Go, Java, Node, and multi-language monorepo
 examples. This catches packaging mistakes that checksum verification alone
 cannot detect.
 
@@ -192,7 +192,7 @@ After a release, update the plugin registry metadata with the new plugin version
 and asset URLs. The registry should contain metadata only; the actual asset URL
 can point at GitHub Release, an object store, an internal HTTP server, or any
 other artifact location. The first-party embedded registry already follows this
-shape for `org.bu1ld.go`, `org.bu1ld.java`, and `org.bu1ld.typescript`.
+shape for `org.bu1ld.go`, `org.bu1ld.java`, and `org.bu1ld.node`.
 
 See [Plugin Registry](plugin-registry.md).
 

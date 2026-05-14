@@ -3,7 +3,7 @@ package dsl
 import (
 	"testing"
 
-	buildplugin "bu1ld/internal/plugin"
+	buildplugin "github.com/lyonbrown4d/bu1ld/internal/plugin"
 
 	"github.com/spf13/afero"
 )

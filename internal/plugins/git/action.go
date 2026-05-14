@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	pluginparams "bu1ld/internal/plugins/params"
+	pluginparams "github.com/lyonbrown4d/bu1ld/internal/plugins/params"
 
 	"github.com/arcgolabs/collectionx/list"
 	gogit "github.com/go-git/go-git/v5"

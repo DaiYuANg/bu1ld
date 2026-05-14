@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"bu1ld/internal/dsl"
+	"github.com/lyonbrown4d/bu1ld/internal/dsl"
 
 	"github.com/arcgolabs/collectionx/list"
 	"github.com/arcgolabs/collectionx/mapping"

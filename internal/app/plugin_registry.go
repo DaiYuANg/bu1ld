@@ -9,8 +9,8 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	buildplugin "bu1ld/internal/plugin"
-	"bu1ld/internal/pluginregistry"
+	buildplugin "github.com/lyonbrown4d/bu1ld/internal/plugin"
+	"github.com/lyonbrown4d/bu1ld/internal/pluginregistry"
 
 	"github.com/arcgolabs/collectionx/list"
 	"github.com/pelletier/go-toml/v2"

@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"bu1ld/internal/cachefile"
-	"bu1ld/internal/snapshot"
+	"github.com/lyonbrown4d/bu1ld/internal/cachefile"
+	"github.com/lyonbrown4d/bu1ld/internal/snapshot"
 
 	"github.com/samber/oops"
 	"github.com/spf13/afero"

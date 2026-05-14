@@ -25,7 +25,7 @@ connection.onRequest("configure", (params: ConfigureParams) => ({ tasks: configu
 connection.onRequest("execute", async (params: ExecuteParams) => execute(params.request));
 
 connection.onError((error) => {
-  process.stderr.write(`bu1ld-typescript-plugin JSON-RPC error: ${String(error)}\n`);
+  process.stderr.write(`bu1ld-node-plugin JSON-RPC error: ${String(error)}\n`);
 });
 
 connection.listen();

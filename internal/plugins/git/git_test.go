@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	gitplugin "bu1ld/internal/plugins/git"
+	gitplugin "github.com/lyonbrown4d/bu1ld/internal/plugins/git"
 
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"

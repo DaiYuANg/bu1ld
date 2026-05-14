@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"bu1ld/internal/dsl"
+	"github.com/lyonbrown4d/bu1ld/internal/dsl"
 
 	"github.com/arcgolabs/collectionx/list"
 	"go.lsp.dev/protocol"

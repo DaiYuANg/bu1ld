@@ -9,5 +9,5 @@ id = "org.bu1ld.java"
 file = "plugins/org.bu1ld.java.toml"
 
 [[plugins]]
-id = "org.bu1ld.typescript"
-file = "plugins/org.bu1ld.typescript.toml"
+id = "org.bu1ld.node"
+file = "plugins/org.bu1ld.node.toml"

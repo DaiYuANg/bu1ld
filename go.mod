@@ -1,4 +1,4 @@
-module bu1ld
+module github.com/lyonbrown4d/bu1ld
 
 go 1.26.2
 

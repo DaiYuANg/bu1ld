@@ -156,7 +156,7 @@ integration/vscode/out/
 integration/vscode/server/
 integration/vscode/*.vsix
 integration/vscode/package-lock.json
-plugins/typescript/dist/
-plugins/typescript/node_modules/
-examples/typescript-project/dist/
-examples/typescript-project/node_modules/
+plugins/node/dist/
+plugins/node/node_modules/
+examples/node-project/dist/
+examples/node-project/node_modules/

@@ -1,8 +1,8 @@
 package main
 
 import (
-	"bu1ld/internal/app"
-	"bu1ld/internal/config"
+	"github.com/lyonbrown4d/bu1ld/internal/app"
+	"github.com/lyonbrown4d/bu1ld/internal/config"
 
 	"github.com/samber/oops"
 	"github.com/spf13/cobra"

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"go/token"
 
-	buildplugin "bu1ld/internal/plugin"
+	buildplugin "github.com/lyonbrown4d/bu1ld/internal/plugin"
 
 	"github.com/arcgolabs/collectionx/list"
 	"github.com/arcgolabs/plano/ast"

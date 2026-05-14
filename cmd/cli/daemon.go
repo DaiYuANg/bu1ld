@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bu1ld/internal/app"
+	"github.com/lyonbrown4d/bu1ld/internal/app"
 
 	"github.com/spf13/cobra"
 )

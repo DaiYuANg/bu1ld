@@ -5,6 +5,36 @@ the core binary. A plugin can be a builtin Go implementation linked into bu1ld,
 an external process written in any language, or a containerized process. External
 plugins implement the JSON-RPC protocol over stdin/stdout.
 
+## Plugin Boundary
+
+Plugins are adapters from existing tools and ecosystems into the bu1ld runtime.
+They should import existing project metadata when it exists, register tasks,
+translate bu1ld fields into tool-specific options, declare inputs and outputs,
+and connect tool execution to bu1ld cache and artifact handling.
+
+Plugins should not duplicate mature ecosystem behavior unless there is a clear
+runtime reason to do so. Prefer official toolchains and well-maintained
+libraries for language-specific complexity:
+
+- Go plugins should call the Go toolchain rather than reimplement package
+  loading or module semantics.
+- Java plugins should import Maven or Gradle tasks when a project already has
+  `pom.xml` or Gradle build files. A direct Java compiler path is useful as a
+  lightweight fallback, not as a duplicate Maven or Gradle model. Maven can be
+  embedded in the plugin runtime; Gradle should use Tooling API rather than
+  relying on ad hoc parsing.
+- Node plugins should import `package.json` scripts and rely on npm, pnpm,
+  yarn, or bun for ecosystem behavior. npm script execution can use lifecycle
+  libraries such as `@npmcli/package-json` and `@npmcli/run-script`; pnpm and
+  yarn should proxy to their real project runtime so workspace, PnP, plugin,
+  and pinned-version semantics stay in those ecosystems. A direct TypeScript
+  Compiler API path is useful as a fallback, not as a replacement for package
+  manager semantics.
+
+This keeps bu1ld closer to a lightweight runtime than a monolithic build
+platform. The common interface is the task graph and plugin protocol; the
+ecosystem-specific behavior remains owned by the ecosystem.
+
 ## Plugin Sources
 
 Build files declare plugins by namespace:
@@ -29,11 +59,11 @@ plugin go {
   image = "ghcr.io/acme/bu1ld-go-plugin:0.1.3"
 }
 
-plugin typescript {
+plugin node {
   source = container
-  id = "org.bu1ld.typescript"
+  id = "org.bu1ld.node"
   version = "0.1.3"
-  image = "ghcr.io/acme/bu1ld-typescript-plugin:0.1.3"
+  image = "ghcr.io/acme/bu1ld-node-plugin:0.1.3"
 }
 ```
 

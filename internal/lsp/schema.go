@@ -1,6 +1,6 @@
 package lsp
 
-import buildplugin "bu1ld/internal/plugin"
+import buildplugin "github.com/lyonbrown4d/bu1ld/internal/plugin"
 
 func coreFields(kind string) []buildplugin.FieldSchema {
 	switch kind {

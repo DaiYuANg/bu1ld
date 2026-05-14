@@ -9,10 +9,10 @@ import (
 	"log/slog"
 	"os"
 
-	"bu1ld/internal/gocacheprog"
-	"bu1ld/pkg/pluginapi"
-	goplugin "bu1ld/plugins/go"
 	"github.com/arcgolabs/dix"
+	"github.com/lyonbrown4d/bu1ld/internal/gocacheprog"
+	"github.com/lyonbrown4d/bu1ld/pkg/pluginapi"
+	goplugin "github.com/lyonbrown4d/bu1ld/plugins/go"
 	"github.com/spf13/cobra"
 )
 

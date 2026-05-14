@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"bu1ld/internal/build"
+	"github.com/lyonbrown4d/bu1ld/internal/build"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/spf13/afero"

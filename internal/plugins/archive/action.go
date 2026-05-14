@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	pluginparams "bu1ld/internal/plugins/params"
+	pluginparams "github.com/lyonbrown4d/bu1ld/internal/plugins/params"
 
 	"github.com/arcgolabs/collectionx/list"
 	"github.com/arcgolabs/collectionx/set"

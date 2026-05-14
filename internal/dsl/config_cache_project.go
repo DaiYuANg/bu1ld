@@ -3,7 +3,7 @@ package dsl
 import (
 	"slices"
 
-	"bu1ld/internal/build"
+	"github.com/lyonbrown4d/bu1ld/internal/build"
 
 	"github.com/arcgolabs/collectionx/list"
 )

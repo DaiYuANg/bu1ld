@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"bu1ld/pkg/pluginapi"
+	"github.com/lyonbrown4d/bu1ld/pkg/pluginapi"
 
 	"github.com/arcgolabs/collectionx/list"
 	"github.com/arcgolabs/collectionx/mapping"

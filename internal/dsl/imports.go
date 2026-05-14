@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"bu1ld/internal/fsx"
+	"github.com/lyonbrown4d/bu1ld/internal/fsx"
 
 	"github.com/arcgolabs/collectionx/list"
 	"github.com/arcgolabs/collectionx/set"

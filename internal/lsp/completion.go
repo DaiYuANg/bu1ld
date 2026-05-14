@@ -6,8 +6,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"bu1ld/internal/dsl"
-	buildplugin "bu1ld/internal/plugin"
+	"github.com/lyonbrown4d/bu1ld/internal/dsl"
+	buildplugin "github.com/lyonbrown4d/bu1ld/internal/plugin"
 
 	"github.com/arcgolabs/collectionx/list"
 	"github.com/arcgolabs/collectionx/mapping"

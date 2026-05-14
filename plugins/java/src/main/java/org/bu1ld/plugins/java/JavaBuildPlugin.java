@@ -3,9 +3,11 @@ package org.bu1ld.plugins.java;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import io.avaje.inject.Component;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import lombok.val;
 
@@ -29,6 +31,8 @@ final class JavaBuildPlugin implements Plugin {
     private static final String ACTION_RESOURCES = "resources";
     private static final String ACTION_JAVADOC = "javadoc";
     private static final String ACTION_TEST = "test";
+    private static final String ACTION_GRADLE = "gradle";
+    private static final String ACTION_MAVEN = "maven";
     private static final String PLUGIN_EXEC = "plugin.exec";
 
     private final NativeJavaCompiler compiler;
@@ -36,19 +40,28 @@ final class JavaBuildPlugin implements Plugin {
     private final ResourceProcessor resourceProcessor;
     private final JavadocGenerator javadocGenerator;
     private final JUnitTestRunner testRunner;
+    private final BuildToolRunner buildToolRunner;
+    private final MavenProjectModel mavenProjectModel;
+    private final GradleProjectModel gradleProjectModel;
 
     JavaBuildPlugin(
         NativeJavaCompiler compiler,
         JarBuilder jarBuilder,
         ResourceProcessor resourceProcessor,
         JavadocGenerator javadocGenerator,
-        JUnitTestRunner testRunner
+        JUnitTestRunner testRunner,
+        BuildToolRunner buildToolRunner,
+        MavenProjectModel mavenProjectModel,
+        GradleProjectModel gradleProjectModel
     ) {
         this.compiler = compiler;
         this.jarBuilder = jarBuilder;
         this.resourceProcessor = resourceProcessor;
         this.javadocGenerator = javadocGenerator;
         this.testRunner = testRunner;
+        this.buildToolRunner = buildToolRunner;
+        this.mavenProjectModel = mavenProjectModel;
+        this.gradleProjectModel = gradleProjectModel;
     }
 
     @Override
@@ -135,9 +148,25 @@ final class JavaBuildPlugin implements Plugin {
                     field("include_engines", "list", false),
                     field("exclude_engines", "list", false),
                     field("fail_if_no_tests", "bool", false)
+                ),
+                rule("gradle",
+                    field("deps", "list", false),
+                    field("inputs", "list", false),
+                    field("outputs", "list", false),
+                    field("tasks", "list", false)
+                ),
+                rule("maven",
+                    field("deps", "list", false),
+                    field("inputs", "list", false),
+                    field("outputs", "list", false),
+                    field("goals", "list", false)
                 )
             ),
             ImmutableList.of(
+                field("backend", "string", false),
+                field("import_tasks", "bool", false),
+                field("tasks", "list", false),
+                field("task_prefix", "string", false),
                 field("name", "string", false),
                 field("release", "string", false),
                 field("sources", "list", false),
@@ -183,6 +212,27 @@ final class JavaBuildPlugin implements Plugin {
 
     @Override
     public List<TaskSpec> configure(PluginConfig config) {
+        val fields = new FieldMap(config.fields());
+        val backend = resolveBackend(fields);
+        if ("gradle".equals(backend)) {
+            if (!fields.bool("import_tasks", true)) {
+                return ImmutableList.of();
+            }
+            return configureGradle(fields);
+        }
+        if ("maven".equals(backend)) {
+            if (!fields.bool("import_tasks", true)) {
+                return ImmutableList.of();
+            }
+            return configureMaven(fields);
+        }
+        if ("none".equals(backend)) {
+            return ImmutableList.of();
+        }
+        return configureJavac(config);
+    }
+
+    private List<TaskSpec> configureJavac(PluginConfig config) {
         val java = JavaConfig.from(config.fields());
         val main = java.mainSourceSet();
 
@@ -303,6 +353,8 @@ final class JavaBuildPlugin implements Plugin {
             case "jar" -> ImmutableList.of(expandJar(invocation));
             case "javadoc" -> ImmutableList.of(expandJavadoc(invocation));
             case "test" -> ImmutableList.of(expandTest(invocation));
+            case "gradle" -> ImmutableList.of(expandGradle(invocation));
+            case "maven" -> ImmutableList.of(expandMaven(invocation));
             default -> ImmutableList.of();
         };
     }
@@ -315,8 +367,197 @@ final class JavaBuildPlugin implements Plugin {
             case ACTION_JAR -> jarBuilder.create(request);
             case ACTION_JAVADOC -> javadocGenerator.generate(request);
             case ACTION_TEST -> testRunner.run(request);
+            case ACTION_GRADLE -> buildToolRunner.runGradle(request);
+            case ACTION_MAVEN -> buildToolRunner.runMaven(request);
             default -> throw new IllegalArgumentException("unknown java action \"" + request.action() + "\"");
         };
+    }
+
+    private String resolveBackend(FieldMap fields) {
+        val requested = fields.string("backend", "auto").trim().toLowerCase(Locale.ROOT);
+        if (!"auto".equals(requested)) {
+            if (!"gradle".equals(requested) && !"maven".equals(requested) && !"javac".equals(requested) && !"none".equals(requested)) {
+                throw new IllegalArgumentException("java backend must be auto, gradle, maven, javac, or none");
+            }
+            return requested;
+        }
+        val root = projectDirectory();
+        if (gradleProjectModel.available(root)) {
+            return "gradle";
+        }
+        if (mavenProjectModel.load(root).isPresent()) {
+            return "maven";
+        }
+        if (hasJavacConfig(fields)) {
+            return "javac";
+        }
+        return "none";
+    }
+
+    private List<TaskSpec> configureGradle(FieldMap fields) {
+        val prefix = fields.string("task_prefix", "gradle.");
+        val requested = ImmutableList.copyOf(fields.list("tasks", ImmutableList.of("compileJava", "test", "jar", "build")));
+        val imported = gradleProjectModel.tasks(projectDirectory(), requested);
+        val tasks = ImmutableList.<TaskSpec>builder();
+        for (val task : imported) {
+            tasks.add(externalToolTask(
+                prefix + task,
+                ACTION_GRADLE,
+                ImmutableList.of(task),
+                gradleInputs(),
+                ImmutableList.of("build/**")
+            ));
+        }
+        return tasks.build();
+    }
+
+    private List<TaskSpec> configureMaven(FieldMap fields) {
+        val prefix = fields.string("task_prefix", "maven.");
+        val model = mavenProjectModel.load(projectDirectory())
+            .orElseThrow(() -> new IllegalArgumentException("Maven backend requires pom.xml"));
+        val requested = ImmutableList.copyOf(fields.list("tasks", ImmutableList.of("compile", "test", "package", "verify")));
+        val imported = fields.has("tasks") ? requested : mavenProjectModel.lifecycleGoals(model, requested);
+        val tasks = ImmutableList.<TaskSpec>builder();
+        for (val goal : imported) {
+            tasks.add(externalToolTask(
+                prefix + goal,
+                ACTION_MAVEN,
+                ImmutableList.of(goal),
+                mavenInputs(),
+                ImmutableList.of("target/**")
+            ));
+        }
+        return tasks.build();
+    }
+
+    private TaskSpec expandGradle(Invocation invocation) {
+        val tasks = invocation.optionalList("tasks", ImmutableList.of(invocation.target()));
+        return externalToolTask(
+            invocation.target(),
+            invocation.optionalList("deps", ImmutableList.of()),
+            ACTION_GRADLE,
+            tasks,
+            invocation.optionalList("inputs", gradleInputs()),
+            invocation.optionalList("outputs", ImmutableList.of("build/**"))
+        );
+    }
+
+    private TaskSpec expandMaven(Invocation invocation) {
+        val goals = invocation.optionalList("goals", ImmutableList.of(invocation.target()));
+        return externalToolTask(
+            invocation.target(),
+            invocation.optionalList("deps", ImmutableList.of()),
+            ACTION_MAVEN,
+            goals,
+            invocation.optionalList("inputs", mavenInputs()),
+            invocation.optionalList("outputs", ImmutableList.of("target/**"))
+        );
+    }
+
+    private TaskSpec externalToolTask(
+        String name,
+        String action,
+        List<String> args,
+        List<String> inputs,
+        List<String> outputs
+    ) {
+        return externalToolTask(name, ImmutableList.of(), action, args, inputs, outputs);
+    }
+
+    private TaskSpec externalToolTask(
+        String name,
+        List<String> deps,
+        String action,
+        List<String> args,
+        List<String> inputs,
+        List<String> outputs
+    ) {
+        val params = ImmutableMap.<String, Object>builder().put("args", args).build();
+        return new TaskSpec(name, deps, inputs, outputs, null, pluginAction(action, params));
+    }
+
+    private Path projectDirectory() {
+        val env = System.getenv("BU1LD_PROJECT_DIR");
+        if (env != null && !env.isBlank()) {
+            return Path.of(env);
+        }
+        val property = System.getProperty("bu1ld.projectDir");
+        if (property != null && !property.isBlank()) {
+            return Path.of(property);
+        }
+        return Path.of("").toAbsolutePath();
+    }
+
+    private boolean hasJavacConfig(FieldMap fields) {
+        for (val name : ImmutableList.of(
+            "name",
+            "release",
+            "sources",
+            "source_roots",
+            "resources",
+            "resource_roots",
+            "classpath",
+            "module_path",
+            "repositories",
+            "dependencies",
+            "module_dependencies",
+            "add_modules",
+            "source_sets",
+            "processor_path",
+            "annotation_processors",
+            "processors",
+            "processor_options",
+            "proc",
+            "test",
+            "reports_dir",
+            "include_tags",
+            "exclude_tags",
+            "include_engines",
+            "exclude_engines",
+            "fail_if_no_tests",
+            "launcher_dependencies",
+            "build_dir",
+            "classes_dir",
+            "resources_dir",
+            "javadoc_dir",
+            "local_repository",
+            "dependency_lock",
+            "dependency_lock_mode",
+            "offline",
+            "jar",
+            "sources_jar",
+            "javadoc_jar",
+            "register_build"
+        )) {
+            if (fields.has(name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private List<String> gradleInputs() {
+        return ImmutableList.of(
+            "build.gradle",
+            "build.gradle.kts",
+            "settings.gradle",
+            "settings.gradle.kts",
+            "gradle.properties",
+            "gradle/**",
+            "gradlew",
+            "gradlew.bat",
+            "src/**"
+        );
+    }
+
+    private List<String> mavenInputs() {
+        return ImmutableList.of(
+            "pom.xml",
+            ".mvn/**",
+            "mvnw",
+            "mvnw.cmd",
+            "src/**"
+        );
     }
 
     private TaskSpec expandCompile(Invocation invocation) {

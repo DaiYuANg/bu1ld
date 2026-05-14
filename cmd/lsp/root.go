@@ -5,8 +5,8 @@ import (
 	"io"
 	"os"
 
-	"bu1ld/internal/clierr"
-	"bu1ld/internal/lsp"
+	"github.com/lyonbrown4d/bu1ld/internal/clierr"
+	"github.com/lyonbrown4d/bu1ld/internal/lsp"
 
 	"github.com/samber/oops"
 	"github.com/spf13/cobra"

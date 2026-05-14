@@ -9,8 +9,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"bu1ld/internal/cache"
-	"bu1ld/internal/config"
+	"github.com/lyonbrown4d/bu1ld/internal/cache"
+	"github.com/lyonbrown4d/bu1ld/internal/config"
 
 	"github.com/spf13/afero"
 )

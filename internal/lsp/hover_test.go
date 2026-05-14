@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"bu1ld/internal/dsl"
+	"github.com/lyonbrown4d/bu1ld/internal/dsl"
 
 	"go.lsp.dev/protocol"
 )

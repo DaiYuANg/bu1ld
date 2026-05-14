@@ -65,7 +65,7 @@ jobs:
         shell: pwsh
         run: .\plugins\java\gradlew.bat -p plugins/java check
 
-  typescript-plugin:
+  node-plugin:
     strategy:
       fail-fast: false
       matrix:
@@ -84,13 +84,13 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: plugins/typescript/package-lock.json
+          cache-dependency-path: plugins/node/package-lock.json
 
-      - name: Install TypeScript plugin dependencies
-        run: npm --prefix plugins/typescript ci
+      - name: Install Node plugin dependencies
+        run: npm --prefix plugins/node ci
 
-      - name: Check TypeScript plugin
-        run: npm --prefix plugins/typescript test
+      - name: Check Node plugin
+        run: npm --prefix plugins/node test
 
   remote-cache-e2e:
     runs-on: ubuntu-latest
@@ -147,10 +147,10 @@ jobs:
           push: false
           tags: bu1ld-java-plugin:ci
 
-      - name: Build TypeScript plugin image
+      - name: Build Node plugin image
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: packaging/container/bu1ld-typescript-plugin.Dockerfile
+          file: packaging/container/bu1ld-node-plugin.Dockerfile
           push: false
-          tags: bu1ld-typescript-plugin:ci
+          tags: bu1ld-node-plugin:ci

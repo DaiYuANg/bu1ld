@@ -4,7 +4,7 @@ import (
 	"io"
 	"os"
 
-	"bu1ld/internal/clierr"
+	"github.com/lyonbrown4d/bu1ld/internal/clierr"
 
 	"github.com/samber/oops"
 	"github.com/spf13/cobra"

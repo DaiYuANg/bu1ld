@@ -9,6 +9,9 @@ version = "0.1.3"
 
 repositories {
     mavenCentral()
+    maven {
+        url = uri("https://repo.gradle.org/gradle/libs-releases")
+    }
 }
 
 val javaReleaseVersion = libs.versions.javaRelease.get()
@@ -42,13 +45,19 @@ fun jpackageCompatibleAppVersion(value: String): String {
     return numericParts.take(3).joinToString(".")
 }
 
-fun File.isMavenResolverRuntimeJar(): Boolean {
+fun File.isEmbeddedToolRuntimeJar(): Boolean {
     val jarName = name
     return jarName.startsWith("maven-") ||
+        jarName.startsWith("gradle-") ||
         jarName.startsWith("plexus-") ||
+        jarName.startsWith("sisu-") ||
+        jarName.startsWith("guice-") ||
+        jarName.startsWith("aopalliance-") ||
+        jarName.startsWith("javax.annotation-") ||
         jarName.startsWith("httpclient-") ||
         jarName.startsWith("httpcore-") ||
         jarName.startsWith("commons-codec-") ||
+        jarName.startsWith("commons-cli-") ||
         jarName.startsWith("jcl-over-slf4j-") ||
         jarName.startsWith("javax.inject-") ||
         jarName.startsWith("slf4j-")
@@ -67,6 +76,9 @@ dependencies {
     implementation(libs.commonsIo)
     implementation(libs.guava)
     implementation(libs.avajeInject)
+    implementation(libs.gradleToolingApi)
+    implementation(libs.mavenEmbedder)
+    implementation(libs.mavenCompat)
     implementation(libs.mavenResolverSupplierMvn3)
     implementation(libs.javaxInject)
     runtimeOnly(libs.slf4jNop)
@@ -89,14 +101,14 @@ tasks.withType<JavaCompile>().configureEach {
 }
 
 tasks.named<JavaCompile>("compileJava") {
-    val mavenResolverClasspath = classpath.filter {
-        it.isMavenResolverRuntimeJar() && !it.isMavenResolverSupplierJar()
+    val embeddedToolClasspath = classpath.filter {
+        it.isEmbeddedToolRuntimeJar() && !it.isMavenResolverSupplierJar()
     }
     val modulePath = classpath.filter {
-        !it.isMavenResolverRuntimeJar() || it.isMavenResolverSupplierJar()
+        !it.isEmbeddedToolRuntimeJar() || it.isMavenResolverSupplierJar()
     }
     options.compilerArgs.addAll(listOf("--module-path", modulePath.asPath))
-    classpath = mavenResolverClasspath
+    classpath = embeddedToolClasspath
 }
 
 tasks.named<Test>("test") {
@@ -112,14 +124,21 @@ val generatedPluginManifestFile = layout.buildDirectory.file("generated/plugin/p
 jlink {
     forceMerge(
         "maven-",
+        "gradle-",
         "plexus-",
+        "sisu-",
+        "guice-",
+        "aopalliance-",
+        "javax.annotation-",
         "httpclient-",
         "httpcore-",
         "commons-codec-",
+        "commons-cli-",
         "jcl-over-slf4j-",
         "javax.inject-",
         "slf4j-"
     )
+    addExtraDependencies("commons-io")
 
     addOptions(
         "--strip-debug",
@@ -172,6 +191,12 @@ val writePluginManifest by tasks.registering {
 
             [[rules]]
             name = "test"
+
+            [[rules]]
+            name = "gradle"
+
+            [[rules]]
+            name = "maven"
             """.trimIndent() + "\n",
             Charsets.UTF_8,
         )

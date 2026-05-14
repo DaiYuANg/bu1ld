@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	buildplugin "bu1ld/internal/plugin"
+	buildplugin "github.com/lyonbrown4d/bu1ld/internal/plugin"
 )
 
 const (

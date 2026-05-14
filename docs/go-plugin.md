@@ -5,6 +5,48 @@ It is intentionally separate from the bu1ld binary so it can evolve as a normal
 plugin and participate in the same registry, install, lock, and process protocol
 model as plugins written in other languages.
 
+The plugin does not replace the Go toolchain. It adapts `go build`, `go test`,
+`go generate`, and GoReleaser into bu1ld's task graph, inputs/outputs, cache
+model, and remote cache integration. Go package loading, module behavior, and
+compiler semantics stay owned by upstream Go tools.
+
+## Import Mode
+
+Projects can ask the plugin to import conventional Go toolchain tasks from an
+existing `go.mod` or `go.work` project:
+
+```text
+go {
+  packages = ["./..."]
+}
+```
+
+This registers:
+
+- `go.generate`: runs `go generate`.
+- `go.test`: depends on `go.generate` and runs `go test`.
+- `go.build`: depends on `go.test` and runs `go build`.
+
+Set `main` and `out` to make `go.build` produce a binary through the same path
+as `go.binary`:
+
+```text
+go {
+  main = "./cmd/app"
+  out = "dist/app"
+}
+```
+
+Fields:
+
+- `import_tasks`: defaults to `true`.
+- `task_prefix`: defaults to `go.`.
+- `generate`, `test`, `build`: toggle imported tasks.
+- `packages`: defaults to `["./..."]`.
+- `main`, `out`: optional binary output mapping for `go.build`.
+- `generate_out`: defaults to `build/generated/go`.
+- `inputs`, `srcs`, `cacheprog`.
+
 ## Build And Install
 
 For local development:

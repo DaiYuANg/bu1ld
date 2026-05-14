@@ -4,6 +4,7 @@ commonsIo = "2.21.0"
 commonsLang3 = "3.20.0"
 freefairLombok = "9.2.0"
 guava = "33.5.0-jre"
+gradleTooling = "9.4.1"
 jackson = "2.21.2"
 jlink = "4.0.0"
 javaRelease = "17"
@@ -11,6 +12,7 @@ javaxInject = "1"
 junitJupiter = "5.11.4"
 junitPlatform = "1.11.4"
 lsp4jJsonrpc = "1.0.0"
+maven = "3.9.11"
 mavenResolver = "2.0.17"
 slf4j = "2.0.17"
 
@@ -20,12 +22,15 @@ avajeInjectGenerator = { group = "io.avaje", name = "avaje-inject-generator", ve
 commonsIo = { group = "commons-io", name = "commons-io", version.ref = "commonsIo" }
 commonsLang3 = { group = "org.apache.commons", name = "commons-lang3", version.ref = "commonsLang3" }
 guava = { group = "com.google.guava", name = "guava", version.ref = "guava" }
+gradleToolingApi = { group = "org.gradle", name = "gradle-tooling-api", version.ref = "gradleTooling" }
 jacksonDatabind = { group = "com.fasterxml.jackson.core", name = "jackson-databind", version.ref = "jackson" }
 javaxInject = { group = "javax.inject", name = "javax.inject", version.ref = "javaxInject" }
 junitJupiterApi = { group = "org.junit.jupiter", name = "junit-jupiter-api", version.ref = "junitJupiter" }
 junitJupiterEngine = { group = "org.junit.jupiter", name = "junit-jupiter-engine", version.ref = "junitJupiter" }
 junitPlatformLauncher = { group = "org.junit.platform", name = "junit-platform-launcher", version.ref = "junitPlatform" }
 lsp4jJsonrpc = { group = "org.eclipse.lsp4j", name = "org.eclipse.lsp4j.jsonrpc", version.ref = "lsp4jJsonrpc" }
+mavenEmbedder = { group = "org.apache.maven", name = "maven-embedder", version.ref = "maven" }
+mavenCompat = { group = "org.apache.maven", name = "maven-compat", version.ref = "maven" }
 mavenResolverSupplierMvn3 = { group = "org.apache.maven.resolver", name = "maven-resolver-supplier-mvn3", version.ref = "mavenResolver" }
 slf4jNop = { group = "org.slf4j", name = "slf4j-nop", version.ref = "slf4j" }
 

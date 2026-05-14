@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"bu1ld/internal/cachefile"
-	"bu1ld/internal/config"
-	"bu1ld/internal/snapshot"
+	"github.com/lyonbrown4d/bu1ld/internal/cachefile"
+	"github.com/lyonbrown4d/bu1ld/internal/config"
+	"github.com/lyonbrown4d/bu1ld/internal/snapshot"
 
 	"github.com/spf13/afero"
 )

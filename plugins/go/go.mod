@@ -1,4 +1,4 @@
-module bu1ld/plugins/go
+module github.com/lyonbrown4d/bu1ld/plugins/go
 
 go 1.26.2
 

@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"bu1ld/internal/build"
-	"bu1ld/internal/config"
-	"bu1ld/internal/snapshot"
+	"github.com/lyonbrown4d/bu1ld/internal/build"
+	"github.com/lyonbrown4d/bu1ld/internal/config"
+	"github.com/lyonbrown4d/bu1ld/internal/snapshot"
 
 	"github.com/spf13/afero"
 )

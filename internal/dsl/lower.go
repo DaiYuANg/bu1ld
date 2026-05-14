@@ -5,8 +5,8 @@ import (
 	"go/token"
 	"slices"
 
-	"bu1ld/internal/build"
-	buildplugin "bu1ld/internal/plugin"
+	"github.com/lyonbrown4d/bu1ld/internal/build"
+	buildplugin "github.com/lyonbrown4d/bu1ld/internal/plugin"
 
 	"github.com/arcgolabs/collectionx/list"
 	"github.com/arcgolabs/collectionx/mapping"

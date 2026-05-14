@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strings"
 
-	"bu1ld/internal/cachefile"
-	"bu1ld/internal/snapshot"
+	"github.com/lyonbrown4d/bu1ld/internal/cachefile"
+	"github.com/lyonbrown4d/bu1ld/internal/snapshot"
 
 	"github.com/arcgolabs/httpx"
 	httpadapter "github.com/arcgolabs/httpx/adapter"

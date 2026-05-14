@@ -52,6 +52,15 @@ public final class PluginSmokeTest {
                 }
             }
             """);
+        Files.writeString(project.resolve("pom.xml"), """
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <groupId>example</groupId>
+              <artifactId>smoke</artifactId>
+              <version>1.0.0</version>
+            </project>
+            """);
+        System.setProperty("bu1ld.projectDir", project.toString());
 
         List<String> junitClasspath = junitRuntimeClasspath();
         ObjectMapper mapper = new ObjectMapper();
@@ -62,6 +71,7 @@ public final class PluginSmokeTest {
             writeFrame(request, json(mapper, 2, "configure", Map.of("config", Map.of(
                     "namespace", "java",
                     "fields", Map.of(
+                        "backend", "javac",
                         "name", "smoke",
                         "release", "17",
                         "dependency_lock", "build/bu1ld-java.lock",
@@ -161,6 +171,16 @@ public final class PluginSmokeTest {
                         "out", "build/libs/smoke-javadoc.jar"
                     )
                 ))));
+            writeFrame(request, json(mapper, 11, "configure", Map.of("config", Map.of(
+                    "namespace", "java",
+                    "fields", Map.of("backend", "auto")
+                ))));
+            writeFrame(request, json(mapper, 12, "execute", Map.of("request", Map.of(
+                    "namespace", "java",
+                    "action", "maven",
+                    "work_dir", project.toString(),
+                    "params", Map.of("args", List.of("validate"))
+                ))));
             ByteArrayInputStream input = new ByteArrayInputStream(request.toByteArray());
             ByteArrayOutputStream output = new ByteArrayOutputStream();
 
@@ -180,7 +200,11 @@ public final class PluginSmokeTest {
             requireContains(text, "\"name\":\"compileTestJava\"");
             requireContains(text, "\"name\":\"testClasses\"");
             requireContains(text, "\"name\":\"test\"");
+            requireContains(text, "\"name\":\"maven.compile\"");
+            requireContains(text, "\"name\":\"maven.package\"");
+            requireContains(text, "\"action\":\"maven\"");
             requireContains(text, "\"kind\":\"plugin.exec\"");
+            requireContains(text, "ran embedded maven validate");
             requireContains(text, "compiled 1 Java source file");
             requireContains(text, "processed 1 Java resource file");
             requireContains(text, "ran 1 Java test");
@@ -207,6 +231,26 @@ public final class PluginSmokeTest {
                 throw new AssertionError("test summary was not generated");
             }
             requireContains(Files.readString(project.resolve("build/bu1ld-java.lock")), "com.example:codegen:jar:1.0.0");
+
+            Path emptyProject = Files.createTempDirectory("bu1ld-java-plugin-empty");
+            System.setProperty("bu1ld.projectDir", emptyProject.toString());
+            ByteArrayOutputStream autoRequest = new ByteArrayOutputStream();
+            writeFrame(autoRequest, json(mapper, 13, "configure", Map.of("config", Map.of(
+                    "namespace", "java",
+                    "fields", Map.of("backend", "auto")
+                ))));
+            writeFrame(autoRequest, json(mapper, 14, "configure", Map.of("config", Map.of(
+                    "namespace", "java",
+                    "fields", Map.of("backend", "javac", "import_tasks", false, "name", "direct")
+                ))));
+            ByteArrayOutputStream autoOutput = new ByteArrayOutputStream();
+            server.serve(new ByteArrayInputStream(autoRequest.toByteArray()), autoOutput);
+
+            String autoText = autoOutput.toString(StandardCharsets.UTF_8);
+            requireContains(autoText, "\"id\":13");
+            requireContains(autoText, "\"tasks\":[]");
+            requireContains(autoText, "\"id\":14");
+            requireContains(autoText, "\"name\":\"compileJava\"");
         }
     }
 

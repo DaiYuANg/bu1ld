@@ -3,7 +3,7 @@ package app
 import (
 	"context"
 
-	"bu1ld/internal/cache"
+	"github.com/lyonbrown4d/bu1ld/internal/cache"
 
 	"github.com/samber/oops"
 )

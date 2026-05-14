@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"bu1ld/internal/cache"
-	"bu1ld/internal/snapshot"
+	"github.com/lyonbrown4d/bu1ld/internal/cache"
+	"github.com/lyonbrown4d/bu1ld/internal/snapshot"
 
 	"github.com/arcgolabs/collectionx/mapping"
 	"github.com/samber/mo"

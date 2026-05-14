@@ -1,8 +1,8 @@
 package plugin
 
 import (
-	"bu1ld/internal/build"
-	"bu1ld/pkg/pluginapi"
+	"github.com/lyonbrown4d/bu1ld/internal/build"
+	"github.com/lyonbrown4d/bu1ld/pkg/pluginapi"
 
 	"github.com/arcgolabs/collectionx/list"
 )

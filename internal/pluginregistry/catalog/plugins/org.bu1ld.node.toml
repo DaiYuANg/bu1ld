@@ -1,0 +1,16 @@
+id = "org.bu1ld.node"
+namespace = "node"
+owner = "bu1ld"
+description = "First-party Node ecosystem adapter plugin for package scripts and TypeScript fallback builds."
+homepage = "https://github.com/lyonbrown4d/bu1ld"
+tags = ["node", "npm", "pnpm", "yarn", "bun", "typescript", "javascript"]
+
+[[versions]]
+version = "0.1.3"
+bu1ld = ">=0.1.3"
+status = "approved"
+manifest = "plugin.toml"
+
+[[versions.assets]]
+url = "https://github.com/lyonbrown4d/bu1ld/releases/download/v0.1.3/bu1ld-node-plugin_0.1.3.tar.gz"
+format = "tar.gz"

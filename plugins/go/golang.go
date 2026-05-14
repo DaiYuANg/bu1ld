@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"bu1ld/pkg/pluginapi"
+	"github.com/lyonbrown4d/bu1ld/pkg/pluginapi"
 )
 
 const (
@@ -23,6 +23,7 @@ const (
 	defaultGoReleaserOutput      = "dist/**"
 	defaultGoReleaserReleaseMode = "snapshot"
 	defaultGoGenerateOutput      = "build/generated/go"
+	defaultImportedTaskPrefix    = "go."
 )
 
 type Plugin struct {
@@ -55,6 +56,16 @@ func (p *Plugin) Metadata() (pluginapi.Metadata, error) {
 					{Name: "srcs", Type: pluginapi.FieldList},
 					{Name: "main", Type: pluginapi.FieldString, Required: true},
 					{Name: "out", Type: pluginapi.FieldString, Required: true},
+					{Name: "cacheprog", Type: pluginapi.FieldString},
+				},
+			},
+			{
+				Name: "build",
+				Fields: []pluginapi.FieldSchema{
+					{Name: "deps", Type: pluginapi.FieldList},
+					{Name: "inputs", Type: pluginapi.FieldList},
+					{Name: "srcs", Type: pluginapi.FieldList},
+					{Name: "packages", Type: pluginapi.FieldList},
 					{Name: "cacheprog", Type: pluginapi.FieldString},
 				},
 			},
@@ -99,13 +110,149 @@ func (p *Plugin) Metadata() (pluginapi.Metadata, error) {
 				},
 			},
 		},
+		ConfigFields: []pluginapi.FieldSchema{
+			{Name: "import_tasks", Type: pluginapi.FieldBool},
+			{Name: "task_prefix", Type: pluginapi.FieldString},
+			{Name: "generate", Type: pluginapi.FieldBool},
+			{Name: "test", Type: pluginapi.FieldBool},
+			{Name: "build", Type: pluginapi.FieldBool},
+			{Name: "packages", Type: pluginapi.FieldList},
+			{Name: "main", Type: pluginapi.FieldString},
+			{Name: "out", Type: pluginapi.FieldString},
+			{Name: "generate_out", Type: pluginapi.FieldString},
+			{Name: "inputs", Type: pluginapi.FieldList},
+			{Name: "srcs", Type: pluginapi.FieldList},
+			{Name: "cacheprog", Type: pluginapi.FieldString},
+		},
 	}, nil
+}
+
+func (p *Plugin) Configure(_ context.Context, config pluginapi.PluginConfig) ([]pluginapi.TaskSpec, error) {
+	fields := config.Fields
+	if fields == nil {
+		fields = map[string]any{}
+	}
+	importTasks, err := configBool(fields, "import_tasks", true)
+	if err != nil {
+		return nil, err
+	}
+	if !importTasks || !looksLikeGoProject(projectDirectory()) {
+		return nil, nil
+	}
+
+	prefix, err := configString(fields, "task_prefix", defaultImportedTaskPrefix)
+	if err != nil {
+		return nil, err
+	}
+	packages, err := configList(fields, "packages", []string{"./..."})
+	if err != nil {
+		return nil, err
+	}
+	inputs, err := goConfigInputs(fields)
+	if err != nil {
+		return nil, err
+	}
+	cacheprog, err := configString(fields, "cacheprog", "")
+	if err != nil {
+		return nil, err
+	}
+
+	tasks := []pluginapi.TaskSpec{}
+	generateEnabled, err := configBool(fields, "generate", true)
+	if err != nil {
+		return nil, err
+	}
+	testEnabled, err := configBool(fields, "test", true)
+	if err != nil {
+		return nil, err
+	}
+	buildEnabled, err := configBool(fields, "build", true)
+	if err != nil {
+		return nil, err
+	}
+
+	if generateEnabled {
+		out, err := configString(fields, "generate_out", defaultGoGenerateOutput)
+		if err != nil {
+			return nil, err
+		}
+		out = defaultString(out, defaultGoGenerateOutput)
+		tasks = append(tasks, pluginapi.TaskSpec{
+			Name:    prefix + "generate",
+			Inputs:  inputs,
+			Outputs: []string{goGenerateOutputPattern(out)},
+			Action: pluginAction("generate", map[string]any{
+				"packages":  packages,
+				"out":       out,
+				"cacheprog": cacheprog,
+			}),
+		})
+	}
+	if testEnabled {
+		deps := []string{}
+		if generateEnabled {
+			deps = append(deps, prefix+"generate")
+		}
+		tasks = append(tasks, pluginapi.TaskSpec{
+			Name:   prefix + "test",
+			Deps:   deps,
+			Inputs: inputs,
+			Action: pluginAction("test", map[string]any{
+				"packages":  packages,
+				"cacheprog": cacheprog,
+			}),
+		})
+	}
+	if buildEnabled {
+		deps := []string{}
+		if testEnabled {
+			deps = append(deps, prefix+"test")
+		}
+		mainPkg, err := configString(fields, "main", "")
+		if err != nil {
+			return nil, err
+		}
+		out, err := configString(fields, "out", "")
+		if err != nil {
+			return nil, err
+		}
+		if mainPkg != "" && out != "" {
+			tasks = append(tasks, pluginapi.TaskSpec{
+				Name:    prefix + "build",
+				Deps:    deps,
+				Inputs:  inputs,
+				Outputs: []string{out},
+				Action: pluginAction("binary", map[string]any{
+					"main":      mainPkg,
+					"out":       out,
+					"cacheprog": cacheprog,
+				}),
+			})
+		} else {
+			tasks = append(tasks, pluginapi.TaskSpec{
+				Name:   prefix + "build",
+				Deps:   deps,
+				Inputs: inputs,
+				Action: pluginAction("build", map[string]any{
+					"packages":  packages,
+					"cacheprog": cacheprog,
+				}),
+			})
+		}
+	}
+	return tasks, nil
 }
 
 func (p *Plugin) Expand(_ context.Context, invocation pluginapi.Invocation) ([]pluginapi.TaskSpec, error) {
 	switch invocation.Rule {
 	case "binary":
 		task, err := expandBinary(invocation)
+		if err != nil {
+			return nil, err
+		}
+		return []pluginapi.TaskSpec{task}, nil
+	case "build":
+		task, err := expandBuild(invocation)
 		if err != nil {
 			return nil, err
 		}
@@ -163,6 +310,35 @@ func expandBinary(invocation pluginapi.Invocation) (pluginapi.TaskSpec, error) {
 		Action: pluginAction("binary", map[string]any{
 			"main":      mainPkg,
 			"out":       out,
+			"cacheprog": cacheprog,
+		}),
+	}, nil
+}
+
+func expandBuild(invocation pluginapi.Invocation) (pluginapi.TaskSpec, error) {
+	deps, err := invocation.OptionalList("deps", nil)
+	if err != nil {
+		return pluginapi.TaskSpec{}, fmt.Errorf("read go.build deps field: %w", err)
+	}
+	inputs, err := goInputs(invocation)
+	if err != nil {
+		return pluginapi.TaskSpec{}, err
+	}
+	packages, err := invocation.OptionalList("packages", []string{"./..."})
+	if err != nil {
+		return pluginapi.TaskSpec{}, fmt.Errorf("read go.build packages field: %w", err)
+	}
+	cacheprog, err := invocation.OptionalString("cacheprog", "")
+	if err != nil {
+		return pluginapi.TaskSpec{}, fmt.Errorf("read go.build cacheprog field: %w", err)
+	}
+
+	return pluginapi.TaskSpec{
+		Name:   invocation.Target,
+		Deps:   deps,
+		Inputs: inputs,
+		Action: pluginAction("build", map[string]any{
+			"packages":  packages,
 			"cacheprog": cacheprog,
 		}),
 	}, nil
@@ -325,6 +501,12 @@ func (p *Plugin) Execute(ctx context.Context, request pluginapi.ExecuteRequest) 
 			return pluginapi.ExecuteResult{}, err
 		}
 		return runGo(ctx, request.WorkDir, []string{"build", "-o", out, mainPkg}, request.Params)
+	case "build":
+		packages, err := actionList(request.Params, "packages", []string{"./..."})
+		if err != nil {
+			return pluginapi.ExecuteResult{}, err
+		}
+		return runGo(ctx, request.WorkDir, append([]string{"build"}, packages...), request.Params)
 	case "test":
 		packages, err := actionList(request.Params, "packages", []string{"./..."})
 		if err != nil {
@@ -639,4 +821,84 @@ func goInputs(invocation pluginapi.Invocation) ([]string, error) {
 		return nil, fmt.Errorf("read go srcs field: %w", err)
 	}
 	return srcs, nil
+}
+
+func goConfigInputs(fields map[string]any) ([]string, error) {
+	inputs, err := configList(fields, "inputs", nil)
+	if err != nil {
+		return nil, fmt.Errorf("read go config inputs field: %w", err)
+	}
+	if len(inputs) > 0 {
+		return inputs, nil
+	}
+	srcs, err := configList(fields, "srcs", []string{"build.bu1ld", "go.mod", "go.sum", "go.work", "go.work.sum", "**/*.go"})
+	if err != nil {
+		return nil, fmt.Errorf("read go config srcs field: %w", err)
+	}
+	return srcs, nil
+}
+
+func looksLikeGoProject(root string) bool {
+	return fileExists(filepath.Join(root, "go.mod")) || fileExists(filepath.Join(root, "go.work"))
+}
+
+func projectDirectory() string {
+	if value := strings.TrimSpace(os.Getenv("BU1LD_PROJECT_DIR")); value != "" {
+		return value
+	}
+	return "."
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
+func configString(fields map[string]any, name, fallback string) (string, error) {
+	value, ok := fields[name]
+	if !ok || value == nil {
+		return fallback, nil
+	}
+	text, ok := value.(string)
+	if !ok {
+		return "", fmt.Errorf("go config field %q must be string", name)
+	}
+	return text, nil
+}
+
+func configBool(fields map[string]any, name string, fallback bool) (bool, error) {
+	value, ok := fields[name]
+	if !ok || value == nil {
+		return fallback, nil
+	}
+	enabled, ok := value.(bool)
+	if !ok {
+		return false, fmt.Errorf("go config field %q must be bool", name)
+	}
+	return enabled, nil
+}
+
+func configList(fields map[string]any, name string, fallback []string) ([]string, error) {
+	value, ok := fields[name]
+	if !ok || value == nil {
+		return fallback, nil
+	}
+	switch typed := value.(type) {
+	case string:
+		return []string{typed}, nil
+	case []string:
+		return typed, nil
+	case []any:
+		values := make([]string, 0, len(typed))
+		for _, item := range typed {
+			text, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("go config field %q must be list", name)
+			}
+			values = append(values, text)
+		}
+		return values, nil
+	default:
+		return nil, fmt.Errorf("go config field %q must be list", name)
+	}
 }

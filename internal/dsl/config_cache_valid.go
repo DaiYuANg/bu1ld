@@ -4,7 +4,7 @@ import (
 	"os"
 	"slices"
 
-	"bu1ld/internal/snapshot"
+	"github.com/lyonbrown4d/bu1ld/internal/snapshot"
 
 	"github.com/spf13/afero"
 )

@@ -10,12 +10,12 @@ import (
 	"runtime"
 	"time"
 
-	"bu1ld/internal/build"
-	"bu1ld/internal/cache"
-	"bu1ld/internal/config"
-	"bu1ld/internal/events"
-	"bu1ld/internal/graph"
-	"bu1ld/internal/snapshot"
+	"github.com/lyonbrown4d/bu1ld/internal/build"
+	"github.com/lyonbrown4d/bu1ld/internal/cache"
+	"github.com/lyonbrown4d/bu1ld/internal/config"
+	"github.com/lyonbrown4d/bu1ld/internal/events"
+	"github.com/lyonbrown4d/bu1ld/internal/graph"
+	"github.com/lyonbrown4d/bu1ld/internal/snapshot"
 
 	"github.com/arcgolabs/collectionx/mapping"
 	"github.com/arcgolabs/eventx"

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"bu1ld/pkg/pluginapi"
+	"github.com/lyonbrown4d/bu1ld/pkg/pluginapi"
 )
 
 func TestMetadataUsesExternalPluginID(t *testing.T) {
@@ -28,10 +28,60 @@ func TestMetadataUsesExternalPluginID(t *testing.T) {
 	if !pluginapi.SupportsCapability(metadata, pluginapi.CapabilityExecute) {
 		t.Fatalf("metadata capabilities = %#v, want execute", metadata.Capabilities)
 	}
-	for _, want := range []string{"binary", "test", "generate", "release"} {
+	for _, want := range []string{"binary", "build", "test", "generate", "release"} {
 		if !metadataHasRule(metadata, want) {
 			t.Fatalf("metadata missing rule %q", want)
 		}
+	}
+	if got, want := metadata.ConfigFields[0].Name, "import_tasks"; got != want {
+		t.Fatalf("first config field = %q, want %q", got, want)
+	}
+}
+
+func TestConfigureImportsGoToolchainTasks(t *testing.T) {
+	restoreEnv(t, goEnvKeys()...)
+
+	workDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workDir, "go.mod"), []byte("module example.com/app\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(go.mod) error = %v", err)
+	}
+	t.Setenv("BU1LD_PROJECT_DIR", workDir)
+
+	tasks, err := New().Configure(context.Background(), pluginapi.PluginConfig{
+		Namespace: "go",
+		Fields: map[string]any{
+			"main": "./cmd/app",
+			"out":  "dist/app",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Configure() error = %v", err)
+	}
+	if got, want := taskNames(tasks), "go.generate,go.test,go.build"; got != want {
+		t.Fatalf("task names = %q, want %q", got, want)
+	}
+	build := tasks[2]
+	if got, want := build.Action.Params["action"], "binary"; got != want {
+		t.Fatalf("build action = %q, want %q", got, want)
+	}
+	if got, want := strings.Join(build.Deps, ","), "go.test"; got != want {
+		t.Fatalf("build deps = %q, want %q", got, want)
+	}
+	if got, want := strings.Join(tasks[0].Outputs, ","), "build/generated/go/**"; got != want {
+		t.Fatalf("generate outputs = %q, want %q", got, want)
+	}
+}
+
+func TestConfigureSkipsWhenNoGoProject(t *testing.T) {
+	restoreEnv(t, goEnvKeys()...)
+
+	t.Setenv("BU1LD_PROJECT_DIR", t.TempDir())
+	tasks, err := New().Configure(context.Background(), pluginapi.PluginConfig{Namespace: "go"})
+	if err != nil {
+		t.Fatalf("Configure() error = %v", err)
+	}
+	if len(tasks) != 0 {
+		t.Fatalf("tasks = %#v, want empty", tasks)
 	}
 }
 
@@ -373,6 +423,7 @@ func goEnvKeys() []string {
 		"BU1LD_FAKE_GO_REL_OUT",
 		"BU1LD_GO_GENERATE_OUT",
 		"BU1LD_GO_GENERATE_REL_OUT",
+		"BU1LD_PROJECT_DIR",
 	}
 }
 
@@ -383,6 +434,14 @@ func metadataHasRule(metadata pluginapi.Metadata, name string) bool {
 		}
 	}
 	return false
+}
+
+func taskNames(tasks []pluginapi.TaskSpec) string {
+	names := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		names = append(names, task.Name)
+	}
+	return strings.Join(names, ",")
 }
 
 func writeFakeGo(t *testing.T, dir string) {

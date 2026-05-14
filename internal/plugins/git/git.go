@@ -4,7 +4,7 @@ import (
 	"context"
 	"path/filepath"
 
-	buildplugin "bu1ld/internal/plugin"
+	buildplugin "github.com/lyonbrown4d/bu1ld/internal/plugin"
 
 	"github.com/samber/oops"
 )

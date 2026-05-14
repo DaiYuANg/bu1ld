@@ -5,6 +5,40 @@ an action cache, and an external plugin protocol. The CLI remains the main user
 entry point, while `cmd/server`, `cmd/daemon`, and `cmd/lsp` host the
 coordinator, future daemon runtime, and editor language server.
 
+## Positioning
+
+bu1ld is a lightweight build runtime. It is meant to provide the common pieces
+that Makefile-style builds usually miss:
+
+- structured task declarations
+- typed plugin rules
+- task graph planning
+- inputs, outputs, and cache keys
+- local and remote output restoration
+- plugin discovery, locking, and distribution
+- artifact packaging and release orchestration
+
+It is not meant to replace language ecosystems wholesale. Language and tooling
+plugins should import existing project models where possible, adapt mature
+toolchains into the bu1ld runtime, and expose them through one task interface.
+The core runtime stays small; tool-specific complexity stays in plugins or in
+the upstream libraries those plugins reuse.
+
+Practical examples:
+
+- The Go plugin delegates compilation, tests, generate, and module behavior to
+  the Go toolchain, while injecting bu1ld cache integration such as
+  `GOCACHEPROG`.
+- The Java plugin imports Maven or Gradle tasks when `pom.xml` or Gradle build
+  files are present. Maven execution uses embedded Maven inside the plugin, and
+  Gradle task import/execution uses Gradle Tooling API. Its `JavaCompiler` path
+  remains a lightweight fallback for projects that do not already own a Maven or
+  Gradle model.
+- The Node plugin imports `package.json` scripts, runs npm scripts through npm
+  lifecycle libraries, and proxies pnpm, yarn, and bun to their real runtimes.
+  Its TypeScript Compiler API path remains a fallback for projects without
+  existing Node build metadata.
+
 ## Runtime
 
 Every subcommand starts a fresh `arcgolabs/dix` application. The runtime wires:

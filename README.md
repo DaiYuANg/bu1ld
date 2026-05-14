@@ -2,6 +2,18 @@
 
 `bu1ld` is an early cross-language build tool prototype.
 
+It is intended to be a lightweight build runtime with a unified plugin
+interface. The project sits between Makefile-style command lists and
+Gradle-style full build systems: it gives tasks a structured graph,
+inputs/outputs, cache boundaries, remote execution hooks, plugin discovery, and
+artifact handling, while keeping language ecosystems outside the core runtime.
+
+Language plugins should import existing project models and adapt mature
+toolchains into bu1ld rather than replace them wholesale. Go tasks use the Go
+toolchain, Java tasks can import Maven or Gradle tasks and still keep a light
+`javac` fallback, and Node tasks can import package scripts while still keeping
+a TypeScript Compiler API fallback for small projects.
+
 The first version includes:
 
 - Cobra command layout: `init`, `build`, `test`, `doctor`, `graph`, `clean`
@@ -11,7 +23,7 @@ The first version includes:
 - A basic DSL language server with parse diagnostics, semantic diagnostics, and schema completions
 - A plugin registry with embedded, local, HTTP(S), and Git metadata sources
 - Builtin `docker`, `archive`, and `git` plugins
-- First-party external Go, Java, and TypeScript process plugins
+- First-party external Go, Java, and Node process plugins
 - Monorepo workspace package discovery and package-scoped task ids
 - Task graph planning with dependency ordering and cycle detection
 - A configuration cache for unchanged build scripts and plugin binaries
@@ -60,7 +72,7 @@ The first version includes:
 │   ├── java/
 │   │   ├── build.gradle.kts
 │   │   └── src/
-│   └── typescript/
+│   └── node/
 │       ├── package.json
 │       └── src/
 ├── integration/
@@ -72,7 +84,7 @@ The first version includes:
 │   ├── plugin-registry.md
 │   ├── go-plugin.md
 │   ├── java-plugin.md
-│   ├── typescript-plugin.md
+│   ├── node-plugin.md
 │   ├── remote-cache.md
 │   └── releases.md
 ├── build.bu1ld
@@ -90,7 +102,7 @@ Detailed design notes live under [`docs/`](docs/):
 - [Plugin Registry](docs/plugin-registry.md)
 - [Go Plugin](docs/go-plugin.md)
 - [Java Plugin](docs/java-plugin.md)
-- [TypeScript Plugin](docs/typescript-plugin.md)
+- [Node Plugin](docs/node-plugin.md)
 - [Remote Cache](docs/remote-cache.md)
 - [Releases](docs/releases.md)
 - [Upgrading](docs/upgrading.md)
@@ -287,10 +299,10 @@ directories are mapped into that mount.
 
 First-party release images are published to GitHub Container Registry:
 
-- `ghcr.io/daiyuang/bu1ld`
-- `ghcr.io/daiyuang/bu1ld-go-plugin`
-- `ghcr.io/daiyuang/bu1ld-java-plugin`
-- `ghcr.io/daiyuang/bu1ld-typescript-plugin`
+- `ghcr.io/lyonbrown4d/bu1ld`
+- `ghcr.io/lyonbrown4d/bu1ld-go-plugin`
+- `ghcr.io/lyonbrown4d/bu1ld-java-plugin`
+- `ghcr.io/lyonbrown4d/bu1ld-node-plugin`
 
 Installed plugins can include a manifest at
 `.bu1ld/plugins/<id>/<version>/plugin.toml` or
@@ -309,7 +321,7 @@ name = "binary"
 `bu1ld plugins search`, `bu1ld plugins info`, `bu1ld plugins install`, and
 `bu1ld plugins update` operate on the plugin distribution registry. The CLI
 embeds the first-party registry entries for `org.bu1ld.go`,
-`org.bu1ld.java`, and `org.bu1ld.typescript`, and projects can override the
+`org.bu1ld.java`, and `org.bu1ld.node`, and projects can override the
 registry metadata source with local, HTTP(S), or Git-backed metadata. See
 [`docs/plugin-registry.md`](docs/plugin-registry.md) for the registry source
 model and TOML schema.
@@ -382,23 +394,23 @@ java.compile generated {
 }
 ```
 
-The first-party TypeScript plugin is written in TypeScript and uses the
-TypeScript Compiler API directly. It does not register tasks from project
-`package.json` scripts; bu1ld owns the typecheck and compile task definitions.
-See [`docs/typescript-plugin.md`](docs/typescript-plugin.md) for the rule model.
+The first-party Node plugin is written in TypeScript and adapts the Node
+ecosystem into bu1ld. It imports `package.json` scripts as `node.<script>`
+tasks, detects npm/pnpm/yarn/bun from project metadata, runs npm scripts
+through npm lifecycle libraries, proxies pnpm/yarn/bun to their real runtimes,
+and keeps the TypeScript Compiler API as a direct fallback for lightweight
+projects. See
+[`docs/node-plugin.md`](docs/node-plugin.md) for the rule model.
 
 ```text
-plugin typescript {
+plugin node {
   source = local
-  id = "org.bu1ld.typescript"
+  id = "org.bu1ld.node"
   version = "0.1.3"
 }
 
-typescript {
-  srcs = ["src/**/*.ts"]
-  out_dir = "dist"
-  target = "ES2022"
-  module = "CommonJS"
+node {
+  backend = "auto"
 }
 ```
 
@@ -495,8 +507,8 @@ Optional config files are loaded through `configx` from `bu1ld.yaml`, `bu1ld.tom
 
 GoReleaser builds the first-party Go executables, including `bu1ld-go-plugin`.
 The Go plugin also has an independent GoReleaser config for standalone plugin
-releases. The Java plugin is packaged with Gradle/jpackage, and the TypeScript
-plugin is packaged with npm plus a Node runtime container image. See
+releases. The Java plugin is packaged with Gradle/jpackage, and the Node plugin
+is packaged with npm plus a Node runtime container image. See
 [`docs/releases.md`](docs/releases.md) for the release model.
 
 Local snapshot release:
@@ -535,6 +547,6 @@ all supported platform binaries.
 go test ./...
 go test ./plugins/go/...
 ./plugins/java/gradlew -p plugins/java check
-npm --prefix plugins/typescript test
+npm --prefix plugins/node test
 go run ./cmd/cli build --no-cache java_plugin_verify
 ```

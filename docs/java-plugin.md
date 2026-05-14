@@ -1,11 +1,20 @@
 # Java Plugin
 
 The first-party Java plugin is written in Java and packaged as an external
-process plugin. It is designed to own Java build behavior directly instead of
-adapting Maven or Gradle project builds.
+process plugin. It imports existing Maven and Gradle project models when they
+exist, and keeps a direct `javac` backend for lightweight projects that do not
+already have a Java build tool.
 
 The Gradle project under `plugins/java` only builds and packages the plugin
-itself. Java projects that use the plugin are compiled by bu1ld plugin tasks.
+itself. Java projects that use the plugin can either import Maven/Gradle tasks
+or be compiled by bu1ld plugin tasks through the `javac` backend.
+
+The plugin is still an ecosystem adapter rather than a replacement for the
+whole Java build ecosystem. It uses the Java compiler API for a lightweight
+compile path, Maven Embedder for Maven lifecycle execution, Maven Resolver for
+repository and dependency behavior, Gradle Tooling API for Gradle task import
+and execution, JUnit Platform for test execution, and jpackage/jlink for native
+runtime packaging.
 
 ## Build Stack
 
@@ -17,6 +26,8 @@ The plugin build uses:
 - Avaje Inject for dependency injection.
 - Apache Commons Lang and Commons IO for utilities.
 - Guava for immutable collections and classpath handling.
+- Gradle Tooling API for Gradle task discovery and execution.
+- Maven Embedder for running Maven lifecycles without requiring a local `mvn`.
 - Apache Maven Resolver for Maven-compatible dependency resolution.
 - JUnit Platform Launcher is resolved into the test runtime for Java test
   execution.
@@ -100,8 +111,16 @@ The namespace is `java`.
 
 ### Auto Configuration
 
-The plugin returns `auto_configure = true` from metadata. A project can declare
-the plugin and an optional `java { ... }` block:
+The plugin returns `auto_configure = true` from metadata. In `backend = "auto"`
+mode it chooses:
+
+- `gradle` when Gradle build files are present.
+- `maven` when `pom.xml` can be read by Maven's model reader.
+- `javac` when the `java { ... }` block contains explicit lightweight build
+  configuration.
+- no tasks when no Java build model is present.
+
+A project can declare the plugin and an optional `java { ... }` block:
 
 ```text
 plugin java {
@@ -111,12 +130,36 @@ plugin java {
 }
 
 java {
+  backend = "auto"
+  import_tasks = true
   name = "app"
   release = "17"
 }
 ```
 
-The plugin registers:
+For Gradle projects, the plugin imports Gradle tasks through Gradle Tooling API
+and registers them with the `gradle.` prefix by default, such as:
+
+- `gradle.compileJava`
+- `gradle.test`
+- `gradle.jar`
+- `gradle.build`
+
+Executing an imported Gradle task uses Tooling API `BuildLauncher`; bu1ld does
+not shell out to a local `gradle` executable.
+
+For Maven projects, the plugin reads `pom.xml` through Maven's model reader and
+registers Maven lifecycle goals with the `maven.` prefix by default:
+
+- `maven.compile`
+- `maven.test`
+- `maven.package`
+- `maven.verify`
+
+Executing an imported Maven task uses Maven Embedder (`MavenCli`) inside the
+plugin runtime; bu1ld does not require a local `mvn` executable.
+
+For `backend = "javac"`, the plugin registers:
 
 - `compileJava`
 - `processResources`
@@ -168,6 +211,12 @@ Defaults follow Gradle-like paths:
 
 Supported config fields:
 
+- `backend`: `auto`, `gradle`, `maven`, `javac`, or `none`.
+- `import_tasks`: defaults to `true`; controls Maven/Gradle task import and
+  does not disable the direct `javac` backend.
+- `tasks`: imported Gradle task names or Maven goals for `gradle`/`maven`
+  backends.
+- `task_prefix`: defaults to `gradle.` or `maven.` for imported build tools.
 - `name`
 - `release`
 - `sources`

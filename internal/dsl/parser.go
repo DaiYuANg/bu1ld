@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"io"
 
-	"bu1ld/internal/build"
-	buildplugin "bu1ld/internal/plugin"
-	"bu1ld/internal/plugins/archive"
-	"bu1ld/internal/plugins/docker"
-	gitplugin "bu1ld/internal/plugins/git"
+	"github.com/lyonbrown4d/bu1ld/internal/build"
+	buildplugin "github.com/lyonbrown4d/bu1ld/internal/plugin"
+	"github.com/lyonbrown4d/bu1ld/internal/plugins/archive"
+	"github.com/lyonbrown4d/bu1ld/internal/plugins/docker"
+	gitplugin "github.com/lyonbrown4d/bu1ld/internal/plugins/git"
 
 	planocomp "github.com/arcgolabs/plano/compiler"
 )
