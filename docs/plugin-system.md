@@ -43,27 +43,27 @@ Build files declare plugins by namespace:
 plugin go {
   source = local
   id = "org.bu1ld.go"
-  version = "0.1.3"
+  version = "0.1.4"
 }
 
 plugin java {
   source = global
   id = "org.bu1ld.java"
-  version = "0.1.3"
+  version = "0.1.4"
 }
 
 plugin go {
   source = container
   id = "org.bu1ld.go"
-  version = "0.1.3"
-  image = "ghcr.io/acme/bu1ld-go-plugin:0.1.3"
+  version = "0.1.4"
+  image = "ghcr.io/acme/bu1ld-go-plugin:0.1.4"
 }
 
 plugin node {
   source = container
   id = "org.bu1ld.node"
-  version = "0.1.3"
-  image = "ghcr.io/acme/bu1ld-node-plugin:0.1.3"
+  version = "0.1.4"
+  image = "ghcr.io/acme/bu1ld-node-plugin:0.1.4"
 }
 ```
 
@@ -103,8 +103,8 @@ command must start the plugin JSON-RPC server on stdin/stdout.
 plugin go {
   source = container
   id = "org.bu1ld.go"
-  version = "0.1.3"
-  image = "registry.local/build/bu1ld-go-plugin:0.1.3"
+  version = "0.1.4"
+  image = "registry.local/build/bu1ld-go-plugin:0.1.4"
   pull = "missing"
   network = "bridge"
   work_dir = "/workspace"
@@ -132,7 +132,7 @@ Installed process plugins include `plugin.toml` beside the executable:
 ```toml
 id = "org.example.rust"
 namespace = "rust"
-version = "0.1.3"
+version = "0.1.4"
 binary = "bu1ld-rust"
 
 [[rules]]

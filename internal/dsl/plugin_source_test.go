@@ -17,8 +17,8 @@ func TestRawPluginDeclarationsParsesContainerFields(t *testing.T) {
 plugin go {
   source = container
   id = "org.bu1ld.go"
-  version = "0.1.3"
-  image = "ghcr.io/example/bu1ld-go-plugin:0.1.3"
+  version = "0.1.4"
+  image = "ghcr.io/example/bu1ld-go-plugin:0.1.4"
   pull = "never"
   network = "none"
   work_dir = "/repo"
@@ -38,7 +38,7 @@ plugin go {
 	if got, want := declaration.Source, buildplugin.SourceContainer; got != want {
 		t.Fatalf("source = %q, want %q", got, want)
 	}
-	if got, want := declaration.Image, "ghcr.io/example/bu1ld-go-plugin:0.1.3"; got != want {
+	if got, want := declaration.Image, "ghcr.io/example/bu1ld-go-plugin:0.1.4"; got != want {
 		t.Fatalf("image = %q, want %q", got, want)
 	}
 	if got, want := declaration.Pull, "never"; got != want {

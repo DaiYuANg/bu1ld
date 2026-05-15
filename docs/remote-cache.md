@@ -105,8 +105,8 @@ Remote pulls are enabled when a remote cache URL is configured. Remote pushes
 are opt-in.
 
 ```bash
-go run ./cmd/cli build --remote-cache-url http://127.0.0.1:19876 --remote-cache-push
-go run ./cmd/cli build --remote-cache-url http://127.0.0.1:19876
+go run ./cmd/bu1ld build --remote-cache-url http://127.0.0.1:19876 --remote-cache-push
+go run ./cmd/bu1ld build --remote-cache-url http://127.0.0.1:19876
 ```
 
 Equivalent dotenv setup:

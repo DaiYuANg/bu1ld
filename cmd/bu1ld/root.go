@@ -15,6 +15,7 @@ type options struct {
 	buildFile       string
 	cacheDir        string
 	noCache         bool
+	noDaemon        bool
 	remoteCacheURL  string
 	remoteCachePull bool
 	remoteCachePush bool
@@ -60,6 +61,7 @@ func NewRootCommand(out io.Writer) *cobra.Command {
 	cmd.PersistentFlags().StringVarP(&opts.buildFile, "file", "f", opts.buildFile, "build DSL file")
 	cmd.PersistentFlags().StringVar(&opts.cacheDir, "cache-dir", opts.cacheDir, "build cache directory")
 	cmd.PersistentFlags().BoolVar(&opts.noCache, "no-cache", false, "disable build cache reads and writes")
+	cmd.PersistentFlags().BoolVar(&opts.noDaemon, "no-daemon", false, "disable local daemon command proxying")
 	cmd.PersistentFlags().StringVar(&opts.remoteCacheURL, "remote-cache-url", opts.remoteCacheURL, "remote build cache base URL")
 	cmd.PersistentFlags().BoolVar(&opts.remoteCachePull, "remote-cache-pull", opts.remoteCachePull, "pull from remote build cache when configured")
 	cmd.PersistentFlags().BoolVar(&opts.remoteCachePush, "remote-cache-push", opts.remoteCachePush, "push local build outputs to remote build cache when configured")

@@ -8,8 +8,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func runCommand(cmd *cobra.Command, opts *options, request app.CommandRequest) error {
-	cfg, err := config.New(
+func loadConfig(opts *options) (config.Config, error) {
+	return config.New(
 		opts.projectDir,
 		opts.buildFile,
 		opts.cacheDir,
@@ -18,6 +18,10 @@ func runCommand(cmd *cobra.Command, opts *options, request app.CommandRequest) e
 		opts.remoteCachePull,
 		opts.remoteCachePush,
 	)
+}
+
+func runCommand(cmd *cobra.Command, opts *options, request app.CommandRequest) error {
+	cfg, err := loadConfig(opts)
 	if err != nil {
 		return oops.In("bu1ld.daemon").
 			With("command", request.Kind).

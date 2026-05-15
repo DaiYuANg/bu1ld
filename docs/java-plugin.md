@@ -47,7 +47,7 @@ On Windows:
 ```
 
 The task writes the plugin under
-`.bu1ld/plugins/org.bu1ld.java/0.1.3/`.
+`.bu1ld/plugins/org.bu1ld.java/0.1.4/`.
 
 For local development without installing, point a project directly at the
 generated manifest:
@@ -126,7 +126,7 @@ A project can declare the plugin and an optional `java { ... }` block:
 plugin java {
   source = local
   id = "org.bu1ld.java"
-  version = "0.1.3"
+  version = "0.1.4"
 }
 
 java {
@@ -487,7 +487,7 @@ The repository smoke path builds the plugin, installs the jpackage app image,
 and builds `examples/java-plugin-smoke` through the external Java plugin:
 
 ```bash
-go run ./cmd/cli build --no-cache java_plugin_verify
+go run ./cmd/bu1ld build --no-cache java_plugin_verify
 ```
 
 The plugin Gradle check can also be run directly:

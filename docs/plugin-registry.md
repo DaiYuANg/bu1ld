@@ -148,7 +148,7 @@ bu1ld plugins publish ./plugin.toml \
   --arch amd64 \
   --format tar.gz \
   --sha256 <sha256> \
-  --bu1ld '>=0.1.3'
+  --bu1ld '>=0.1.4'
 ```
 
 The command prints TOML metadata that can be copied into a registry repository.

@@ -73,7 +73,7 @@ func TestNormalizeDeclarationUsesContainerSourceForImages(t *testing.T) {
 	declaration := NormalizeDeclaration(Declaration{
 		Namespace: "go",
 		ID:        "org.bu1ld.go",
-		Image:     "ghcr.io/example/bu1ld-go-plugin:0.1.3",
+		Image:     "ghcr.io/example/bu1ld-go-plugin:0.1.4",
 	})
 	if got, want := declaration.Source, SourceContainer; got != want {
 		t.Fatalf("source = %q, want %q", got, want)

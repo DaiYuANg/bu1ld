@@ -18,7 +18,7 @@ The first version includes:
 
 - Cobra command layout: `init`, `build`, `test`, `doctor`, `graph`, `clean`
 - Task discovery via `tasks` and targeted graph planning via `graph [task...]`
-- Multi-process `cmd/cli`, `cmd/daemon`, `cmd/server`, and `cmd/lsp` executables
+- Multi-process `cmd/bu1ld`, `cmd/daemon`, `cmd/server`, and `cmd/lsp` executables
 - A small `build.bu1ld` DSL
 - A basic DSL language server with parse diagnostics, semantic diagnostics, and schema completions
 - A plugin registry with embedded, local, HTTP(S), and Git metadata sources
@@ -39,7 +39,7 @@ The first version includes:
 ```text
 .
 ├── cmd/
-│   ├── cli/
+│   ├── bu1ld/
 │   │   ├── main.go
 │   │   └── root.go
 │   ├── daemon/
@@ -169,7 +169,7 @@ task test {
 task build {
   deps = [prepare, test]
   outputs = ["dist/bu1ld"]
-  command = ["go", "build", "-o", "dist/bu1ld", "./cmd/cli"]
+  command = ["go", "build", "-o", "dist/bu1ld", "./cmd/bu1ld"]
 }
 ```
 
@@ -258,13 +258,13 @@ Process plugins can be resolved from local, global, or direct development paths:
 plugin rust {
   source = local
   id = "org.bu1ld.rust"
-  version = "0.1.3"
+  version = "0.1.4"
 }
 
 plugin java {
   source = global
   id = "org.bu1ld.java"
-  version = "0.1.3"
+  version = "0.1.4"
 }
 ```
 
@@ -286,8 +286,8 @@ Plugins can also run as containers:
 plugin go {
   source = container
   id = "org.bu1ld.go"
-  version = "0.1.3"
-  image = "registry.local/build/bu1ld-go-plugin:0.1.3"
+  version = "0.1.4"
+  image = "registry.local/build/bu1ld-go-plugin:0.1.4"
   pull = "missing"
 }
 ```
@@ -311,7 +311,7 @@ Installed plugins can include a manifest at
 ```toml
 id = "org.bu1ld.rust"
 namespace = "rust"
-version = "0.1.3"
+version = "0.1.4"
 binary = "bu1ld-rust"
 
 [[rules]]
@@ -329,7 +329,7 @@ model and TOML schema.
 ```bash
 bu1ld plugins search java
 bu1ld plugins info org.bu1ld.go
-bu1ld plugins install org.bu1ld.go@0.1.3
+bu1ld plugins install org.bu1ld.go@0.1.4
 bu1ld plugins registry validate ./registry
 bu1ld plugins publish ./plugin.toml --asset-url https://downloads.example.com/plugin.tar.gz --os linux --arch amd64 --format tar.gz
 BU1LD_PLUGIN_REGISTRY=./registry bu1ld plugins search
@@ -345,7 +345,7 @@ fallback. See [`docs/go-plugin.md`](docs/go-plugin.md) for the full rule model.
 plugin go {
   source = local
   id = "org.bu1ld.go"
-  version = "0.1.3"
+  version = "0.1.4"
 }
 
 go.generate generate {
@@ -359,7 +359,7 @@ go.test test {
 
 go.binary build {
   deps = [test]
-  main = "./cmd/cli"
+  main = "./cmd/bu1ld"
   out = "dist/app"
 }
 
@@ -380,7 +380,7 @@ logging, and rule details.
 plugin java {
   source = local
   id = "org.bu1ld.java"
-  version = "0.1.3"
+  version = "0.1.4"
 }
 
 java {
@@ -406,7 +406,7 @@ projects. See
 plugin node {
   source = local
   id = "org.bu1ld.node"
-  version = "0.1.3"
+  version = "0.1.4"
 }
 
 node {
@@ -420,38 +420,45 @@ need to be Go modules; they only need to serve the process protocol and ship a
 
 ## Usage
 
+Run or install the released CLI module path:
+
+```bash
+go run github.com/lyonbrown4d/bu1ld/cmd/bu1ld@latest --help
+go install github.com/lyonbrown4d/bu1ld/cmd/bu1ld@latest
+```
+
 ```bash
 mkdir hello-bu1ld
 cd hello-bu1ld
-go run ../bu1ld/cmd/cli init
-go run ../bu1ld/cmd/cli doctor
-go run ../bu1ld/cmd/cli tasks
-go run ../bu1ld/cmd/cli build
+go run ../bu1ld/cmd/bu1ld init
+go run ../bu1ld/cmd/bu1ld doctor
+go run ../bu1ld/cmd/bu1ld tasks
+go run ../bu1ld/cmd/bu1ld build
 ```
 
 Inside this repository:
 
 ```bash
-go run ./cmd/cli init --project-dir /tmp/hello-bu1ld
-go run ./cmd/cli doctor
-go run ./cmd/cli packages
-go run ./cmd/cli packages graph
-go run ./cmd/cli affected --base main
-go run ./cmd/cli build --all :build
-go run ./cmd/cli graph
-go run ./cmd/cli graph build
-go run ./cmd/cli tasks
-go run ./cmd/cli test
-go run ./cmd/cli build
-go run ./cmd/cli clean
-go run ./cmd/cli plugins list
-go run ./cmd/cli plugins doctor
-go run ./cmd/cli plugins lock
-go run ./cmd/cli plugins search go
-go run ./cmd/cli plugins info org.bu1ld.go
-go run ./cmd/cli plugins install org.bu1ld.go@0.1.3
-go run ./cmd/cli plugins registry validate
-go run ./cmd/cli plugins publish plugins/go/plugin.toml --asset-url https://downloads.example.com/bu1ld-go-plugin.tar.gz --os linux --arch amd64 --format tar.gz
+go run ./cmd/bu1ld init --project-dir /tmp/hello-bu1ld
+go run ./cmd/bu1ld doctor
+go run ./cmd/bu1ld packages
+go run ./cmd/bu1ld packages graph
+go run ./cmd/bu1ld affected --base main
+go run ./cmd/bu1ld build --all :build
+go run ./cmd/bu1ld graph
+go run ./cmd/bu1ld graph build
+go run ./cmd/bu1ld tasks
+go run ./cmd/bu1ld test
+go run ./cmd/bu1ld build
+go run ./cmd/bu1ld clean
+go run ./cmd/bu1ld plugins list
+go run ./cmd/bu1ld plugins doctor
+go run ./cmd/bu1ld plugins lock
+go run ./cmd/bu1ld plugins search go
+go run ./cmd/bu1ld plugins info org.bu1ld.go
+go run ./cmd/bu1ld plugins install org.bu1ld.go@0.1.4
+go run ./cmd/bu1ld plugins registry validate
+go run ./cmd/bu1ld plugins publish plugins/go/plugin.toml --asset-url https://downloads.example.com/bu1ld-go-plugin.tar.gz --os linux --arch amd64 --format tar.gz
 go run ./cmd/daemon status
 go run ./cmd/server status
 go run ./cmd/lsp stdio
@@ -489,6 +496,12 @@ files, import glob expansions, environment variables read through `env(...)`,
 and external plugin binaries are unchanged. Pass `--no-cache` to bypass both
 the configuration cache and build action cache.
 
+The local daemon is optional. Start it with `bu1ld daemon start`; supported
+project commands will proxy to it when available and fall back to local
+execution when it is not. Pass `--no-daemon` to force in-process execution.
+Daemon state lives under `.bu1ld/daemon.json`. See
+[`docs/daemon.md`](docs/daemon.md).
+
 Remote action caching uses the same action records and output blobs as the
 local cache. The coordinator also exposes Go build-cache resources for
 the `bu1ld-go-plugin cacheprog` adapter. See
@@ -497,8 +510,8 @@ LAN configuration, and Go cacheprog behavior.
 
 ```bash
 go run ./cmd/server coordinator --listen 127.0.0.1:19876
-go run ./cmd/cli build --remote-cache-url http://127.0.0.1:19876 --remote-cache-push
-go run ./cmd/cli build --remote-cache-url http://127.0.0.1:19876
+go run ./cmd/bu1ld build --remote-cache-url http://127.0.0.1:19876 --remote-cache-push
+go run ./cmd/bu1ld build --remote-cache-url http://127.0.0.1:19876
 ```
 
 Optional config files are loaded through `configx` from `bu1ld.yaml`, `bu1ld.toml`, `bu1ld.json`, or their `.bu1ld.*` variants.
@@ -520,8 +533,8 @@ goreleaser release --snapshot --clean --skip=publish
 Tagged releases are handled by `.github/workflows/release.yml`:
 
 ```bash
-git tag v0.1.3
-git push origin v0.1.3
+git tag v0.1.4
+git push origin v0.1.4
 ```
 
 ## Editor Integrations
@@ -548,5 +561,5 @@ go test ./...
 go test ./plugins/go/...
 ./plugins/java/gradlew -p plugins/java check
 npm --prefix plugins/node test
-go run ./cmd/cli build --no-cache java_plugin_verify
+go run ./cmd/bu1ld build --no-cache java_plugin_verify
 ```

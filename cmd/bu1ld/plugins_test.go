@@ -132,7 +132,7 @@ func TestPluginsSearchCommand(t *testing.T) {
 	}
 
 	got := out.String()
-	for _, want := range []string{"ID", "org.bu1ld.go", "go", "0.1.3"} {
+	for _, want := range []string{"ID", "org.bu1ld.go", "go", "0.1.4"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("output = %q, want substring %q", got, want)
 		}
@@ -154,7 +154,7 @@ func TestPluginsInfoCommand(t *testing.T) {
 	}
 
 	got := out.String()
-	for _, want := range []string{"id: org.bu1ld.java", "namespace: java", "JPMS", "0.1.3"} {
+	for _, want := range []string{"id: org.bu1ld.java", "namespace: java", "JPMS", "0.1.4"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("output = %q, want substring %q", got, want)
 		}
@@ -278,7 +278,7 @@ binary = "echo"
 		"--arch", "amd64",
 		"--format", "tar.gz",
 		"--sha256", strings.Repeat("a", 64),
-		"--bu1ld", ">=0.1.3",
+		"--bu1ld", ">=0.1.4",
 	})
 
 	if err := cmd.Execute(); err != nil {
@@ -289,7 +289,7 @@ binary = "echo"
 		`id = 'org.example.echo'`,
 		`namespace = 'echo'`,
 		`version = '0.2.0'`,
-		`bu1ld = '>=0.1.3'`,
+		`bu1ld = '>=0.1.4'`,
 		`url = 'https://downloads.example.com/echo.tar.gz'`,
 		`sha256 = '` + strings.Repeat("a", 64) + `'`,
 	} {

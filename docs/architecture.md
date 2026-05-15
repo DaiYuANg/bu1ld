@@ -3,7 +3,7 @@
 bu1ld is a cross-language build tool built around a small DSL, a task graph,
 an action cache, and an external plugin protocol. The CLI remains the main user
 entry point, while `cmd/server`, `cmd/daemon`, and `cmd/lsp` host the
-coordinator, future daemon runtime, and editor language server.
+coordinator, local daemon runtime, and editor language server.
 
 ## Positioning
 

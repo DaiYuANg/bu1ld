@@ -16,7 +16,7 @@ trap cleanup EXIT
 bin="$work/bin"
 mkdir -p "$bin"
 
-(cd "$root" && go build -o "$bin/bu1ld" ./cmd/cli)
+(cd "$root" && go build -o "$bin/bu1ld" ./cmd/bu1ld)
 (cd "$root" && go build -o "$bin/bu1ld-server" ./cmd/server)
 go build -C "$root/plugins/go" -o bu1ld-go-plugin ./cmd/bu1ld-go-plugin
 

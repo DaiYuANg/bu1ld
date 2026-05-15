@@ -16,8 +16,8 @@ func TestContainerPluginSpecDefaults(t *testing.T) {
 		Namespace: "go",
 		ID:        "org.bu1ld.go",
 		Source:    SourceContainer,
-		Version:   "0.1.3",
-		Image:     "ghcr.io/example/bu1ld-go-plugin:0.1.3",
+		Version:   "0.1.4",
+		Image:     "ghcr.io/example/bu1ld-go-plugin:0.1.4",
 	}, LoadOptions{
 		ProjectDir: projectDir,
 		Env:        []string{"BU1LD_REMOTE_CACHE__URL=http://cache.local:8080"},
@@ -28,7 +28,7 @@ func TestContainerPluginSpecDefaults(t *testing.T) {
 	if got, want := spec.PullPolicy, containerPullMissing; got != want {
 		t.Fatalf("pull policy = %q, want %q", got, want)
 	}
-	if got, want := spec.Config.Image, "ghcr.io/example/bu1ld-go-plugin:0.1.3"; got != want {
+	if got, want := spec.Config.Image, "ghcr.io/example/bu1ld-go-plugin:0.1.4"; got != want {
 		t.Fatalf("image = %q, want %q", got, want)
 	}
 	if got, want := spec.ContainerProjectDir, defaultContainerProjectDir; got != want {

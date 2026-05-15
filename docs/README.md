@@ -32,6 +32,8 @@ compilation, dependency resolution, packaging, or release automation.
   compiler fallback, and container packaging.
 - [Remote Cache](remote-cache.md): local action cache, HTTP coordinator, Go
   cacheprog adapter, and dotenv-based LAN configuration.
+- [Local Daemon](daemon.md): optional daemon startup, command proxying,
+  workspace state, and fallback behavior.
 - [Releases](releases.md): GoReleaser, standalone Go plugin releases, Java
   plugin packaging, and tagged release flow.
 - [Upgrading](upgrading.md): release-to-release compatibility and operational

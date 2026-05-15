@@ -8,7 +8,7 @@ before:
 
 builds:
   - id: bu1ld
-    main: ./cmd/cli
+    main: ./cmd/bu1ld
     binary: bu1ld
     env: &build_env
       - CGO_ENABLED=0

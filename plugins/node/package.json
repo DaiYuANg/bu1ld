@@ -1,6 +1,6 @@
 {
   "name": "@bu1ld/node-plugin",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "First-party Node ecosystem adapter plugin for bu1ld.",
   "license": "Apache-2.0",

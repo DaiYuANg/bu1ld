@@ -23,8 +23,8 @@ func TestLockFileRoundTrip(t *testing.T) {
 			Source:    SourceContainer,
 			Namespace: "go",
 			ID:        "org.bu1ld.go",
-			Version:   "0.1.3",
-			Image:     "ghcr.io/example/bu1ld-go-plugin:0.1.3",
+			Version:   "0.1.4",
+			Image:     "ghcr.io/example/bu1ld-go-plugin:0.1.4",
 			Pull:      "never",
 			Network:   "none",
 			WorkDir:   "/repo",
@@ -52,7 +52,7 @@ func TestLockFileRoundTrip(t *testing.T) {
 	if !ok {
 		t.Fatalf("locked container plugin not found")
 	}
-	if got, want := containerPlugin.Image, "ghcr.io/example/bu1ld-go-plugin:0.1.3"; got != want {
+	if got, want := containerPlugin.Image, "ghcr.io/example/bu1ld-go-plugin:0.1.4"; got != want {
 		t.Fatalf("image = %q, want %q", got, want)
 	}
 	if got, want := containerPlugin.Pull, "never"; got != want {

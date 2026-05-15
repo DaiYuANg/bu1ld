@@ -34,7 +34,7 @@ Then point a project at the local manifest:
 plugin node {
   source = local
   id = "org.bu1ld.node"
-  version = "0.1.3"
+  version = "0.1.4"
   path = "../../plugins/node/plugin.toml"
 }
 ```
@@ -170,7 +170,7 @@ Container usage:
 plugin node {
   source = container
   id = "org.bu1ld.node"
-  version = "0.1.3"
-  image = "ghcr.io/lyonbrown4d/bu1ld-node-plugin:0.1.3"
+  version = "0.1.4"
+  image = "ghcr.io/lyonbrown4d/bu1ld-node-plugin:0.1.4"
 }
 ```

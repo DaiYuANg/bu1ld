@@ -67,6 +67,7 @@ func NewRootCommand(out io.Writer) *cobra.Command {
 		newStatusCommand(&opts),
 		newStartCommand(&opts),
 		newStopCommand(&opts),
+		newRunCommand(&opts),
 	)
 	return cmd
 }

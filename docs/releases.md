@@ -52,7 +52,7 @@ The Java plugin is packaged by Gradle:
 ```
 
 This builds a JPMS jpackage app image, writes `plugin.toml`, and installs it
-under `.bu1ld/plugins/org.bu1ld.java/0.1.3/`. The Java plugin does not currently
+under `.bu1ld/plugins/org.bu1ld.java/0.1.4/`. The Java plugin does not currently
 publish MSI, DMG, DEB, or RPM installers; the app image is the plugin artifact.
 
 See [Java Plugin](java-plugin.md) for the packaging model.
@@ -62,8 +62,8 @@ See [Java Plugin](java-plugin.md) for the packaging model.
 Tagged releases are handled by `.github/workflows/release.yml`.
 
 ```bash
-git tag v0.1.3
-git push origin v0.1.3
+git tag v0.1.4
+git push origin v0.1.4
 ```
 
 The workflow runs:
@@ -142,22 +142,22 @@ The first-party plugin images are compatible with `source = container`:
 plugin go {
   source = container
   id = "org.bu1ld.go"
-  version = "0.1.3"
-  image = "ghcr.io/lyonbrown4d/bu1ld-go-plugin:0.1.3"
+  version = "0.1.4"
+  image = "ghcr.io/lyonbrown4d/bu1ld-go-plugin:0.1.4"
 }
 
 plugin java {
   source = container
   id = "org.bu1ld.java"
-  version = "0.1.3"
-  image = "ghcr.io/lyonbrown4d/bu1ld-java-plugin:0.1.3"
+  version = "0.1.4"
+  image = "ghcr.io/lyonbrown4d/bu1ld-java-plugin:0.1.4"
 }
 
 plugin node {
   source = container
   id = "org.bu1ld.node"
-  version = "0.1.3"
-  image = "ghcr.io/lyonbrown4d/bu1ld-node-plugin:0.1.3"
+  version = "0.1.4"
+  image = "ghcr.io/lyonbrown4d/bu1ld-node-plugin:0.1.4"
 }
 ```
 
